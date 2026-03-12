@@ -1157,10 +1157,12 @@ async function registerVfsAccount(account) {
   console.log(`\n[${ts}] 📝 VFS Kayıt: ${account.email}`);
 
   let browser;
+  let page;
   try {
     const fp = generateFingerprint();
-    const { browser: br, page } = await launchBrowser();
-    browser = br;
+    const launched = await launchBrowser();
+    browser = launched.browser;
+    page = launched.page;
     await applyFingerprint(page, fp);
     await humanMove(page);
 
