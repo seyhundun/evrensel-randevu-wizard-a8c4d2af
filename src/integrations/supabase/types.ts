@@ -14,7 +14,133 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      applicants: {
+        Row: {
+          birth_date: string
+          config_id: string
+          created_at: string
+          email: string
+          first_name: string
+          id: string
+          last_name: string
+          passport: string
+          phone: string
+          sort_order: number
+        }
+        Insert: {
+          birth_date?: string
+          config_id: string
+          created_at?: string
+          email?: string
+          first_name?: string
+          id?: string
+          last_name?: string
+          passport?: string
+          phone?: string
+          sort_order?: number
+        }
+        Update: {
+          birth_date?: string
+          config_id?: string
+          created_at?: string
+          email?: string
+          first_name?: string
+          id?: string
+          last_name?: string
+          passport?: string
+          phone?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "applicants_config_id_fkey"
+            columns: ["config_id"]
+            isOneToOne: false
+            referencedRelation: "tracking_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tracking_configs: {
+        Row: {
+          check_interval: number
+          city: string
+          country: string
+          created_at: string
+          id: string
+          is_active: boolean
+          keep_alive: boolean
+          person_count: number
+          telegram_chat_id: string | null
+          updated_at: string
+          visa_category: string | null
+          webhook_url: string | null
+        }
+        Insert: {
+          check_interval?: number
+          city: string
+          country: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keep_alive?: boolean
+          person_count?: number
+          telegram_chat_id?: string | null
+          updated_at?: string
+          visa_category?: string | null
+          webhook_url?: string | null
+        }
+        Update: {
+          check_interval?: number
+          city?: string
+          country?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keep_alive?: boolean
+          person_count?: number
+          telegram_chat_id?: string | null
+          updated_at?: string
+          visa_category?: string | null
+          webhook_url?: string | null
+        }
+        Relationships: []
+      }
+      tracking_logs: {
+        Row: {
+          config_id: string
+          created_at: string
+          id: string
+          message: string | null
+          slots_available: number | null
+          status: string
+        }
+        Insert: {
+          config_id: string
+          created_at?: string
+          id?: string
+          message?: string | null
+          slots_available?: number | null
+          status?: string
+        }
+        Update: {
+          config_id?: string
+          created_at?: string
+          id?: string
+          message?: string | null
+          slots_available?: number | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tracking_logs_config_id_fkey"
+            columns: ["config_id"]
+            isOneToOne: false
+            referencedRelation: "tracking_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
