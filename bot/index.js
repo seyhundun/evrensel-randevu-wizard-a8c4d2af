@@ -1403,11 +1403,20 @@ async function registerVfsAccount(account) {
     if (!clickedSubmit) {
       clickedSubmit = await page.evaluate(() => {
         const btns = Array.from(document.querySelectorAll("button"));
-        const kws = ["devam", "continue", "register", "create", "submit"];
-        for (const b of btns) {
-          if (b.disabled) continue;
-          const txt = (b.textContent || "").toLowerCase();
-          if (b.type === "submit" || kws.some(k => txt.includes(k))) { b.click(); return true; }
+        const targetKeywords = ["devam", "continue", "register", "create", "kayıt", "sign up", "oluştur"];
+        const skipKeywords = ["cookie", "tanımlama", "allow all", "accept", "reject", "clear", "apply", "cancel", "filter"];
+
+        const target = btns.find((b) => {
+          const txt = (b.textContent || "").toLowerCase().trim();
+          if (!txt) return false;
+          if (b.disabled) return false;
+          if (skipKeywords.some((k) => txt.includes(k))) return false;
+          return targetKeywords.some((k) => txt.includes(k));
+        });
+
+        if (target) {
+          target.click();
+          return true;
         }
         return false;
       });
