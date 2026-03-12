@@ -36,6 +36,28 @@ const CONFIG = {
   MAX_BACKOFF_MS: Number(process.env.MAX_BACKOFF_MS || 900000), // Max backoff 15dk
 };
 
+// ==================== PROXY POOL ====================
+const PROXY_LIST = [
+  "195.40.187.58:5240:nfawgadk:6um696v70i61",
+  "195.40.186.203:5885:nfawgadk:6um696v70i61",
+  "23.26.231.44:7285:nfawgadk:6um696v70i61",
+  "59.152.61.149:5589:nfawgadk:6um696v70i61",
+  "59.152.61.67:5507:nfawgadk:6um696v70i61",
+  "50.114.99.144:6885:nfawgadk:6um696v70i61",
+  "59.152.61.232:5672:nfawgadk:6um696v70i61",
+  "59.152.61.167:5607:nfawgadk:6um696v70i61",
+  "50.114.243.18:6259:nfawgadk:6um696v70i61",
+  "23.26.231.10:7251:nfawgadk:6um696v70i61",
+];
+let proxyIndex = 0;
+
+function getNextProxy() {
+  const raw = PROXY_LIST[proxyIndex % PROXY_LIST.length];
+  proxyIndex++;
+  const [host, port, user, pass] = raw.split(":");
+  return { host, port, user, pass, url: `http://${host}:${port}` };
+}
+
 // Hesap bazlı son kullanım zamanı ve hata sayısı
 const accountLastUsed = new Map(); // accountId → timestamp
 let consecutiveErrors = 0; // art arda hata sayısı
