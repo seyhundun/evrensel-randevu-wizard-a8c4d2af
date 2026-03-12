@@ -26,12 +26,19 @@ const CONFIG = {
   CAPTCHA_API_KEY: process.env.CAPTCHA_API_KEY || "",
   HEADLESS: true,
   SLOW_MO: 50,
-  QUEUE_MAX_WAIT_MS: Number(process.env.QUEUE_MAX_WAIT_MS || 300000),
-  QUEUE_POLL_MS: Number(process.env.QUEUE_POLL_MS || 8000),
+  QUEUE_MAX_WAIT_MS: Number(process.env.QUEUE_MAX_WAIT_MS || 180000), // 3dk (300→180)
+  QUEUE_POLL_MS: Number(process.env.QUEUE_POLL_MS || 10000), // 10sn (8→10)
   COOLDOWN_HOURS: Number(process.env.COOLDOWN_HOURS || 2),
-  OTP_WAIT_MS: Number(process.env.OTP_WAIT_MS || 120000), // 2dk OTP bekleme
+  OTP_WAIT_MS: Number(process.env.OTP_WAIT_MS || 120000),
   OTP_POLL_MS: Number(process.env.OTP_POLL_MS || 5000),
+  MIN_ACCOUNT_GAP_MS: Number(process.env.MIN_ACCOUNT_GAP_MS || 600000), // Aynı hesap min 10dk arayla
+  BASE_INTERVAL_MS: Number(process.env.BASE_INTERVAL_MS || 180000), // Kontroller arası min 3dk
+  MAX_BACKOFF_MS: Number(process.env.MAX_BACKOFF_MS || 900000), // Max backoff 15dk
 };
+
+// Hesap bazlı son kullanım zamanı ve hata sayısı
+const accountLastUsed = new Map(); // accountId → timestamp
+let consecutiveErrors = 0; // art arda hata sayısı
 
 // ==================== HELPERS ====================
 
