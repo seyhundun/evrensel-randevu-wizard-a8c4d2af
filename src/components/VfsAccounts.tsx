@@ -238,9 +238,20 @@ export default function VfsAccounts() {
             />
           </div>
           <div>
-            <Label className="text-xs">VFS Şifre</Label>
+            <Label className="text-xs flex items-center justify-between">
+              VFS Şifre
+              {addMode === "register" && (
+                <button
+                  type="button"
+                  onClick={() => setNewPassword(generateSecurePassword())}
+                  className="text-[10px] text-primary hover:underline flex items-center gap-0.5"
+                >
+                  <RefreshCw className="w-3 h-3" /> Otomatik Oluştur
+                </button>
+              )}
+            </Label>
             <Input
-              type="password"
+              type={newPassword && addMode === "register" ? "text" : "password"}
               placeholder="••••••••"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
