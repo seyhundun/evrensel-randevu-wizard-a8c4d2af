@@ -1,19 +1,10 @@
 /**
- * VFS Global Randevu Takip Botu v6
- * 
- * Yenilikler v6:
- * - puppeteer-extra + stealth plugin (WebDriver, Chrome.runtime, navigator gizleme)
- * - Browser fingerprint randomization (User-Agent, viewport, timezone, WebGL, canvas)
- * - Her oturumda rastgele profil
- * - Gelişmiş anti-detection
+ * VFS Global Randevu Takip Botu v7.1
+ * puppeteer-real-browser + Fingerprint + Kayıt Otomasyonu
+ * Proxy DEVRE DIŞI
  */
 
 require("dotenv").config();
-const puppeteer = require("puppeteer-extra");
-const StealthPlugin = require("puppeteer-extra-plugin-stealth");
-
-// Stealth plugin — tüm evasion'lar aktif
-puppeteer.use(StealthPlugin());
 
 let Solver;
 try {
@@ -28,9 +19,7 @@ const CONFIG = {
   API_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jcnB6d3JzeWlwcmZ1enN5aXZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMDQ1NzksImV4cCI6MjA4ODg4MDU3OX0.5MzKGm6byd1zLxjgxaXyQq5VfPFo_CE2MhcXijIRarc",
   VFS_URL: "https://visa.vfsglobal.com/tur/tr/fra/login",
   CAPTCHA_API_KEY: process.env.CAPTCHA_API_KEY || "",
-  HEADLESS: true,
-  SLOW_MO: 50,
-  QUEUE_MAX_WAIT_MS: Number(process.env.QUEUE_MAX_WAIT_MS || 180000),
+  QUEUE_MAX_WAIT_MS: Number(process.env.QUEUE_MAX_WAIT_MS || 360000),
   QUEUE_POLL_MS: Number(process.env.QUEUE_POLL_MS || 10000),
   COOLDOWN_HOURS: Number(process.env.COOLDOWN_HOURS || 2),
   OTP_WAIT_MS: Number(process.env.OTP_WAIT_MS || 120000),
@@ -40,8 +29,7 @@ const CONFIG = {
   MAX_BACKOFF_MS: Number(process.env.MAX_BACKOFF_MS || 900000),
 };
 
-// ==================== FINGERPRINT RANDOMIZATION ====================
-
+// ==================== FINGERPRINT ====================
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -49,59 +37,26 @@ const USER_AGENTS = [
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 ];
-
 const VIEWPORTS = [
-  { width: 1920, height: 1080 },
-  { width: 1366, height: 768 },
-  { width: 1536, height: 864 },
-  { width: 1440, height: 900 },
-  { width: 1680, height: 1050 },
-  { width: 1280, height: 720 },
-  { width: 1600, height: 900 },
+  { width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 1536, height: 864 },
+  { width: 1440, height: 900 }, { width: 1680, height: 1050 }, { width: 1280, height: 720 },
 ];
-
-const TIMEZONES = [
-  "Europe/Istanbul",
-  "Europe/Berlin",
-  "Europe/Paris",
-  "Europe/London",
-  "Europe/Amsterdam",
-  "Europe/Rome",
-];
-
+const TIMEZONES = ["Europe/Istanbul", "Europe/Berlin", "Europe/Paris", "Europe/London"];
 const LANGUAGES = [
-  ["tr-TR", "tr", "en-US", "en"],
-  ["en-US", "en", "tr-TR", "tr"],
-  ["fr-FR", "fr", "en-US", "en"],
-  ["de-DE", "de", "en-US", "en"],
-  ["en-GB", "en", "tr-TR", "tr"],
+  ["tr-TR", "tr", "en-US", "en"], ["en-US", "en", "tr-TR", "tr"],
+  ["fr-FR", "fr", "en-US", "en"], ["de-DE", "de", "en-US", "en"],
 ];
-
 const PLATFORMS = ["Win32", "MacIntel", "Linux x86_64"];
-
-const WEBGL_VENDORS = [
-  "Google Inc. (NVIDIA)",
-  "Google Inc. (Intel)",
-  "Google Inc. (AMD)",
-  "Intel Inc.",
-  "ATI Technologies Inc.",
-];
-
+const WEBGL_VENDORS = ["Google Inc. (NVIDIA)", "Google Inc. (Intel)", "Google Inc. (AMD)", "Intel Inc."];
 const WEBGL_RENDERERS = [
   "ANGLE (NVIDIA, NVIDIA GeForce GTX 1060, OpenGL 4.5)",
   "ANGLE (Intel, Intel(R) UHD Graphics 630, OpenGL 4.5)",
   "ANGLE (AMD, AMD Radeon RX 580, OpenGL 4.5)",
   "ANGLE (Intel, Intel(R) Iris(TM) Plus Graphics 640, OpenGL 4.1)",
-  "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060, OpenGL 4.5)",
-  "ANGLE (Intel, Intel(R) HD Graphics 620, OpenGL 4.5)",
 ];
 
-function getRandomItem(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
+function getRandomItem(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 function generateFingerprint() {
   return {
@@ -119,63 +74,33 @@ function generateFingerprint() {
   };
 }
 
-// ==================== PROXY POOL ====================
-const PROXY_LIST = [
-  "195.40.187.58:5240:nfawgadk:6um696v70i61",
-  "195.40.186.203:5885:nfawgadk:6um696v70i61",
-  "23.26.231.44:7285:nfawgadk:6um696v70i61",
-  "59.152.61.149:5589:nfawgadk:6um696v70i61",
-  "59.152.61.67:5507:nfawgadk:6um696v70i61",
-  "50.114.99.144:6885:nfawgadk:6um696v70i61",
-  "59.152.61.232:5672:nfawgadk:6um696v70i61",
-  "59.152.61.167:5607:nfawgadk:6um696v70i61",
-  "50.114.243.18:6259:nfawgadk:6um696v70i61",
-  "23.26.231.10:7251:nfawgadk:6um696v70i61",
-];
-let proxyIndex = 0;
-
-function getNextProxy() {
-  const raw = PROXY_LIST[proxyIndex % PROXY_LIST.length];
-  proxyIndex++;
-  const [host, port, user, pass] = raw.split(":");
-  return { host, port, user, pass, url: `http://${host}:${port}` };
-}
-
+// ==================== HELPERS ====================
 const accountLastUsed = new Map();
 let consecutiveErrors = 0;
-
-// ==================== HELPERS ====================
 
 function delay(min = 1000, max = 3000) {
   return new Promise((r) => setTimeout(r, Math.floor(Math.random() * (max - min) + min)));
 }
 
 async function humanMove(page) {
-  const vp = page.viewport();
-  if (!vp) return;
-  const x = Math.floor(Math.random() * vp.width * 0.6 + vp.width * 0.2);
-  const y = Math.floor(Math.random() * vp.height * 0.6 + vp.height * 0.2);
-  await page.mouse.move(x, y, { steps: Math.floor(Math.random() * 10 + 5) });
-  await delay(100, 300);
+  try {
+    const vp = page.viewport();
+    const w = vp?.width || 1366;
+    const h = vp?.height || 768;
+    const x = Math.floor(Math.random() * w * 0.6 + w * 0.2);
+    const y = Math.floor(Math.random() * h * 0.6 + h * 0.2);
+    await page.mouse.move(x, y, { steps: Math.floor(Math.random() * 10 + 5) });
+    await delay(100, 300);
+  } catch {}
 }
 
 async function humanType(page, target, text, options = {}) {
-  const {
-    clearFirst = false,
-    minDelay = 70,
-    maxDelay = 220,
-    pauseChance = 0.14,
-    pauseMin = 220,
-    pauseMax = 950,
-  } = options;
-
+  const { clearFirst = false, minDelay = 70, maxDelay = 220, pauseChance = 0.14, pauseMin = 220, pauseMax = 950 } = options;
   if (!text && text !== 0) return false;
   const element = typeof target === "string" ? await page.$(target) : target;
   if (!element) return false;
-
   await element.click({ clickCount: 1 });
   await delay(180, 450);
-
   if (clearFirst) {
     await page.keyboard.down("Control");
     await page.keyboard.press("a");
@@ -183,15 +108,11 @@ async function humanType(page, target, text, options = {}) {
     await page.keyboard.press("Backspace");
     await delay(120, 300);
   }
-
   for (const ch of String(text)) {
     const keyDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
     await page.keyboard.type(ch, { delay: keyDelay });
-    if (Math.random() < pauseChance) {
-      await delay(pauseMin, pauseMax);
-    }
+    if (Math.random() < pauseChance) await delay(pauseMin, pauseMax);
   }
-
   await delay(180, 420);
   return true;
 }
@@ -206,11 +127,7 @@ async function reportResult(configId, status, message = "", slotsAvailable = 0, 
   try {
     const body = { config_id: configId, status, message, slots_available: slotsAvailable };
     if (screenshotBase64) body.screenshot_base64 = screenshotBase64;
-    const res = await fetch(CONFIG.API_URL, {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify(body),
-    });
+    const res = await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders, body: JSON.stringify(body) });
     const data = await res.json();
     console.log(`  [API] ${status}: ${data.message || data.error}`);
   } catch (err) {
@@ -221,16 +138,9 @@ async function reportResult(configId, status, message = "", slotsAvailable = 0, 
 async function updateAccountStatus(accountId, status, failCount = null) {
   try {
     const body = { action: "update_account", account_id: accountId, status };
-    if (status === "cooldown") {
-      const until = new Date(Date.now() + CONFIG.COOLDOWN_HOURS * 3600000).toISOString();
-      body.banned_until = until;
-    }
+    if (status === "cooldown") body.banned_until = new Date(Date.now() + CONFIG.COOLDOWN_HOURS * 3600000).toISOString();
     if (failCount !== null) body.fail_count = failCount;
-    await fetch(CONFIG.API_URL, {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify(body),
-    });
+    await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders, body: JSON.stringify(body) });
     console.log(`  [ACCOUNT] ${accountId.substring(0, 8)}... → ${status}`);
   } catch (err) {
     console.error("  [ACCOUNT] Güncelleme hatası:", err.message);
@@ -251,22 +161,16 @@ async function fetchActiveConfigs() {
 }
 
 async function takeScreenshotBase64(page) {
-  try {
-    return await page.screenshot({ fullPage: true, encoding: "base64" });
-  } catch { return null; }
+  try { return await page.screenshot({ fullPage: true, encoding: "base64" }); } catch { return null; }
 }
 
 async function isWaitingRoomPage(page) {
   return await page.evaluate(() => {
     const title = (document.title || "").toLowerCase();
     const body = (document.body?.innerText || "").toLowerCase();
-    return (
-      title.includes("waiting room") ||
-      body.includes("şu anda sıradasınız") ||
-      body.includes("tahmini bekleme süreniz") ||
-      body.includes("this page will auto refresh") ||
-      body.includes("bu sayfa otomatik olarak yenilenecektir")
-    );
+    return title.includes("waiting room") || body.includes("şu anda sıradasınız") ||
+      body.includes("tahmini bekleme süreniz") || body.includes("this page will auto refresh") ||
+      body.includes("bu sayfa otomatik olarak yenilenecektir");
   });
 }
 
@@ -274,7 +178,7 @@ async function waitForLoginFormAfterQueue(page) {
   const startedAt = Date.now();
   let attempt = 0;
   while (Date.now() - startedAt < CONFIG.QUEUE_MAX_WAIT_MS) {
-    attempt += 1;
+    attempt++;
     const emailInput = await page.$('input[type="email"], input[name="email"], #email');
     if (emailInput) {
       console.log(`  [QUEUE] ✅ Login formu hazır (${attempt}. deneme).`);
@@ -295,68 +199,37 @@ async function waitForLoginFormAfterQueue(page) {
 }
 
 // ==================== OTP HANDLING ====================
-
 async function readManualOtp(accountId) {
   try {
-    const res = await fetch(CONFIG.API_URL, {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify({ action: "get_account_otp", account_id: accountId }),
-    });
+    const res = await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
+      body: JSON.stringify({ action: "get_account_otp", account_id: accountId }) });
     const data = await res.json();
     if (data.manual_otp) {
       console.log(`  [OTP] ✅ Manuel OTP bulundu: ${data.manual_otp}`);
-      await fetch(CONFIG.API_URL, {
-        method: "POST",
-        headers: apiHeaders,
-        body: JSON.stringify({ action: "clear_account_otp", account_id: accountId }),
-      });
+      await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
+        body: JSON.stringify({ action: "clear_account_otp", account_id: accountId }) });
       return data.manual_otp;
     }
     return null;
-  } catch (err) {
-    console.error("  [OTP] Manuel OTP okuma hatası:", err.message);
-    return null;
-  }
+  } catch (err) { console.error("  [OTP] Manuel OTP okuma hatası:", err.message); return null; }
 }
 
 async function setOtpRequested(accountId) {
   try {
-    await fetch(CONFIG.API_URL, {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify({ action: "set_otp_requested", account_id: accountId }),
-    });
+    await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
+      body: JSON.stringify({ action: "set_otp_requested", account_id: accountId }) });
     console.log("  [OTP] 📱 SMS OTP bekleniyor - dashboard'dan girilebilir");
-  } catch (err) {
-    console.error("  [OTP] otp_requested_at ayarlama hatası:", err.message);
-  }
-}
-
-async function readOtpFromEmail(accountId) {
-  try {
-    console.log("  [OTP] Email'den OTP okunuyor...");
-    const res = await fetch(`${CONFIG.API_URL.replace("/bot-api", "/read-otp")}`, {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify({ account_id: accountId }),
-    });
-    const data = await res.json();
-    if (data.ok && data.otp) {
-      console.log(`  [OTP] ✅ OTP bulundu: ${data.otp}`);
-      return data.otp;
-    }
-    console.log(`  [OTP] ❌ OTP bulunamadı: ${data.error || "Yeni email yok"}`);
-    return null;
-  } catch (err) {
-    console.error("  [OTP] Email okuma hatası:", err.message);
-    return null;
-  }
+  } catch (err) { console.error("  [OTP] otp_requested_at hatası:", err.message); }
 }
 
 async function handleOtpVerification(page, account) {
   const hasOtp = await page.evaluate(() => {
     const body = (document.body?.innerText || "").toLowerCase();
+    const url = window.location.href.toLowerCase();
+    if (url.includes("/login") || url.includes("/sign-in")) return false;
+    const hasEmailInput = !!document.querySelector('input[type="email"], input[name="email"]');
+    const hasPasswordInput = !!document.querySelector('input[type="password"]');
+    if (hasEmailInput && hasPasswordInput) return false;
     const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"]');
     const hasOtpInput = [...inputs].some(inp => {
       const name = (inp.name || "").toLowerCase();
@@ -369,7 +242,7 @@ async function handleOtpVerification(page, account) {
     const hasOtpText = body.includes("doğrulama kodu") || body.includes("verification code") ||
                        body.includes("one-time") || body.includes("otp") ||
                        body.includes("tek kullanımlık") || body.includes("sms") ||
-                       body.includes("e-posta") || body.includes("email");
+                       body.includes("enter the code") || body.includes("kodu girin");
     return hasOtpInput || (hasOtpText && inputs.length > 0 && inputs.length <= 6);
   });
 
@@ -380,12 +253,8 @@ async function handleOtpVerification(page, account) {
   await setOtpRequested(account.id);
 
   const startTime = Date.now();
-  const maxWait = CONFIG.OTP_WAIT_MS;
-  const pollInterval = CONFIG.OTP_POLL_MS;
-  
-  while (Date.now() - startTime < maxWait) {
+  while (Date.now() - startTime < CONFIG.OTP_WAIT_MS) {
     let otp = await readManualOtp(account.id);
-    
     if (otp) {
       const filled = await page.evaluate((code) => {
         const singleInput = document.querySelector('input[type="text"][name*="otp"], input[type="text"][name*="code"], input[type="number"], input[type="tel"]');
@@ -396,10 +265,7 @@ async function handleOtpVerification(page, account) {
           return true;
         }
         const inputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
-        const otpInputs = [...inputs].filter(inp => {
-          const maxLen = inp.maxLength;
-          return maxLen === 1 || maxLen === -1;
-        });
+        const otpInputs = [...inputs].filter(inp => inp.maxLength === 1 || inp.maxLength === -1);
         if (otpInputs.length >= 4 && otpInputs.length <= 8) {
           for (let i = 0; i < Math.min(code.length, otpInputs.length); i++) {
             otpInputs[i].value = code[i];
@@ -410,7 +276,6 @@ async function handleOtpVerification(page, account) {
         }
         return false;
       }, otp);
-
       if (filled) {
         console.log("  [OTP] ✅ Kod girildi, gönderiliyor...");
         await delay(500, 1000);
@@ -418,7 +283,7 @@ async function handleOtpVerification(page, account) {
           const btns = [...document.querySelectorAll("button")];
           const submitBtn = btns.find(b => {
             const txt = b.textContent.toLowerCase();
-            return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") || 
+            return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") ||
                    txt.includes("submit") || txt.includes("gönder") || txt.includes("confirm");
           }) || document.querySelector('button[type="submit"]');
           if (submitBtn) { submitBtn.click(); return true; }
@@ -431,24 +296,21 @@ async function handleOtpVerification(page, account) {
         return { ok: true, reason: "otp_solved" };
       }
     }
-    
     const elapsed = Math.round((Date.now() - startTime) / 1000);
-    console.log(`  [OTP] Bekleniyor... ${elapsed}s / ${maxWait / 1000}s`);
-    await delay(pollInterval, pollInterval + 1000);
+    console.log(`  [OTP] Bekleniyor... ${elapsed}s / ${CONFIG.OTP_WAIT_MS / 1000}s`);
+    await delay(CONFIG.OTP_POLL_MS, CONFIG.OTP_POLL_MS + 1000);
   }
-
-  console.log("  [OTP] ❌ OTP zaman aşımı - kod bulunamadı");
+  console.log("  [OTP] ❌ OTP zaman aşımı");
   return { ok: false, reason: "otp_required", screenshot: ss };
 }
 
 // ==================== CAPTCHA ====================
-
 async function solveTurnstile(page) {
   if (!CONFIG.CAPTCHA_API_KEY || !Solver) {
     console.log("  [CAPTCHA] API key veya 2captcha modülü yok, atlıyorum.");
     return false;
   }
-  const sitekey = await page.evaluate(() => {
+  let sitekey = await page.evaluate(() => {
     const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
     if (!iframe) return null;
     const container = iframe.closest("div[data-sitekey]") || document.querySelector("[data-sitekey]");
@@ -458,15 +320,11 @@ async function solveTurnstile(page) {
     return match ? match[1] : null;
   });
   if (!sitekey) {
-    const altKey = await page.evaluate(() => {
+    sitekey = await page.evaluate(() => {
       const el = document.querySelector(".cf-turnstile");
       return el ? el.getAttribute("data-sitekey") : null;
     });
-    if (!altKey) {
-      console.log("  [CAPTCHA] Turnstile bulunamadı.");
-      return true;
-    }
-    return await _solve(page, altKey);
+    if (!sitekey) { console.log("  [CAPTCHA] Turnstile bulunamadı."); return true; }
   }
   return await _solve(page, sitekey);
 }
@@ -479,9 +337,8 @@ async function _solve(page, sitekey) {
     const token = result.data;
     console.log("  [CAPTCHA] ✅ Çözüldü!");
     await page.evaluate((t) => {
-      document.querySelectorAll(
-        'input[name="cf-turnstile-response"], input[name="g-recaptcha-response"], [name*="turnstile"]'
-      ).forEach((inp) => { inp.value = t; });
+      document.querySelectorAll('input[name="cf-turnstile-response"], input[name="g-recaptcha-response"], [name*="turnstile"]')
+        .forEach((inp) => { inp.value = t; });
       if (typeof window.turnstileCallback === "function") window.turnstileCallback(t);
       if (typeof window.onTurnstileSuccess === "function") window.onTurnstileSuccess(t);
       if (window.turnstile) { try { window.turnstile.getResponse = () => t; } catch {} }
@@ -495,12 +352,10 @@ async function _solve(page, sitekey) {
 }
 
 // ==================== APPLY FINGERPRINT ====================
-
 async function applyFingerprint(page, fp) {
-  await page.emulateTimezone(fp.timezone);
+  try { await page.emulateTimezone(fp.timezone); } catch {}
   await page.setUserAgent(fp.userAgent);
   await page.setViewport(fp.viewport);
-  
   await page.evaluateOnNewDocument((fp) => {
     Object.defineProperty(navigator, "platform", { get: () => fp.platform });
     Object.defineProperty(navigator, "languages", { get: () => fp.languages });
@@ -510,8 +365,6 @@ async function applyFingerprint(page, fp) {
     Object.defineProperty(screen, "colorDepth", { get: () => fp.screenDepth });
     Object.defineProperty(screen, "pixelDepth", { get: () => fp.screenDepth });
     Object.defineProperty(navigator, "maxTouchPoints", { get: () => fp.maxTouchPoints });
-    
-    // WebGL fingerprint spoof
     const getParameterOrig = WebGLRenderingContext.prototype.getParameter;
     WebGLRenderingContext.prototype.getParameter = function(param) {
       if (param === 37445) return fp.webglVendor;
@@ -519,15 +372,13 @@ async function applyFingerprint(page, fp) {
       return getParameterOrig.call(this, param);
     };
     if (typeof WebGL2RenderingContext !== "undefined") {
-      const getParameter2Orig = WebGL2RenderingContext.prototype.getParameter;
+      const gp2 = WebGL2RenderingContext.prototype.getParameter;
       WebGL2RenderingContext.prototype.getParameter = function(param) {
         if (param === 37445) return fp.webglVendor;
         if (param === 37446) return fp.webglRenderer;
-        return getParameter2Orig.call(this, param);
+        return gp2.call(this, param);
       };
     }
-    
-    // Canvas fingerprint noise
     const toDataURLOrig = HTMLCanvasElement.prototype.toDataURL;
     HTMLCanvasElement.prototype.toDataURL = function(type) {
       if (type === "image/png" || !type) {
@@ -543,50 +394,45 @@ async function applyFingerprint(page, fp) {
       }
       return toDataURLOrig.call(this, type);
     };
-    
-    // AudioContext fingerprint noise
     const origGetChannelData = AudioBuffer.prototype.getChannelData;
     AudioBuffer.prototype.getChannelData = function(channel) {
       const data = origGetChannelData.call(this, channel);
-      if (data.length > 100) {
-        for (let i = 0; i < Math.min(10, data.length); i++) {
-          data[i] += Math.random() * 0.0001;
-        }
-      }
+      if (data.length > 100) { for (let i = 0; i < Math.min(10, data.length); i++) data[i] += Math.random() * 0.0001; }
       return data;
     };
-    
-    // Connection API spoof
     if (navigator.connection) {
       Object.defineProperty(navigator.connection, "effectiveType", { get: () => "4g" });
       Object.defineProperty(navigator.connection, "rtt", { get: () => Math.floor(Math.random() * 50 + 25) });
       Object.defineProperty(navigator.connection, "downlink", { get: () => Math.random() * 5 + 5 });
     }
-    
-    // Battery API
     if (navigator.getBattery) {
       navigator.getBattery = () => Promise.resolve({
         charging: true, chargingTime: 0, dischargingTime: Infinity, level: 1,
         addEventListener: () => {}, removeEventListener: () => {},
       });
     }
-    
-    // Permissions API
-    const origQuery = Permissions.prototype.query;
-    Permissions.prototype.query = function(desc) {
-      if (desc.name === "notifications") {
-        return Promise.resolve({ state: "prompt", onchange: null });
-      }
-      return origQuery.call(this, desc);
-    };
-    
   }, fp);
-  
-  console.log(`  [FP] UA: ${fp.userAgent.substring(0, 50)}... | VP: ${fp.viewport.width}x${fp.viewport.height} | TZ: ${fp.timezone} | Platform: ${fp.platform}`);
+  console.log(`  [FP] UA: ${fp.userAgent.substring(0, 50)}... | VP: ${fp.viewport.width}x${fp.viewport.height} | TZ: ${fp.timezone}`);
+}
+
+// ==================== BROWSER LAUNCH ====================
+async function launchBrowser() {
+  const { connect } = require("puppeteer-real-browser");
+  const { browser, page } = await connect({
+    headless: false,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-blink-features=AutomationControlled",
+      "--window-size=1366,768",
+    ],
+  });
+  console.log("  [BROWSER] ✅ Real browser başlatıldı (proxy yok)");
+  return { browser, page };
 }
 
 // ==================== MAIN CHECK ====================
-
 async function checkAppointments(config, account) {
   const { id, country, city } = config;
   const ts = new Date().toLocaleTimeString("tr-TR");
@@ -594,33 +440,15 @@ async function checkAppointments(config, account) {
 
   let browser;
   try {
-    const proxy = getNextProxy();
     const fp = generateFingerprint();
-    console.log(`  [PROXY] ${proxy.host}:${proxy.port}`);
-    
-    browser = await puppeteer.launch({
-      headless: CONFIG.HEADLESS ? "new" : false,
-      slowMo: CONFIG.SLOW_MO,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-blink-features=AutomationControlled",
-        `--window-size=${fp.viewport.width},${fp.viewport.height}`,
-        `--proxy-server=${proxy.url}`,
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--disable-web-security",
-      ],
-    });
-
-    const page = await browser.newPage();
-    await page.authenticate({ username: proxy.user, password: proxy.pass });
+    const { browser: br, page } = await launchBrowser();
+    browser = br;
     await applyFingerprint(page, fp);
     await humanMove(page);
 
     // STEP 1: Giriş sayfası
     console.log("  [1/6] Giriş sayfası...");
-    await page.goto(CONFIG.VFS_URL, { waitUntil: "networkidle2", timeout: 60000 });
+    await page.goto(CONFIG.VFS_URL, { waitUntil: "domcontentloaded", timeout: 90000 });
     await delay(3000, 6000);
     await humanMove(page);
 
@@ -660,19 +488,16 @@ async function checkAppointments(config, account) {
       await page.waitForSelector('input[type="email"], input[name="email"], #email', { timeout: 20000 });
       await humanMove(page);
       await delay(500, 1500);
-      
       await page.click('input[type="email"], input[name="email"], #email');
       await page.keyboard.down("Control");
       await page.keyboard.press("a");
       await page.keyboard.up("Control");
       await delay(100, 300);
-      
       for (const ch of account.email) {
         await page.keyboard.type(ch, { delay: Math.random() * 120 + 30 });
         if (Math.random() < 0.05) await delay(200, 600);
       }
       await delay(800, 1500);
-      
       await page.click('input[type="password"]');
       await delay(300, 600);
       for (const ch of account.password) {
@@ -682,6 +507,15 @@ async function checkAppointments(config, account) {
       await delay(800, 1500);
       await humanMove(page);
 
+      // Turnstile checkbox
+      try {
+        const turnstileFrame = page.frames().find(f => f.url().includes("challenges.cloudflare.com"));
+        if (turnstileFrame) {
+          const checkbox = await turnstileFrame.$('input[type="checkbox"], .cb-i');
+          if (checkbox) { await checkbox.click(); console.log("  [4/6] ✅ Turnstile checkbox tıklandı"); await delay(2000, 4000); }
+        }
+      } catch (e) {}
+
       const submitBtn = await page.evaluateHandle(() => {
         const btns = [...document.querySelectorAll("button")];
         return btns.find((b) => {
@@ -689,18 +523,15 @@ async function checkAppointments(config, account) {
           return txt.includes("oturum") || txt.includes("sign in") || txt.includes("login") || txt.includes("giriş");
         }) || document.querySelector('button[type="submit"]') || null;
       });
-      if (submitBtn && submitBtn.asElement()) {
-        await submitBtn.asElement().click();
-      } else {
-        await page.click('button[type="submit"]');
-      }
+      if (submitBtn && submitBtn.asElement()) await submitBtn.asElement().click();
+      else await page.click('button[type="submit"]');
       await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
       await delay(3000, 5000);
     } catch (loginErr) {
       console.log("  [4/6] ⚠ Giriş formu hatası:", loginErr.message);
     }
 
-    // STEP 5: OTP Doğrulama
+    // STEP 5: OTP
     console.log("  [5/6] OTP kontrol...");
     const otpResult = await handleOtpVerification(page, account);
     if (!otpResult.ok && otpResult.reason === "otp_required") {
@@ -715,19 +546,14 @@ async function checkAppointments(config, account) {
       const body = (document.body?.innerText || "").toLowerCase();
       const url = window.location.href.toLowerCase();
       return {
-        title: document.title,
-        url: window.location.href,
-        isNotFound: url.includes("page-not-found") || url.includes("404"),
+        url, isNotFound: url.includes("page-not-found") || url.includes("404"),
         isSessionExpired: body.includes("oturum süresi doldu") || body.includes("session expired"),
         isBanned: body.includes("engellenmiş") || body.includes("blocked") || body.includes("banned"),
         isWaitingRoom: (document.title || "").toLowerCase().includes("waiting room"),
-        isLoginPage: url.includes("/login"),
-        isDashboard: url.includes("/dashboard") || url.includes("/appointment"),
+        isLoginPage: url.includes("/login"), isDashboard: url.includes("/dashboard") || url.includes("/appointment"),
         hasLoginForm: !!document.querySelector('input[type="email"], input[name="email"], #email'),
-        bodySnippet: (document.body?.innerText || "").substring(0, 300),
       };
     });
-
     const isBanned = pageCheck.isBanned;
     const isError = pageCheck.isNotFound || pageCheck.isSessionExpired || isBanned || pageCheck.isWaitingRoom;
     const isLoginFailed = pageCheck.isLoginPage || pageCheck.hasLoginForm;
@@ -739,23 +565,13 @@ async function checkAppointments(config, account) {
       else if (pageCheck.isSessionExpired) errorType = "❌ Oturum süresi dolmuş";
       else if (pageCheck.isWaitingRoom) errorType = "❌ Hala waiting room'da";
       else if (isLoginFailed) errorType = "❌ Giriş başarısız";
-
       console.log(`  [5/6] ${errorType} | Hesap: ${account.email}`);
       const ss = await takeScreenshotBase64(page);
       await reportResult(id, "error", `${errorType} | Hesap: ${account.email}`, 0, ss);
-
-      if (isBanned) {
-        await updateAccountStatus(account.id, "banned");
-        return { found: false, accountBanned: true };
-      }
-
+      if (isBanned) { await updateAccountStatus(account.id, "banned"); return { found: false, accountBanned: true }; }
       const newFailCount = (account.fail_count || 0) + 1;
-      if (newFailCount >= 3) {
-        console.log(`  [ACCOUNT] ${account.email} - 3 başarısız, beklemeye alınıyor`);
-        await updateAccountStatus(account.id, "cooldown", newFailCount);
-      } else {
-        await updateAccountStatus(account.id, "active", newFailCount);
-      }
+      if (newFailCount >= 3) { await updateAccountStatus(account.id, "cooldown", newFailCount); }
+      else { await updateAccountStatus(account.id, "active", newFailCount); }
       return { found: false, accountBanned: false };
     }
 
@@ -766,15 +582,12 @@ async function checkAppointments(config, account) {
     console.log("  [6/6] Randevu kontrol...");
     await delay(2000, 4000);
     await humanMove(page);
-    
     try {
       const bookBtn = await page.evaluateHandle(() => {
         const links = [...document.querySelectorAll("a, button")];
         return links.find((el) => {
           const txt = (el.textContent || "").toLowerCase();
-          return txt.includes("new booking") || txt.includes("yeni başvuru") ||
-                 txt.includes("start new") || txt.includes("randevu") ||
-                 txt.includes("book appointment");
+          return txt.includes("new booking") || txt.includes("yeni başvuru") || txt.includes("start new") || txt.includes("randevu") || txt.includes("book appointment");
         }) || null;
       });
       if (bookBtn && bookBtn.asElement()) {
@@ -788,17 +601,8 @@ async function checkAppointments(config, account) {
 
     const bodyText = await page.evaluate(() => document.body.innerText);
     const lowerText = bodyText.toLowerCase();
-    const noAppointmentPhrases = [
-      "no appointment", "no available", "currently no date",
-      "randevu bulunmamaktadır", "müsait randevu yok", "no open schedule",
-      "fully booked", "no slot", "appointment is not available",
-      "no dates available", "no timeslot available",
-    ];
-    const appointmentFoundPhrases = [
-      "select date", "available slot", "tarih seçin",
-      "available appointment", "open slot", "choose a date",
-      "select a time", "appointment available",
-    ];
+    const noAppointmentPhrases = ["no appointment", "no available", "currently no date", "randevu bulunmamaktadır", "müsait randevu yok", "no open schedule", "fully booked", "no slot", "appointment is not available", "no dates available", "no timeslot available"];
+    const appointmentFoundPhrases = ["select date", "available slot", "tarih seçin", "available appointment", "open slot", "choose a date", "select a time", "appointment available"];
     const noAppointment = noAppointmentPhrases.some((p) => lowerText.includes(p));
     const hasAppointment = appointmentFoundPhrases.some((p) => lowerText.includes(p));
     const ss = await takeScreenshotBase64(page);
@@ -818,66 +622,43 @@ async function checkAppointments(config, account) {
     await reportResult(id, "error", `Bot hatası: ${err.message} | Hesap: ${account.email}`);
     return { found: false, accountBanned: false };
   } finally {
-    if (browser) await browser.close();
+    if (browser) try { await browser.close(); } catch {}
   }
 }
 
 // ==================== REGISTRATION ====================
-
 async function fetchPendingRegistrations() {
   try {
-    const res = await fetch(CONFIG.API_URL, {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify({ action: "get_pending_registrations" }),
-    });
+    const res = await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
+      body: JSON.stringify({ action: "get_pending_registrations" }) });
     const data = await res.json();
     return data.ok ? (data.accounts || []) : [];
-  } catch (err) {
-    console.error("  [REG] Kayıt listesi hatası:", err.message);
-    return [];
-  }
+  } catch (err) { console.error("  [REG] Kayıt listesi hatası:", err.message); return []; }
 }
 
 async function setRegistrationOtpNeeded(accountId, otpType) {
   try {
-    await fetch(CONFIG.API_URL, {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify({ action: "set_registration_otp_needed", account_id: accountId, otp_type: otpType }),
-    });
-    console.log(`  [REG] 📱 ${otpType.toUpperCase()} doğrulama kodu bekleniyor - dashboard'dan girilebilir`);
-  } catch (err) {
-    console.error("  [REG] OTP istek hatası:", err.message);
-  }
+    await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
+      body: JSON.stringify({ action: "set_registration_otp_needed", account_id: accountId, otp_type: otpType }) });
+    console.log(`  [REG] 📱 ${otpType.toUpperCase()} doğrulama kodu bekleniyor`);
+  } catch (err) { console.error("  [REG] OTP istek hatası:", err.message); }
 }
 
 async function getRegistrationOtp(accountId) {
   try {
-    const res = await fetch(CONFIG.API_URL, {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify({ action: "get_registration_otp", account_id: accountId }),
-    });
+    const res = await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
+      body: JSON.stringify({ action: "get_registration_otp", account_id: accountId }) });
     const data = await res.json();
     return data.registration_otp || null;
-  } catch (err) {
-    console.error("  [REG] OTP okuma hatası:", err.message);
-    return null;
-  }
+  } catch (err) { console.error("  [REG] OTP okuma hatası:", err.message); return null; }
 }
 
 async function completeRegistration(accountId, success) {
   try {
-    await fetch(CONFIG.API_URL, {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify({ action: "complete_registration", account_id: accountId, success }),
-    });
+    await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
+      body: JSON.stringify({ action: "complete_registration", account_id: accountId, success }) });
     console.log(`  [REG] Kayıt ${success ? "✅ başarılı" : "❌ başarısız"}`);
-  } catch (err) {
-    console.error("  [REG] Kayıt sonuç hatası:", err.message);
-  }
+  } catch (err) { console.error("  [REG] Kayıt sonuç hatası:", err.message); }
 }
 
 async function waitForRegistrationOtp(accountId, otpType, timeoutMs = 180000) {
@@ -885,12 +666,9 @@ async function waitForRegistrationOtp(accountId, otpType, timeoutMs = 180000) {
   const startTime = Date.now();
   while (Date.now() - startTime < timeoutMs) {
     const otp = await getRegistrationOtp(accountId);
-    if (otp) {
-      console.log(`  [REG] ✅ ${otpType} OTP alındı: ${otp}`);
-      return otp;
-    }
+    if (otp) { console.log(`  [REG] ✅ ${otpType} OTP alındı`); return otp; }
     const elapsed = Math.round((Date.now() - startTime) / 1000);
-    console.log(`  [REG] ${otpType} OTP bekleniyor... ${elapsed}s / ${Math.round(timeoutMs / 1000)}s`);
+    console.log(`  [REG] ${otpType} OTP bekleniyor... ${elapsed}s/${Math.round(timeoutMs / 1000)}s`);
     await delay(5000, 6000);
   }
   console.log(`  [REG] ❌ ${otpType} OTP zaman aşımı`);
@@ -900,22 +678,29 @@ async function waitForRegistrationOtp(accountId, otpType, timeoutMs = 180000) {
 function normalizePhoneNumber(rawPhone) {
   const digits = String(rawPhone || "").replace(/\D/g, "");
   let mobileNumber = digits;
-
-  if (mobileNumber.startsWith("90") && mobileNumber.length > 10) {
-    mobileNumber = mobileNumber.slice(2);
-  }
-  if (mobileNumber.startsWith("0")) {
-    mobileNumber = mobileNumber.slice(1);
-  }
-  if (mobileNumber.length > 10) {
-    mobileNumber = mobileNumber.slice(-10);
-  }
-
+  if (mobileNumber.startsWith("90") && mobileNumber.length > 10) mobileNumber = mobileNumber.slice(2);
+  if (mobileNumber.startsWith("0")) mobileNumber = mobileNumber.slice(1);
+  if (mobileNumber.length > 10) mobileNumber = mobileNumber.slice(-10);
   return { dialCode: "90", mobileNumber };
 }
 
 async function selectTurkeyDialCode(page) {
-  const isTurkeyText = (txt) => /turkey|türkiye|turkiye|\(90\)|\+90|(^|\D)90(\D|$)/i.test(String(txt || "").toLowerCase());
+  // Önce zaten 90 seçili mi kontrol et
+  try {
+    const alreadySelected = await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll('select'));
+      for (const s of selects) {
+        const selected = s.options[s.selectedIndex];
+        if (selected) {
+          const txt = (selected.textContent || '').trim();
+          const val = (selected.value || '').trim();
+          if (txt.includes('90') || val === '90' || val === '+90') return 'already:' + txt;
+        }
+      }
+      return null;
+    });
+    if (alreadySelected) { console.log(`  [REG] ✅ Dial code zaten 90 (${alreadySelected})`); return true; }
+  } catch {}
 
   for (let attempt = 1; attempt <= 6; attempt++) {
     const result = await page.evaluate((attemptNo) => {
@@ -925,59 +710,39 @@ async function selectTurkeyDialCode(page) {
         const style = window.getComputedStyle(el);
         return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
       };
-
       const isTurkey = (txt) => /turkey|türkiye|turkiye|\(90\)|\+90|(^|\D)90(\D|$)/i.test(String(txt || "").toLowerCase());
 
-      // 1) Eğer custom dropdown zaten açıksa, option seç
-      const visibleOptions = Array.from(document.querySelectorAll('[role="option"], mat-option, .mat-mdc-option, .mat-option, .ng-option, li[role="option"]'))
-        .filter((el) => isVisible(el));
+      // Custom dropdown option
+      const visibleOptions = Array.from(document.querySelectorAll('[role="option"], mat-option, .mat-mdc-option, .mat-option, .ng-option, li[role="option"]')).filter(isVisible);
       const turkeyOption = visibleOptions.find((opt) => isTurkey(opt.textContent || ""));
-      if (turkeyOption) {
-        turkeyOption.click();
-        return { ok: true, method: "custom-option", detail: (turkeyOption.textContent || "").trim() };
-      }
+      if (turkeyOption) { turkeyOption.click(); return { ok: true, method: "custom-option", detail: (turkeyOption.textContent || "").trim() }; }
 
-      // 2) Arama kodu alanının trigger'ını aç
-      const labels = Array.from(document.querySelectorAll("label, span, div, p"))
-        .filter((el) => {
-          const t = (el.textContent || "").toLowerCase();
-          return t.includes("arama kodu") || t.includes("dial code") || t.includes("country code");
-        });
-
+      // Trigger açma
+      const labels = Array.from(document.querySelectorAll("label, span, div, p")).filter((el) => {
+        const t = (el.textContent || "").toLowerCase();
+        return t.includes("arama kodu") || t.includes("dial code") || t.includes("country code");
+      });
       for (const label of labels) {
-        const scope =
-          label.closest("mat-form-field, .mat-mdc-form-field, .form-group, .row, .col, .field, div, section") ||
-          label.parentElement;
+        const scope = label.closest("mat-form-field, .mat-mdc-form-field, .form-group, .row, .col, div") || label.parentElement;
         if (!scope) continue;
-
-        const trigger = scope.querySelector(
-          'mat-select, [role="combobox"], .mat-mdc-select-trigger, .mat-select-trigger, .ng-select-container, [aria-haspopup="listbox"], [id*="dial" i], [name*="dial" i], [aria-label*="arama" i], [aria-label*="country" i]'
-        );
-
-        if (trigger && isVisible(trigger)) {
-          trigger.click();
-          return { ok: false, method: "custom-open", detail: "trigger-click" };
-        }
+        const trigger = scope.querySelector('mat-select, [role="combobox"], .mat-mdc-select-trigger, .mat-select-trigger, .ng-select-container, [aria-haspopup="listbox"]');
+        if (trigger && isVisible(trigger)) { trigger.click(); return { ok: false, method: "custom-open", detail: "trigger-click" }; }
       }
 
-      // 3) Native select fallback (value/text/index ile)
-      const selects = Array.from(document.querySelectorAll("select")).filter((s) => isVisible(s));
+      // Native select
+      const selects = Array.from(document.querySelectorAll("select")).filter(isVisible);
       for (const sel of selects) {
         const opts = Array.from(sel.options || []);
         const idx = opts.findIndex((o) => isTurkey(`${o.textContent || ""} ${o.value || ""}`));
         if (idx === -1) continue;
-
         const opt = opts[idx];
         sel.selectedIndex = idx;
         sel.value = opt.value;
         opt.selected = true;
         sel.dispatchEvent(new Event("input", { bubbles: true }));
         sel.dispatchEvent(new Event("change", { bubbles: true }));
-
-        // Angular/reactive formlar için
-        const ngModelEvent = new Event("ngModelChange", { bubbles: true });
-        sel.dispatchEvent(ngModelEvent);
-
+        const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+        if (nativeSetter) { nativeSetter.call(sel, opt.value); sel.dispatchEvent(new Event("change", { bubbles: true })); }
         return { ok: true, method: "native-select", detail: (opt.textContent || opt.value || "").trim() };
       }
 
@@ -987,34 +752,107 @@ async function selectTurkeyDialCode(page) {
     if (result.ok) {
       console.log(`  [REG] ✅ Dial code seçildi (${result.method}: ${result.detail})`);
       await delay(350, 900);
-
-      // Son kontrol (seçim ekranda görünüyor mu)
-      const verify = await page.evaluate(() => {
-        const txt = (document.body?.innerText || "").toLowerCase();
-        return txt.includes("turkey(90)") || txt.includes("türkiye") || txt.includes("+90") || txt.includes(" 90 ");
-      });
-      if (verify) return true;
+      return true;
     }
 
-    if (attempt === 1 || attempt === 3) {
-      await humanMove(page);
-    }
+    if (attempt === 1 || attempt === 3) await humanMove(page);
     await delay(300, 800);
   }
 
-  // Debug log
-  const debug = await page.evaluate(() => {
-    const selects = Array.from(document.querySelectorAll("select")).map((s) => ({
-      id: s.id,
-      name: s.name,
-      value: s.value,
-      options: Array.from(s.options || []).map((o) => `${o.value}|${(o.textContent || "").trim()}`),
-    }));
-    return { selectCount: selects.length, selects };
-  });
-  console.log("  [REG] ❌ Dial code seçilemedi. Debug:", JSON.stringify(debug));
-
+  console.log("  [REG] ⚠ Dial code seçilemedi, devam ediliyor (90 varsayılan olabilir)");
   return false;
+}
+
+async function tickAllCheckboxes(page) {
+  console.log("  [REG] Checkbox'lar tıklanıyor...");
+
+  // Yöntem 1: Doğrudan input click
+  try {
+    const c1 = await page.evaluate(() => {
+      let n = 0;
+      for (const cb of Array.from(document.querySelectorAll('input[type="checkbox"]'))) { if (!cb.checked) { cb.click(); n++; } }
+      return n;
+    });
+    if (c1 > 0) console.log(`  [REG] ✅ ${c1} checkbox doğrudan tıklandı`);
+  } catch {}
+  await delay(300, 500);
+
+  // Yöntem 2: Label click
+  try {
+    const c2 = await page.evaluate(() => {
+      let n = 0;
+      for (const l of Array.from(document.querySelectorAll('label'))) {
+        const cb = l.querySelector('input[type="checkbox"]');
+        if (cb && !cb.checked) { l.click(); n++; }
+      }
+      return n;
+    });
+    if (c2 > 0) console.log(`  [REG] ✅ ${c2} checkbox label ile tıklandı`);
+  } catch {}
+  await delay(300, 500);
+
+  // Yöntem 3: mat-checkbox
+  try {
+    const c3 = await page.evaluate(() => {
+      let n = 0;
+      for (const mc of Array.from(document.querySelectorAll('mat-checkbox:not(.mat-checkbox-checked), .mat-checkbox:not(.mat-checkbox-checked)'))) { mc.click(); n++; }
+      return n;
+    });
+    if (c3 > 0) console.log(`  [REG] ✅ ${c3} mat-checkbox tıklandı`);
+  } catch {}
+  await delay(300, 500);
+
+  // Yöntem 4: Puppeteer click
+  try {
+    const checkboxes = await page.$$('input[type="checkbox"]');
+    let c4 = 0;
+    for (const cb of checkboxes) {
+      const isChecked = await page.evaluate(el => el.checked, cb);
+      if (!isChecked) {
+        try {
+          const parent = await cb.evaluateHandle(el => el.closest('label') || el.parentElement);
+          if (parent && parent.asElement()) await parent.asElement().click();
+          else await cb.click();
+          c4++;
+        } catch {}
+        await delay(200, 400);
+      }
+    }
+    if (c4 > 0) console.log(`  [REG] ✅ ${c4} checkbox Puppeteer ile tıklandı`);
+  } catch {}
+
+  // Yöntem 5: mat-checkbox-inner-container
+  try {
+    const c5 = await page.evaluate(() => {
+      let n = 0;
+      for (const el of Array.from(document.querySelectorAll('.mat-checkbox-inner-container, .mat-checkbox-frame, .checkbox-mark, .mat-checkbox-layout'))) { el.click(); n++; }
+      return n;
+    });
+    if (c5 > 0) console.log(`  [REG] ✅ ${c5} inner checkbox tıklandı`);
+  } catch {}
+
+  const finalCount = await page.evaluate(() => {
+    const all = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+    return { total: all.length, checked: all.filter(c => c.checked).length };
+  });
+  console.log(`  [REG] Checkbox durumu: ${finalCount.checked}/${finalCount.total} işaretli`);
+  return finalCount.checked >= finalCount.total;
+}
+
+async function postRegError(account, page, reason) {
+  try {
+    let screenshotBase64 = null;
+    if (page) screenshotBase64 = await takeScreenshotBase64(page);
+    const cfgRes = await fetch(CONFIG.API_URL, { method: "GET", headers: apiHeaders });
+    const cfgData = await cfgRes.json();
+    const configId = cfgData?.configs?.[0]?.id;
+    if (configId) {
+      const body = { config_id: configId, status: "error", message: `[REG] ${reason} | Hesap: ${account.email}`, slots_available: 0 };
+      if (screenshotBase64) body.screenshot_base64 = screenshotBase64;
+      await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders, body: JSON.stringify(body) });
+    }
+    if (screenshotBase64) console.log("  [REG] 📸 Hata screenshot gönderildi");
+  } catch (e) { console.error("  [REG] Hata rapor hatası:", e.message); }
 }
 
 async function registerVfsAccount(account) {
@@ -1023,103 +861,78 @@ async function registerVfsAccount(account) {
 
   let browser;
   try {
-    const proxy = getNextProxy();
     const fp = generateFingerprint();
-    console.log(`  [PROXY] ${proxy.host}:${proxy.port}`);
-
-    browser = await puppeteer.launch({
-      headless: CONFIG.HEADLESS ? "new" : false,
-      slowMo: CONFIG.SLOW_MO,
-      args: [
-        "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
-        "--disable-blink-features=AutomationControlled",
-        `--window-size=${fp.viewport.width},${fp.viewport.height}`,
-        `--proxy-server=${proxy.url}`,
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--disable-web-security",
-      ],
-    });
-
-    const page = await browser.newPage();
-    await page.authenticate({ username: proxy.user, password: proxy.pass });
+    const { browser: br, page } = await launchBrowser();
+    browser = br;
     await applyFingerprint(page, fp);
     await humanMove(page);
 
-    // Navigate to VFS registration page
     const regUrl = CONFIG.VFS_URL.replace("/login", "/register");
-    console.log("  [REG 1/5] Kayıt sayfası...");
-    await page.goto(regUrl, { waitUntil: "networkidle2", timeout: 60000 });
+    console.log("  [REG 1/7] Kayıt sayfası...");
+    await page.goto(regUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
     await delay(3000, 6000);
     await humanMove(page);
 
     // Cookie banner
-    console.log("  [REG 2/5] Cookie banner...");
+    console.log("  [REG 2/7] Cookie banner...");
     try {
       const cookieBtn = await page.evaluateHandle(() => {
         const btns = [...document.querySelectorAll("button")];
         return btns.find((b) => {
           const txt = b.textContent.toLowerCase();
-          return txt.includes("accept all") || txt.includes("kabul") || txt.includes("tümünü kabul");
-        }) || null;
+          return txt.includes("accept all") || txt.includes("kabul") || txt.includes("tümünü kabul") || txt.includes("tüm tanımlama");
+        }) || document.getElementById('onetrust-accept-btn-handler') || null;
       });
       if (cookieBtn && cookieBtn.asElement()) {
         await delay(500, 1500);
         await cookieBtn.asElement().click();
+        console.log("  [REG 2/7] ✅ Cookie kabul edildi");
         await delay(1000, 2000);
       }
     } catch (e) {}
 
-    // CAPTCHA + Queue
-    console.log("  [REG 3/5] CAPTCHA + sıra kontrol...");
+    // CAPTCHA
+    console.log("  [REG 3/7] CAPTCHA...");
     await solveTurnstile(page);
     await delay(2000, 4000);
 
-    // Fill registration form (exact VFS form structure)
-    console.log("  [REG 4/5] Kayıt formu dolduruluyor...");
+    // Form yüklenmesini bekle
+    console.log("  [REG 4/7] Form bekleniyor...");
+    await page.waitForSelector('input[type="email"], input[name="email"], input[formcontrolname*="email"]', { timeout: 45000 });
+    await delay(3000, 5000);
+
+    // ========== FORM DOLDURMA ==========
+    console.log("  [REG 5/7] Form dolduruluyor...");
+
+    // EMAIL
+    const emailInput = await page.$('input[type="email"], input[name="email"], input[formcontrolname*="email"]');
+    if (!emailInput) throw new Error("Email alanı bulunamadı");
+    await humanType(page, emailInput, account.email, { clearFirst: true, minDelay: 80, maxDelay: 240, pauseChance: 0.18 });
+    console.log(`  [REG] ✅ Email: ${account.email}`);
+    await delay(500, 1100);
     await humanMove(page);
 
-    // 1. Email field
-    const emailInput = await page.$('input[type="email"], input[placeholder*="email"], input[name*="email"]');
-    if (emailInput) {
-      await humanType(page, emailInput, account.email, {
-        clearFirst: true,
-        minDelay: 80,
-        maxDelay: 240,
-        pauseChance: 0.18,
-        pauseMin: 280,
-        pauseMax: 1200,
-      });
-      await delay(500, 1100);
-    }
-    await humanMove(page);
-
-    // 2. Password + Confirm Password (2 separate password fields)
+    // ŞİFRE + ONAY
     const passwordInputs = await page.$$('input[type="password"]');
     console.log(`  [REG] ${passwordInputs.length} şifre alanı bulundu`);
+    if (passwordInputs.length < 2) throw new Error("Şifre alanları bulunamadı");
     for (let i = 0; i < passwordInputs.length; i++) {
-      await humanType(page, passwordInputs[i], account.password, {
-        clearFirst: true,
-        minDelay: 85,
-        maxDelay: 230,
-        pauseChance: 0.15,
-        pauseMin: 240,
-        pauseMax: 900,
-      });
+      await humanType(page, passwordInputs[i], account.password, { clearFirst: true, minDelay: 85, maxDelay: 230 });
       await delay(450, 1000);
       if (i === 0) await humanMove(page);
     }
+    console.log("  [REG] ✅ Şifre girildi");
     await delay(700, 1300);
 
-    // 3. Mobile Number - Dial Code dropdown + Mobile Number field
+    // TELEFON
     if (account.phone) {
-      const { dialCode, mobileNumber } = normalizePhoneNumber(account.phone);
-      console.log(`  [REG] Telefon: +${dialCode} ${mobileNumber}`);
+      const { mobileNumber } = normalizePhoneNumber(account.phone);
+      console.log(`  [REG] Telefon: +90 ${mobileNumber}`);
 
-      const dialCodeSelected = await selectTurkeyDialCode(page);
-      if (!dialCodeSelected) {
-        throw new Error("Dial code Turkey(90) seçilemedi");
-      }
+      await selectTurkeyDialCode(page);
+      await delay(500, 1000);
 
+      // Telefon input bul
       const mobileInput = await page.evaluateHandle(() => {
         const isVisible = (el) => {
           if (!el) return false;
@@ -1127,237 +940,265 @@ async function registerVfsAccount(account) {
           const style = window.getComputedStyle(el);
           return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
         };
-
         const scoreInput = (inp) => {
           const meta = `${inp.name || ""} ${inp.id || ""} ${inp.placeholder || ""} ${inp.getAttribute("aria-label") || ""}`.toLowerCase();
-          const sectionText = (inp.closest("mat-form-field, .mat-mdc-form-field, .form-group, .row, div")?.textContent || "").toLowerCase();
-
           if (/otp|code|verify|email|mail|password|şifre/.test(meta)) return -10;
-
           let score = 0;
           if (/mobile|phone|tel|gsm|cep|telefon/.test(meta)) score += 5;
-          if (/mobile number|phone number|telefon numarası|cep numarası|cep telefonu|ön ek olmadan/.test(sectionText)) score += 4;
+          if (/ön ek olmadan|mobile number|phone number|telefon numarası|cep numarası|cep telefonu/.test(
+            (inp.closest("div")?.textContent || "").toLowerCase()
+          )) score += 4;
           if (inp.type === "tel") score += 3;
           return score;
         };
-
         const candidates = Array.from(document.querySelectorAll('input[type="tel"], input[type="text"], input[type="number"]'))
           .filter((inp) => isVisible(inp) && !inp.disabled && !inp.readOnly)
           .map((inp) => ({ inp, score: scoreInput(inp) }))
           .filter((item) => item.score > 0)
           .sort((a, b) => b.score - a.score);
-
         return candidates[0]?.inp || null;
       });
 
       if (mobileInput && mobileInput.asElement()) {
-        await humanType(page, mobileInput.asElement(), mobileNumber, {
-          clearFirst: true,
-          minDelay: 90,
-          maxDelay: 250,
-          pauseChance: 0.12,
-          pauseMin: 220,
-          pauseMax: 800,
-        });
+        await humanType(page, mobileInput.asElement(), mobileNumber, { clearFirst: true, minDelay: 90, maxDelay: 250 });
+        console.log(`  [REG] ✅ Telefon girildi: ${mobileNumber}`);
         await delay(500, 1100);
       } else {
-        throw new Error("Telefon numarası alanı bulunamadı");
+        // Fallback: placeholder ile bul
+        const fallbackPhone = await page.$('input[placeholder*="Ön ek olmadan"], input[placeholder*="without prefix"], input[placeholder*="cep telefonu"]');
+        if (fallbackPhone) {
+          await humanType(page, fallbackPhone, mobileNumber, { clearFirst: true });
+          console.log(`  [REG] ✅ Telefon (fallback) girildi: ${mobileNumber}`);
+        } else {
+          console.log("  [REG] ⚠ Telefon alanı bulunamadı");
+        }
       }
     }
+
     await humanMove(page);
     await delay(1000, 2000);
 
-    // 4. Check ALL checkboxes (Privacy, Data Transfer, Terms & Conditions)
-    const checkboxes = await page.$$('input[type="checkbox"]');
-    console.log(`  [REG] ${checkboxes.length} checkbox bulundu`);
-    for (let i = 0; i < checkboxes.length; i++) {
-      const isChecked = await checkboxes[i].evaluate(el => el.checked);
-      if (!isChecked) {
-        await checkboxes[i].click();
-        await delay(300, 800);
-      }
-    }
+    // CHECKBOX'LAR
+    console.log("  [REG 6/7] Onay kutuları...");
+    await tickAllCheckboxes(page);
     await delay(1000, 2000);
 
-    // 5. Solve Turnstile CAPTCHA
-    console.log("  [REG] CAPTCHA çözülüyor...");
+    // CAPTCHA
+    console.log("  [REG] CAPTCHA kontrol...");
     await solveTurnstile(page);
     await delay(2000, 4000);
 
-    // 6. Click "Continue" button
-    const regBtn = await page.evaluateHandle(() => {
-      const btns = [...document.querySelectorAll("button")];
-      return btns.find((b) => {
-        const txt = b.textContent.toLowerCase().trim();
-        return txt.includes("continue") || txt.includes("devam") || txt.includes("kayıt") || 
-               txt.includes("register") || txt.includes("sign up") || txt.includes("oluştur");
-      }) || document.querySelector('button[type="submit"]') || null;
-    });
-    if (regBtn && regBtn.asElement()) {
-      await regBtn.asElement().click();
-      console.log("  [REG] ✅ Continue butonuna tıklandı");
-    } else {
-      await page.click('button[type="submit"]');
+    // Screenshot gönder (submit öncesi)
+    const preSubmitSS = await takeScreenshotBase64(page);
+    if (preSubmitSS) {
+      try {
+        const cfgRes = await fetch(CONFIG.API_URL, { method: "GET", headers: apiHeaders });
+        const cfgData = await cfgRes.json();
+        const configId = cfgData?.configs?.[0]?.id;
+        if (configId) {
+          await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
+            body: JSON.stringify({ config_id: configId, status: "checking",
+              message: `[REG] Form dolduruldu, Devam Et tıklanacak | ${account.email}`,
+              slots_available: 0, screenshot_base64: preSubmitSS }) });
+        }
+      } catch {}
     }
-    await delay(5000, 8000);
 
-    // Take screenshot for debugging
-    const ss = await takeScreenshotBase64(page);
-    await reportResult("registration", "checking", `Kayıt formu gönderildi | ${account.email}`, 0, ss);
+    // DEVAM ET BUTONU
+    console.log("  [REG 7/7] Devam Et tıklanıyor...");
+    let clickedSubmit = false;
 
-    // STEP 5: Handle verification codes
-    console.log("  [REG 5/5] Doğrulama kodları...");
+    const btnInfo = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      return btns.map(b => ({ text: (b.textContent || '').trim().substring(0, 30), disabled: b.disabled, type: b.type }));
+    });
+    console.log('  [REG] Butonlar:', JSON.stringify(btnInfo));
 
-    // Check if email verification is needed
-    const pageText = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
-    const needsEmailVerify = pageText.includes("e-posta") || pageText.includes("email") ||
-                              pageText.includes("doğrulama") || pageText.includes("verification") ||
-                              pageText.includes("verify");
-
-    if (needsEmailVerify) {
-      console.log("  [REG] Email doğrulama kodu gerekli");
-      const emailOtp = await waitForRegistrationOtp(account.id, "email", 180000);
-      if (!emailOtp) {
-        await completeRegistration(account.id, false);
-        return false;
-      }
-
-      // Enter email OTP
-      const otpFilled = await page.evaluate((code) => {
-        const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"]');
-        const otpInputs = [...inputs].filter(inp => {
-          const name = (inp.name || "").toLowerCase();
-          const placeholder = (inp.placeholder || "").toLowerCase();
-          const id = (inp.id || "").toLowerCase();
-          return name.includes("otp") || name.includes("code") || name.includes("verification") ||
-                 placeholder.includes("kod") || placeholder.includes("code") || id.includes("otp") || id.includes("code");
-        });
-        if (otpInputs.length > 0) {
-          if (otpInputs[0].maxLength === 1 && otpInputs.length >= 4) {
-            for (let i = 0; i < Math.min(code.length, otpInputs.length); i++) {
-              otpInputs[i].value = code[i];
-              otpInputs[i].dispatchEvent(new Event("input", { bubbles: true }));
-              otpInputs[i].dispatchEvent(new Event("change", { bubbles: true }));
-            }
+    try {
+      const submitBtn = await page.evaluateHandle(() => {
+        const btns = [...document.querySelectorAll("button")];
+        const keywords = ["devam et", "devam", "continue", "register", "kayıt", "create", "oluştur", "sign up"];
+        return btns.find((b) => {
+          const txt = (b.textContent || "").toLowerCase().trim();
+          return keywords.some(k => txt.includes(k));
+        }) || document.querySelector('button[type="submit"]') || null;
+      });
+      if (submitBtn && submitBtn.asElement()) {
+        const isDisabled = await page.evaluate(b => b.disabled, submitBtn.asElement());
+        if (isDisabled) {
+          console.log("  [REG] ⚠ Buton disabled! Checkbox tekrar deneniyor...");
+          await tickAllCheckboxes(page);
+          await delay(1000, 2000);
+          const stillDisabled = await page.evaluate(b => b.disabled, submitBtn.asElement());
+          if (stillDisabled) {
+            console.log("  [REG] ⚠ Buton hala disabled, force click...");
+            await page.evaluate(b => { b.disabled = false; b.click(); }, submitBtn.asElement());
           } else {
-            otpInputs[0].value = code;
-            otpInputs[0].dispatchEvent(new Event("input", { bubbles: true }));
-            otpInputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+            await submitBtn.asElement().click();
           }
-          return true;
+        } else {
+          await submitBtn.asElement().click();
         }
-        const singleInput = document.querySelector('input[type="text"]');
-        if (singleInput) {
-          singleInput.value = code;
-          singleInput.dispatchEvent(new Event("input", { bubbles: true }));
-          singleInput.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
+        clickedSubmit = true;
+        console.log("  [REG] ✅ Devam Et tıklandı");
+      }
+    } catch (e) { console.log("  [REG] Submit click hatası:", e.message); }
+
+    if (!clickedSubmit) {
+      clickedSubmit = await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button"));
+        const kws = ["devam", "continue", "register", "create", "submit"];
+        for (const b of btns) {
+          if (b.disabled) continue;
+          const txt = (b.textContent || "").toLowerCase();
+          if (b.type === "submit" || kws.some(k => txt.includes(k))) { b.click(); return true; }
         }
         return false;
-      }, emailOtp);
+      });
+    }
+    if (!clickedSubmit) throw new Error("Submit butonu bulunamadı");
 
-      if (otpFilled) {
+    await delay(4000, 7000);
+
+    // OTP DOĞRULAMA
+    console.log("  [REG] OTP doğrulama kontrol...");
+    const otpDetected = await page.evaluate(() => {
+      const text = (document.body?.innerText || "").toLowerCase();
+      const hasText = /otp|verification code|doğrulama kodu|one time|sms code|email code|kodu girin|code sent/.test(text);
+      const hasInput = !!document.querySelector('input[autocomplete="one-time-code"], input[name*="otp" i], input[id*="otp" i], input[maxlength="1"], input[maxlength="6"]');
+      return hasText || hasInput;
+    });
+
+    if (!otpDetected) {
+      const pageText = await page.evaluate(() => (document.body?.innerText || '').substring(0, 300));
+      console.log("  [REG] Sayfa durumu:", pageText.substring(0, 200));
+      await postRegError(account, page, "OTP ekranı bulunamadı");
+      await completeRegistration(account.id, false);
+      return false;
+    }
+
+    const otpType = await page.evaluate(() => {
+      const t = (document.body?.innerText || "").toLowerCase();
+      return (t.includes("sms") || t.includes("mobile") || t.includes("telefon")) ? "sms" : "email";
+    });
+    console.log(`  [REG] 📱 ${otpType.toUpperCase()} OTP bekleniyor - dashboard'dan girin`);
+
+    const otp = await waitForRegistrationOtp(account.id, otpType, 180000);
+    if (!otp) {
+      await postRegError(account, page, `${otpType} OTP timeout (180s)`);
+      await completeRegistration(account.id, false);
+      return false;
+    }
+
+    // OTP gir
+    console.log(`  [REG] OTP giriliyor: ${otp}`);
+    const segmented = await page.$$('input[maxlength="1"], input.otp-input');
+    if (segmented.length > 1) {
+      for (let i = 0; i < Math.min(segmented.length, otp.length); i++) {
+        await segmented[i].type(otp[i], { delay: Math.floor(Math.random() * 50) + 30 });
+        await delay(100, 200);
+      }
+    } else {
+      const otpInput = await page.$('input[autocomplete="one-time-code"], input[name*="otp" i], input[id*="otp" i], input[maxlength="6"], input[type="tel"], input[type="text"]');
+      if (otpInput) {
+        await otpInput.click({ clickCount: 3 });
+        await delay(200, 400);
+        await humanType(page, otpInput, otp);
+      }
+    }
+
+    await delay(700, 1200);
+    await page.evaluate(() => {
+      const btns = [...document.querySelectorAll("button")];
+      const btn = btns.find(b => {
+        const txt = b.textContent.toLowerCase();
+        return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") || txt.includes("confirm") || txt.includes("gönder");
+      }) || document.querySelector('button[type="submit"]');
+      if (btn) btn.click();
+    });
+    await delay(4000, 7000);
+
+    // İkinci OTP kontrolü
+    const pageText2 = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
+    const secondOtpType = otpType === "sms" ? "email" : "sms";
+    const needsSecondOtp = otpType === "email" ?
+      (pageText2.includes("sms") || pageText2.includes("telefon") || pageText2.includes("mobile")) :
+      (pageText2.includes("e-posta") || pageText2.includes("email"));
+
+    if (needsSecondOtp) {
+      console.log(`  [REG] İkinci doğrulama: ${secondOtpType}`);
+      const otp2 = await waitForRegistrationOtp(account.id, secondOtpType, 180000);
+      if (otp2) {
+        await page.evaluate((code) => {
+          const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"]');
+          for (const inp of inputs) {
+            const name = (inp.name || "").toLowerCase();
+            const placeholder = (inp.placeholder || "").toLowerCase();
+            if (name.includes("otp") || name.includes("code") || name.includes("sms") ||
+                placeholder.includes("kod") || placeholder.includes("code")) {
+              inp.value = code;
+              inp.dispatchEvent(new Event("input", { bubbles: true }));
+              inp.dispatchEvent(new Event("change", { bubbles: true }));
+              break;
+            }
+          }
+        }, otp2);
         await delay(500, 1000);
-        const submitted = await page.evaluate(() => {
+        await page.evaluate(() => {
           const btns = [...document.querySelectorAll("button")];
           const btn = btns.find(b => {
             const txt = b.textContent.toLowerCase();
-            return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") ||
-                   txt.includes("submit") || txt.includes("gönder") || txt.includes("confirm");
+            return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") || txt.includes("confirm");
           }) || document.querySelector('button[type="submit"]');
-          if (btn) { btn.click(); return true; }
-          return false;
+          if (btn) btn.click();
         });
-        if (submitted) {
-          await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => {});
-          await delay(3000, 5000);
-        }
-      }
-    }
-
-    // Check if SMS verification is also needed
-    const pageText2 = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
-    const needsSmsVerify = pageText2.includes("sms") || pageText2.includes("telefon") ||
-                            pageText2.includes("phone") || pageText2.includes("mobile");
-
-    if (needsSmsVerify) {
-      console.log("  [REG] SMS doğrulama kodu gerekli");
-      const smsOtp = await waitForRegistrationOtp(account.id, "sms", 180000);
-      if (!smsOtp) {
+        await delay(4000, 7000);
+      } else {
+        await postRegError(account, page, `${secondOtpType} OTP timeout`);
         await completeRegistration(account.id, false);
         return false;
       }
-
-      // Enter SMS OTP (same logic)
-      await page.evaluate((code) => {
-        const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"]');
-        for (const inp of inputs) {
-          const name = (inp.name || "").toLowerCase();
-          const placeholder = (inp.placeholder || "").toLowerCase();
-          if (name.includes("otp") || name.includes("code") || name.includes("sms") ||
-              placeholder.includes("kod") || placeholder.includes("code") || placeholder.includes("sms")) {
-            inp.value = code;
-            inp.dispatchEvent(new Event("input", { bubbles: true }));
-            inp.dispatchEvent(new Event("change", { bubbles: true }));
-            break;
-          }
-        }
-      }, smsOtp);
-
-      await delay(500, 1000);
-      await page.evaluate(() => {
-        const btns = [...document.querySelectorAll("button")];
-        const btn = btns.find(b => {
-          const txt = b.textContent.toLowerCase();
-          return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") ||
-                 txt.includes("confirm") || txt.includes("gönder");
-        }) || document.querySelector('button[type="submit"]');
-        if (btn) btn.click();
-      });
-      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => {});
-      await delay(3000, 5000);
     }
 
-    // Check if registration was successful
+    // Sonuç kontrol
     const finalText = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
     const finalUrl = await page.evaluate(() => window.location.href.toLowerCase());
     const success = finalUrl.includes("login") || finalUrl.includes("dashboard") ||
                     finalText.includes("başarılı") || finalText.includes("success") ||
-                    finalText.includes("tamamlandı") || finalText.includes("completed");
+                    finalText.includes("tamamlandı") || finalText.includes("completed") ||
+                    finalText.includes("kayıt tamamlandı") || finalText.includes("registered");
 
-    const finalSs = await takeScreenshotBase64(page);
-    await reportResult("registration", success ? "found" : "error",
-      `Kayıt ${success ? "başarılı" : "sonucu belirsiz"} | ${account.email}`, 0, finalSs);
+    if (success) console.log("  [REG] ✅ KAYIT BAŞARILI!");
+    else { console.log("  [REG] ⚠ Sonuç belirsiz"); await postRegError(account, page, "OTP sonrası başarı sinyali bulunamadı"); }
     await completeRegistration(account.id, success);
     return success;
   } catch (err) {
     console.error("  [REG] Genel hata:", err.message);
+    await postRegError(account, page, err.message);
     await completeRegistration(account.id, false);
     return false;
   } finally {
-    if (browser) await browser.close();
+    if (browser) try { await browser.close(); } catch {}
   }
 }
 
 // ==================== MAIN LOOP ====================
-
 async function main() {
   console.log("═══════════════════════════════════════════");
-  console.log("  VFS Randevu Takip Botu v7");
-  console.log("  Stealth + Fingerprint + Auto Registration");
+  console.log("  VFS Randevu Takip Botu v7.1");
+  console.log("  Real Browser + Fingerprint + Kayıt");
+  console.log("  Proxy: KAPALI");
   console.log("═══════════════════════════════════════════");
 
-  if (CONFIG.CAPTCHA_API_KEY) {
-    console.log("✅ CAPTCHA çözücü aktif");
-  } else {
-    console.log("⚠ CAPTCHA_API_KEY yok, Turnstile çözülemeyecek!");
-  }
-  console.log("✅ Stealth plugin aktif");
+  if (CONFIG.CAPTCHA_API_KEY) console.log("✅ CAPTCHA çözücü aktif");
+  else console.log("⚠ CAPTCHA_API_KEY yok");
+  console.log("✅ Fingerprint randomization aktif");
+  console.log("✅ OTP false-positive düzeltmesi aktif");
   console.log("✅ Otomatik kayıt aktif");
 
   while (true) {
     try {
-      // Check for pending registrations first
+      // Bekleyen kayıtları kontrol et
       const pendingRegs = await fetchPendingRegistrations();
       if (pendingRegs.length > 0) {
         console.log(`\n📝 ${pendingRegs.length} bekleyen kayıt var`);
@@ -1370,11 +1211,10 @@ async function main() {
       const { configs, accounts } = await fetchActiveConfigs();
 
       if (accounts.length === 0) {
-        console.log("\n❌ Kullanılabilir VFS hesabı yok! Dashboard'dan hesap ekleyin.");
+        console.log("\n❌ Kullanılabilir VFS hesabı yok!");
         await new Promise((r) => setTimeout(r, 30000));
         continue;
       }
-
       if (configs.length === 0) {
         console.log("\n⏸ Aktif görev yok. 60s sonra tekrar...");
         await new Promise((r) => setTimeout(r, 60000));
@@ -1405,7 +1245,6 @@ async function main() {
           const lastUsed = accountLastUsed.get(acc.id) || 0;
           return (Date.now() - lastUsed) >= CONFIG.MIN_ACCOUNT_GAP_MS;
         });
-        
         const account = (readyAccounts.length > 0 ? readyAccounts : accounts).reduce((best, acc) => {
           const tBest = accountLastUsed.get(best.id) || 0;
           const tAcc = accountLastUsed.get(acc.id) || 0;
@@ -1415,24 +1254,15 @@ async function main() {
         accountLastUsed.set(account.id, Date.now());
         const result = await checkAppointments(config, account);
 
-        if (result.found) {
-          console.log("\n🎉 RANDEVU BULUNDU!");
-          consecutiveErrors = 0;
-        } else if (result.accountBanned) {
-          console.log(`\n⛔ Hesap banlı: ${account.email}`);
-          consecutiveErrors++;
-        } else {
-          const wasError = result.accountBanned === false && !result.otpRequired;
-          if (wasError) consecutiveErrors = 0;
-          else consecutiveErrors++;
-        }
+        if (result.found) { console.log("\n🎉 RANDEVU BULUNDU!"); consecutiveErrors = 0; }
+        else if (result.accountBanned) { console.log(`\n⛔ Hesap banlı: ${account.email}`); consecutiveErrors++; }
+        else { if (!result.otpRequired) consecutiveErrors = 0; else consecutiveErrors++; }
 
         const baseInterval = Math.max(config.check_interval * 1000, CONFIG.BASE_INTERVAL_MS);
         const backoffMultiplier = Math.min(Math.pow(1.5, consecutiveErrors), 5);
         const interval = Math.min(baseInterval * backoffMultiplier, CONFIG.MAX_BACKOFF_MS);
         const jitter = Math.floor(Math.random() * 60000) + 15000;
         const wait = Math.round(interval + jitter);
-        
         console.log(`\n⏳ Sonraki: ${Math.round(wait / 1000)}s (backoff: x${backoffMultiplier.toFixed(1)}, errors: ${consecutiveErrors})`);
         await new Promise((r) => setTimeout(r, wait));
       }
@@ -1447,5 +1277,3 @@ async function main() {
 }
 
 main();
-ENDOFFILE
-npm install puppeteer-extra puppeteer-extra-plugin-stealth && pm2 restart vfs-bot && pm2 logs vfs-bot
