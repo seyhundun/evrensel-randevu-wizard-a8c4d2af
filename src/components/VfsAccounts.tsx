@@ -25,7 +25,10 @@ export default function VfsAccounts() {
   const [accounts, setAccounts] = useState<VfsAccount[]>([]);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [newImapHost, setNewImapHost] = useState("imap.gmail.com");
+  const [newImapPassword, setNewImapPassword] = useState("");
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [showImapPasswords, setShowImapPasswords] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
