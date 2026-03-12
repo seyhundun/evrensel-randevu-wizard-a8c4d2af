@@ -31,6 +31,8 @@ const CONFIG = {
   CAPTCHA_API_KEY: process.env.CAPTCHA_API_KEY || "",
   HEADLESS: true,
   SLOW_MO: 50,
+  QUEUE_MAX_WAIT_MS: Number(process.env.QUEUE_MAX_WAIT_MS || 300000), // 5dk
+  QUEUE_POLL_MS: Number(process.env.QUEUE_POLL_MS || 8000),
 };
 
 // ==================== HELPERS ====================
@@ -80,6 +82,56 @@ async function takeScreenshotBase64(page) {
     const buf = await page.screenshot({ fullPage: true, encoding: "base64" });
     return buf;
   } catch { return null; }
+}
+
+async function isWaitingRoomPage(page) {
+  return await page.evaluate(() => {
+    const title = (document.title || "").toLowerCase();
+    const body = (document.body?.innerText || "").toLowerCase();
+    return (
+      title.includes("waiting room") ||
+      body.includes("şu anda sıradasınız") ||
+      body.includes("tahmini bekleme süreniz") ||
+      body.includes("this page will auto refresh") ||
+      body.includes("bu sayfa otomatik olarak yenilenecektir")
+    );
+  });
+}
+
+async function waitForLoginFormAfterQueue(page) {
+  const startedAt = Date.now();
+  let attempt = 0;
+
+  while (Date.now() - startedAt < CONFIG.QUEUE_MAX_WAIT_MS) {
+    attempt += 1;
+
+    const emailInput = await page.$('input[type="email"], input[name="email"], #email');
+    if (emailInput) {
+      console.log(`  [QUEUE] ✅ Login formu hazır (${attempt}. deneme).`);
+      return { ok: true };
+    }
+
+    const waitingRoom = await isWaitingRoomPage(page);
+    if (waitingRoom) {
+      const waitedSec = Math.round((Date.now() - startedAt) / 1000);
+      console.log(`  [QUEUE] Sırada bekleniyor... ${waitedSec}s`);
+
+      await solveTurnstile(page);
+
+      if (attempt % 3 === 0) {
+        await page.reload({ waitUntil: "networkidle2", timeout: 30000 }).catch(() => {});
+      } else {
+        await page.waitForNavigation({ waitUntil: "networkidle2", timeout: CONFIG.QUEUE_POLL_MS }).catch(() => {});
+      }
+
+      await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 1200);
+      continue;
+    }
+
+    await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 1200);
+  }
+
+  return { ok: false, reason: `Waiting room timeout (${Math.round(CONFIG.QUEUE_MAX_WAIT_MS / 1000)}s)` };
 }
 
 // ==================== CAPTCHA ====================
@@ -210,17 +262,24 @@ async function checkAppointments(config) {
       console.log("  [2/5] Cookie banner bulunamadı, devam.");
     }
 
-    // ===== STEP 3: CAPTCHA çöz =====
-    console.log("  [3/5] CAPTCHA kontrol...");
+    // ===== STEP 3: CAPTCHA / Waiting Room =====
+    console.log("  [3/5] CAPTCHA + sıra kontrol...");
     await solveTurnstile(page);
     await delay(1000, 2000);
+
+    const queueResult = await waitForLoginFormAfterQueue(page);
+    if (!queueResult.ok) {
+      const ss = await takeScreenshotBase64(page);
+      await reportResult(id, "error", `${queueResult.reason} | URL: ${page.url()}`, 0, ss);
+      return false;
+    }
 
     // ===== STEP 4: Login =====
     console.log("  [4/5] Giriş yapılıyor...");
     try {
       // Email
-      await page.waitForSelector('input[type="email"]', { timeout: 10000 });
-      await page.click('input[type="email"]');
+      await page.waitForSelector('input[type="email"], input[name="email"], #email', { timeout: 20000 });
+      await page.click('input[type="email"], input[name="email"], #email');
       await page.keyboard.down("Control");
       await page.keyboard.press("a");
       await page.keyboard.up("Control");
