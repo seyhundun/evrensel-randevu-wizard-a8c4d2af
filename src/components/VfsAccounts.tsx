@@ -68,8 +68,6 @@ export default function VfsAccounts() {
     const insertData = {
       email: newEmail,
       password: newPassword,
-      imap_host: newImapHost || "imap.gmail.com",
-      imap_password: newImapPassword || null,
     };
     const { error } = await supabase.from("vfs_accounts").insert(insertData);
     if (error) {
