@@ -144,6 +144,45 @@ export type Database = {
           },
         ]
       }
+      vfs_accounts: {
+        Row: {
+          banned_until: string | null
+          created_at: string
+          email: string
+          fail_count: number
+          id: string
+          last_used_at: string | null
+          notes: string | null
+          password: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          banned_until?: string | null
+          created_at?: string
+          email: string
+          fail_count?: number
+          id?: string
+          last_used_at?: string | null
+          notes?: string | null
+          password: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          banned_until?: string | null
+          created_at?: string
+          email?: string
+          fail_count?: number
+          id?: string
+          last_used_at?: string | null
+          notes?: string | null
+          password?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
