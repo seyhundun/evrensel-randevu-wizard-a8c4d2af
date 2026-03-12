@@ -965,8 +965,14 @@ async function registerVfsAccount(account) {
 
     // Form yüklenmesini bekle
     console.log("  [REG 4/7] Form bekleniyor...");
-    await page.waitForSelector('input[type="email"], input[name="email"], input[formcontrolname*="email"]', { timeout: 45000 });
-    await delay(3000, 5000);
+    const registrationFormResult = await waitForRegistrationFormAfterQueue(page);
+    if (!registrationFormResult.ok) {
+      const snapshot = await takeScreenshotBase64(page);
+      await postRegError(account, page, registrationFormResult.reason);
+      if (snapshot) console.log("  [REG] 📸 Form timeout screenshot alındı");
+      throw new Error(registrationFormResult.reason);
+    }
+    await delay(1800, 3200);
 
     // ========== FORM DOLDURMA ==========
     console.log("  [REG 5/7] Form dolduruluyor...");
