@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle2, Search, AlertCircle, Clock } from "lucide-react";
+import { CheckCircle2, Search, AlertCircle, Clock, Image as ImageIcon, X } from "lucide-react";
 
 interface LogEntry {
   id: string;
   status: string;
   message: string | null;
   slots_available: number | null;
+  screenshot_url: string | null;
   created_at: string;
 }
 
@@ -45,6 +46,7 @@ function timeAgo(dateStr: string) {
 export default function TrackingLogs({ configId }: TrackingLogsProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const fetchLogs = async () => {
     if (!configId) return;
@@ -55,7 +57,7 @@ export default function TrackingLogs({ configId }: TrackingLogsProps) {
       .eq("config_id", configId)
       .order("created_at", { ascending: false })
       .limit(50);
-    setLogs(data ?? []);
+    setLogs((data as LogEntry[] | null) ?? []);
     setLoading(false);
   };
 
@@ -63,7 +65,6 @@ export default function TrackingLogs({ configId }: TrackingLogsProps) {
     fetchLogs();
     if (!configId) return;
 
-    // Realtime subscription
     const channel = supabase
       .channel("tracking-logs-" + configId)
       .on(
@@ -75,7 +76,6 @@ export default function TrackingLogs({ configId }: TrackingLogsProps) {
       )
       .subscribe();
 
-    // Also poll every 15s as fallback
     const interval = setInterval(fetchLogs, 15000);
 
     return () => {
@@ -103,7 +103,7 @@ export default function TrackingLogs({ configId }: TrackingLogsProps) {
           Henüz kontrol kaydı yok. Bot çalışmaya başladığında burada görünecek.
         </div>
       ) : (
-        <div className="space-y-1.5 max-h-[360px] overflow-y-auto pr-1">
+        <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
           {logs.map((log) => {
             const cfg = statusConfig[log.status] ?? statusConfig.checking;
             return (
@@ -120,12 +120,43 @@ export default function TrackingLogs({ configId }: TrackingLogsProps) {
                     <span className="text-xs text-muted-foreground whitespace-nowrap">{timeAgo(log.created_at)}</span>
                   </div>
                   {log.message && (
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{log.message}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{log.message}</p>
+                  )}
+                  {log.screenshot_url && (
+                    <button
+                      onClick={() => setLightboxUrl(log.screenshot_url)}
+                      className="mt-1.5 flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      Screenshot görüntüle
+                    </button>
                   )}
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div className="relative max-w-5xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute -top-10 right-0 text-white/80 hover:text-white transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={lightboxUrl}
+              alt="Bot screenshot"
+              className="w-full h-auto max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            />
+          </div>
         </div>
       )}
     </div>

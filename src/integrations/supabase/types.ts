@@ -112,6 +112,7 @@ export type Database = {
           created_at: string
           id: string
           message: string | null
+          screenshot_url: string | null
           slots_available: number | null
           status: string
         }
@@ -120,6 +121,7 @@ export type Database = {
           created_at?: string
           id?: string
           message?: string | null
+          screenshot_url?: string | null
           slots_available?: number | null
           status?: string
         }
@@ -128,6 +130,7 @@ export type Database = {
           created_at?: string
           id?: string
           message?: string | null
+          screenshot_url?: string | null
           slots_available?: number | null
           status?: string
         }
