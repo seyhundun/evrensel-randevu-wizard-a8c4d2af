@@ -422,27 +422,54 @@ async function handleOtpVerification(page, account) {
 }
 
 // ==================== CAPTCHA ====================
+async function tryClickTurnstileCheckbox(page) {
+  try {
+    const frame = page.frames().find((f) => f.url().includes("challenges.cloudflare.com"));
+    if (!frame) return false;
+
+    const checkbox = await frame.$('input[type="checkbox"], [role="checkbox"], .cb-i');
+    if (!checkbox) return false;
+
+    await checkbox.click();
+    await delay(1200, 2400);
+    console.log("  [CAPTCHA] ✅ Turnstile iframe checkbox tıklandı");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function solveTurnstile(page) {
   if (!CONFIG.CAPTCHA_API_KEY || !Solver) {
     console.log("  [CAPTCHA] API key veya 2captcha modülü yok, atlıyorum.");
     return false;
   }
+
   let sitekey = await page.evaluate(() => {
+    const direct = document.querySelector('[data-sitekey]');
+    if (direct) return direct.getAttribute('data-sitekey');
+
+    const turnstile = document.querySelector('.cf-turnstile, [name*="turnstile"]');
+    if (turnstile?.getAttribute('data-sitekey')) return turnstile.getAttribute('data-sitekey');
+
     const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
     if (!iframe) return null;
-    const container = iframe.closest("div[data-sitekey]") || document.querySelector("[data-sitekey]");
-    if (container) return container.getAttribute("data-sitekey");
-    const src = iframe.getAttribute("src") || "";
+
+    const container = iframe.closest('div[data-sitekey]') || document.querySelector('[data-sitekey]');
+    if (container) return container.getAttribute('data-sitekey');
+
+    const src = iframe.getAttribute('src') || '';
     const match = src.match(/[?&]k=([^&]+)/);
-    return match ? match[1] : null;
+    return match ? decodeURIComponent(match[1]) : null;
   });
+
   if (!sitekey) {
-    sitekey = await page.evaluate(() => {
-      const el = document.querySelector(".cf-turnstile");
-      return el ? el.getAttribute("data-sitekey") : null;
-    });
-    if (!sitekey) { console.log("  [CAPTCHA] Turnstile bulunamadı."); return true; }
+    const clicked = await tryClickTurnstileCheckbox(page);
+    if (clicked) return true;
+    console.log("  [CAPTCHA] Turnstile sitekey bulunamadı.");
+    return false;
   }
+
   return await _solve(page, sitekey);
 }
 
@@ -1127,6 +1154,32 @@ async function getRegistrationFormDiagnostics(page) {
   });
 }
 
+async function tryForceRegistrationSubmit(page) {
+  return await page.evaluate(() => {
+    const keywords = ["devam et", "devam", "continue", "register", "create", "kayıt", "oluştur", "sign up"];
+    const buttons = Array.from(document.querySelectorAll("button"));
+    const submitBtn = buttons.find((b) => {
+      const txt = (b.textContent || "").toLowerCase().trim();
+      return keywords.some((k) => txt.includes(k));
+    }) || document.querySelector('button[type="submit"]');
+
+    if (!submitBtn) return { clicked: false, forced: false, reason: "no_submit_button" };
+
+    const wasDisabled = !!submitBtn.disabled;
+    if (wasDisabled) {
+      submitBtn.disabled = false;
+      submitBtn.removeAttribute("disabled");
+      submitBtn.setAttribute("aria-disabled", "false");
+    }
+
+    const form = submitBtn.closest("form");
+    if (form && typeof form.requestSubmit === "function") form.requestSubmit(submitBtn);
+    else submitBtn.click();
+
+    return { clicked: true, forced: wasDisabled, reason: wasDisabled ? "force_enabled" : "normal_click" };
+  });
+}
+
 async function postRegError(account, page, reason) {
   try {
     let screenshotBase64 = null;
@@ -1571,16 +1624,31 @@ async function registerVfsAccount(account) {
             }
 
             if (afterDiag.hasTurnstileWidget && !afterDiag.hasCaptchaToken) {
-              throw new Error("Devam Et butonu pasif: CAPTCHA doğrulaması tamamlanmadı");
+              console.log("  [REG] ⚠ CAPTCHA token görünmüyor, iframe click + force submit deneniyor...");
+              await tryClickTurnstileCheckbox(page);
+              await delay(1200, 2200);
             }
 
-            throw new Error("Devam Et butonu pasif kaldı (form invalid)");
+            const forceResult = await tryForceRegistrationSubmit(page);
+            console.log(`  [REG] Force submit: clicked=${forceResult.clicked}, forced=${forceResult.forced}, reason=${forceResult.reason}`);
+
+            if (!forceResult.clicked) {
+              if (afterDiag.hasTurnstileWidget && !afterDiag.hasCaptchaToken) {
+                throw new Error("Devam Et butonu pasif: CAPTCHA doğrulaması tamamlanmadı");
+              }
+              throw new Error("Devam Et butonu pasif kaldı (form invalid)");
+            }
+
+            clickedSubmit = true;
+            await delay(1200, 2400);
           }
         }
 
-        await submitBtn.asElement().click();
-        clickedSubmit = true;
-        console.log("  [REG] ✅ Devam Et tıklandı");
+        if (!clickedSubmit) {
+          await submitBtn.asElement().click();
+          clickedSubmit = true;
+          console.log("  [REG] ✅ Devam Et tıklandı");
+        }
       }
     } catch (e) {
       submitError = e?.message || "Submit click hatası";
