@@ -87,6 +87,52 @@ Deno.serve(async (req) => {
             { headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+
+        // Get manual OTP for account
+        if (body.action === "get_account_otp") {
+          const { account_id } = body;
+          if (!account_id) {
+            return new Response(
+              JSON.stringify({ ok: false, error: "account_id required" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+          const { data } = await supabase
+            .from("vfs_accounts")
+            .select("manual_otp")
+            .eq("id", account_id)
+            .single();
+          return new Response(
+            JSON.stringify({ ok: true, manual_otp: data?.manual_otp || null }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Clear manual OTP after use
+        if (body.action === "clear_account_otp") {
+          const { account_id } = body;
+          await supabase
+            .from("vfs_accounts")
+            .update({ manual_otp: null, otp_requested_at: null })
+            .eq("id", account_id);
+          return new Response(
+            JSON.stringify({ ok: true }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Set OTP requested (bot signals it needs OTP)
+        if (body.action === "set_otp_requested") {
+          const { account_id } = body;
+          await supabase
+            .from("vfs_accounts")
+            .update({ otp_requested_at: new Date().toISOString(), manual_otp: null })
+            .eq("id", account_id);
+          return new Response(
+            JSON.stringify({ ok: true }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
         
         // Regular log posting (JSON)
         let config_id = body.config_id;

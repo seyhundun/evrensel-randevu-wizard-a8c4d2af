@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Plus, Trash2, Eye, EyeOff, UserCheck, Ban, Clock, Mail } from "lucide-react";
+import { Plus, Trash2, Eye, EyeOff, UserCheck, Ban, Clock, Mail, MessageSquare, Send } from "lucide-react";
 
 interface VfsAccount {
   id: string;
@@ -19,6 +19,8 @@ interface VfsAccount {
   notes: string | null;
   imap_host: string | null;
   imap_password: string | null;
+  manual_otp: string | null;
+  otp_requested_at: string | null;
 }
 
 export default function VfsAccounts() {
@@ -30,6 +32,7 @@ export default function VfsAccounts() {
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [showImapPasswords, setShowImapPasswords] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+  const [smsOtpInputs, setSmsOtpInputs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadAccounts();
@@ -73,6 +76,25 @@ export default function VfsAccounts() {
     await supabase.from("vfs_accounts").delete().eq("id", id);
     toast.info("Hesap silindi");
     loadAccounts();
+  };
+
+  const submitManualOtp = async (id: string) => {
+    const code = smsOtpInputs[id]?.trim();
+    if (!code) {
+      toast.error("OTP kodu girin");
+      return;
+    }
+    const { error } = await supabase
+      .from("vfs_accounts")
+      .update({ manual_otp: code } as any)
+      .eq("id", id);
+    if (error) {
+      toast.error("OTP gönderilemedi: " + error.message);
+    } else {
+      toast.success("OTP kodu gönderildi, bot kullanacak");
+      setSmsOtpInputs((prev) => ({ ...prev, [id]: "" }));
+      loadAccounts();
+    }
   };
 
   const reactivateAccount = async (id: string) => {
@@ -191,6 +213,29 @@ export default function VfsAccounts() {
                 {!acc.imap_password && (
                   <span className="text-xs text-amber-500 flex items-center gap-1 mt-0.5">
                     <Mail className="w-3 h-3" /> IMAP yapılandırılmadı
+                  </span>
+                )}
+                {acc.otp_requested_at && !acc.manual_otp && (
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-orange-500 animate-pulse" />
+                    <span className="text-xs font-medium text-orange-600">SMS OTP bekleniyor!</span>
+                    <Input
+                      type="text"
+                      placeholder="Kodu girin"
+                      maxLength={8}
+                      className="h-7 w-24 text-xs font-mono"
+                      value={smsOtpInputs[acc.id] || ""}
+                      onChange={(e) => setSmsOtpInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
+                      onKeyDown={(e) => e.key === "Enter" && submitManualOtp(acc.id)}
+                    />
+                    <Button size="sm" variant="default" className="h-7 px-2 gap-1" onClick={() => submitManualOtp(acc.id)}>
+                      <Send className="w-3 h-3" /> Gönder
+                    </Button>
+                  </div>
+                )}
+                {acc.manual_otp && (
+                  <span className="text-xs text-emerald-600 flex items-center gap-1 mt-0.5">
+                    <MessageSquare className="w-3 h-3" /> OTP gönderildi: {acc.manual_otp}
                   </span>
                 )}
                 {acc.fail_count > 0 && (

@@ -154,7 +154,9 @@ export type Database = {
           imap_host: string | null
           imap_password: string | null
           last_used_at: string | null
+          manual_otp: string | null
           notes: string | null
+          otp_requested_at: string | null
           password: string
           status: string
           updated_at: string
@@ -168,7 +170,9 @@ export type Database = {
           imap_host?: string | null
           imap_password?: string | null
           last_used_at?: string | null
+          manual_otp?: string | null
           notes?: string | null
+          otp_requested_at?: string | null
           password: string
           status?: string
           updated_at?: string
@@ -182,7 +186,9 @@ export type Database = {
           imap_host?: string | null
           imap_password?: string | null
           last_used_at?: string | null
+          manual_otp?: string | null
           notes?: string | null
+          otp_requested_at?: string | null
           password?: string
           status?: string
           updated_at?: string
