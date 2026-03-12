@@ -1,13 +1,15 @@
 {
   "name": "vfs-appointment-bot",
-  "version": "1.0.0",
-  "description": "VFS Global randevu takip botu",
+  "version": "2.0.0",
+  "description": "VFS Global randevu takip botu - Stealth + Fingerprint",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "puppeteer": "^22.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "dotenv": "^16.4.0"
   }
 }
