@@ -317,25 +317,26 @@ async function waitForRegistrationFormAfterQueue(page) {
 // ==================== OTP HANDLING ====================
 async function readManualOtp(accountId) {
   try {
-    const res = await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
-      body: JSON.stringify({ action: "get_account_otp", account_id: accountId }) });
-    const data = await res.json();
+    const data = await apiPost({ action: "get_account_otp", account_id: accountId }, "get_account_otp");
     if (data.manual_otp) {
       console.log(`  [OTP] ✅ Manuel OTP bulundu: ${data.manual_otp}`);
-      await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
-        body: JSON.stringify({ action: "clear_account_otp", account_id: accountId }) });
+      await apiPost({ action: "clear_account_otp", account_id: accountId }, "clear_account_otp");
       return data.manual_otp;
     }
     return null;
-  } catch (err) { console.error("  [OTP] Manuel OTP okuma hatası:", err.message); return null; }
+  } catch (err) {
+    console.error("  [OTP] Manuel OTP okuma hatası:", err.message);
+    return null;
+  }
 }
 
 async function setOtpRequested(accountId) {
   try {
-    await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders,
-      body: JSON.stringify({ action: "set_otp_requested", account_id: accountId }) });
+    await apiPost({ action: "set_otp_requested", account_id: accountId }, "set_otp_requested");
     console.log("  [OTP] 📱 SMS OTP bekleniyor - dashboard'dan girilebilir");
-  } catch (err) { console.error("  [OTP] otp_requested_at hatası:", err.message); }
+  } catch (err) {
+    console.error("  [OTP] otp_requested_at hatası:", err.message);
+  }
 }
 
 async function handleOtpVerification(page, account) {
