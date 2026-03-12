@@ -6,7 +6,32 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Plus, Trash2, Eye, EyeOff, UserCheck, Ban, Clock, MessageSquare, Send, UserPlus, Mail, Phone, Loader2 } from "lucide-react";
+import { Plus, Trash2, Eye, EyeOff, UserCheck, Ban, Clock, MessageSquare, Send, UserPlus, Mail, Phone, Loader2, RefreshCw } from "lucide-react";
+
+function generateSecurePassword(): string {
+  const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lower = "abcdefghijklmnopqrstuvwxyz";
+  const digits = "0123456789";
+  const special = "!@#$%&*?";
+  const all = upper + lower + digits + special;
+  
+  // Ensure at least one of each type
+  const required = [
+    upper[Math.floor(Math.random() * upper.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    digits[Math.floor(Math.random() * digits.length)],
+    special[Math.floor(Math.random() * special.length)],
+  ];
+  
+  const remaining = Array.from({ length: 8 }, () => all[Math.floor(Math.random() * all.length)]);
+  const chars = [...required, ...remaining];
+  // Shuffle
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
 
 interface VfsAccount {
   id: string;
@@ -195,7 +220,7 @@ export default function VfsAccounts() {
           <Button
             size="sm"
             variant={addMode === "register" ? "default" : "outline"}
-            onClick={() => setAddMode("register")}
+            onClick={() => { setAddMode("register"); if (!newPassword) setNewPassword(generateSecurePassword()); }}
             className="gap-1"
           >
             <UserPlus className="w-3.5 h-3.5" /> Yeni Kayıt
@@ -213,9 +238,20 @@ export default function VfsAccounts() {
             />
           </div>
           <div>
-            <Label className="text-xs">VFS Şifre</Label>
+            <Label className="text-xs flex items-center justify-between">
+              VFS Şifre
+              {addMode === "register" && (
+                <button
+                  type="button"
+                  onClick={() => setNewPassword(generateSecurePassword())}
+                  className="text-[10px] text-primary hover:underline flex items-center gap-0.5"
+                >
+                  <RefreshCw className="w-3 h-3" /> Otomatik Oluştur
+                </button>
+              )}
+            </Label>
             <Input
-              type="password"
+              type={newPassword && addMode === "register" ? "text" : "password"}
               placeholder="••••••••"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
