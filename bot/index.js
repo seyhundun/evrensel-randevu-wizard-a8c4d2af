@@ -1043,16 +1043,25 @@ async function postRegError(account, page, reason) {
   try {
     let screenshotBase64 = null;
     if (page) screenshotBase64 = await takeScreenshotBase64(page);
-    const cfgRes = await fetch(CONFIG.API_URL, { method: "GET", headers: apiHeaders });
-    const cfgData = await cfgRes.json();
+
+    const cfgData = await apiGet("post_reg_error:get_configs");
     const configId = cfgData?.configs?.[0]?.id;
+
     if (configId) {
-      const body = { config_id: configId, status: "error", message: `[REG] ${reason} | Hesap: ${account.email}`, slots_available: 0 };
+      const body = {
+        config_id: configId,
+        status: "error",
+        message: `[REG] ${reason} | Hesap: ${account.email}`,
+        slots_available: 0,
+      };
       if (screenshotBase64) body.screenshot_base64 = screenshotBase64;
-      await fetch(CONFIG.API_URL, { method: "POST", headers: apiHeaders, body: JSON.stringify(body) });
+      await apiPost(body, "post_reg_error:insert_log");
     }
+
     if (screenshotBase64) console.log("  [REG] 📸 Hata screenshot gönderildi");
-  } catch (e) { console.error("  [REG] Hata rapor hatası:", e.message); }
+  } catch (e) {
+    console.error("  [REG] Hata rapor hatası:", e.message);
+  }
 }
 
 async function registerVfsAccount(account) {
