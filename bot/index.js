@@ -1,3 +1,4 @@
+cd /root/bot && pm2 stop vfs-bot && cat > index.js << 'ENDOFFILE'
 /**
  * VFS Global Randevu Takip Botu v6
  * 
@@ -150,7 +151,6 @@ function delay(min = 1000, max = 3000) {
   return new Promise((r) => setTimeout(r, Math.floor(Math.random() * (max - min) + min)));
 }
 
-// İnsan benzeri mouse hareketi simülasyonu
 async function humanMove(page) {
   const vp = page.viewport();
   if (!vp) return;
@@ -461,44 +461,27 @@ async function _solve(page, sitekey) {
 // ==================== APPLY FINGERPRINT ====================
 
 async function applyFingerprint(page, fp) {
-  // Timezone
   await page.emulateTimezone(fp.timezone);
-  
-  // User-Agent
   await page.setUserAgent(fp.userAgent);
-  
-  // Viewport
   await page.setViewport(fp.viewport);
   
-  // Advanced browser property overrides
   await page.evaluateOnNewDocument((fp) => {
-    // Platform
     Object.defineProperty(navigator, "platform", { get: () => fp.platform });
-    
-    // Languages
     Object.defineProperty(navigator, "languages", { get: () => fp.languages });
     Object.defineProperty(navigator, "language", { get: () => fp.languages[0] });
-    
-    // Hardware
     Object.defineProperty(navigator, "deviceMemory", { get: () => fp.deviceMemory });
     Object.defineProperty(navigator, "hardwareConcurrency", { get: () => fp.hardwareConcurrency });
-    
-    // Screen
     Object.defineProperty(screen, "colorDepth", { get: () => fp.screenDepth });
     Object.defineProperty(screen, "pixelDepth", { get: () => fp.screenDepth });
-    
-    // Touch
     Object.defineProperty(navigator, "maxTouchPoints", { get: () => fp.maxTouchPoints });
     
     // WebGL fingerprint spoof
     const getParameterOrig = WebGLRenderingContext.prototype.getParameter;
     WebGLRenderingContext.prototype.getParameter = function(param) {
-      if (param === 37445) return fp.webglVendor;   // UNMASKED_VENDOR_WEBGL
-      if (param === 37446) return fp.webglRenderer;  // UNMASKED_RENDERER_WEBGL
+      if (param === 37445) return fp.webglVendor;
+      if (param === 37446) return fp.webglRenderer;
       return getParameterOrig.call(this, param);
     };
-    
-    // WebGL2
     if (typeof WebGL2RenderingContext !== "undefined") {
       const getParameter2Orig = WebGL2RenderingContext.prototype.getParameter;
       WebGL2RenderingContext.prototype.getParameter = function(param) {
@@ -544,7 +527,7 @@ async function applyFingerprint(page, fp) {
       Object.defineProperty(navigator.connection, "downlink", { get: () => Math.random() * 5 + 5 });
     }
     
-    // Battery API — always full
+    // Battery API
     if (navigator.getBattery) {
       navigator.getBattery = () => Promise.resolve({
         charging: true, chargingTime: 0, dischargingTime: Infinity, level: 1,
@@ -595,20 +578,14 @@ async function checkAppointments(config, account) {
     });
 
     const page = await browser.newPage();
-    
-    // Proxy auth
     await page.authenticate({ username: proxy.user, password: proxy.pass });
-    
-    // Apply full fingerprint
     await applyFingerprint(page, fp);
-    
-    // İnsan benzeri ilk hareketler
     await humanMove(page);
 
     // STEP 1: Giriş sayfası
     console.log("  [1/6] Giriş sayfası...");
     await page.goto(CONFIG.VFS_URL, { waitUntil: "networkidle2", timeout: 60000 });
-    await delay(3000, 6000); // Daha uzun bekleme — insan gibi
+    await delay(3000, 6000);
     await humanMove(page);
 
     // STEP 2: Cookie banner
@@ -622,7 +599,7 @@ async function checkAppointments(config, account) {
         }) || null;
       });
       if (cookieBtn && cookieBtn.asElement()) {
-        await delay(500, 1500); // İnsan gibi düşünme süresi
+        await delay(500, 1500);
         await cookieBtn.asElement().click();
         console.log("  [2/6] ✅ Cookie kabul edildi.");
         await delay(1000, 2000);
@@ -654,10 +631,9 @@ async function checkAppointments(config, account) {
       await page.keyboard.up("Control");
       await delay(100, 300);
       
-      // İnsan benzeri yazma — değişken hız
       for (const ch of account.email) {
         await page.keyboard.type(ch, { delay: Math.random() * 120 + 30 });
-        if (Math.random() < 0.05) await delay(200, 600); // Bazen duraklama
+        if (Math.random() < 0.05) await delay(200, 600);
       }
       await delay(800, 1500);
       
@@ -908,3 +884,5 @@ async function main() {
 }
 
 main();
+ENDOFFILE
+npm install puppeteer-extra puppeteer-extra-plugin-stealth && pm2 restart vfs-bot && pm2 logs vfs-bot
