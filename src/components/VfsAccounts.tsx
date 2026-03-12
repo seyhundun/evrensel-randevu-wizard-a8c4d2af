@@ -193,16 +193,6 @@ export default function VfsAccounts() {
                     {showPasswords[acc.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
                 </div>
-                {acc.imap_password && (
-                  <span className="text-xs text-emerald-600 flex items-center gap-1 mt-0.5">
-                    <Mail className="w-3 h-3" /> IMAP: {acc.imap_host || "imap.gmail.com"}
-                  </span>
-                )}
-                {!acc.imap_password && (
-                  <span className="text-xs text-amber-500 flex items-center gap-1 mt-0.5">
-                    <Mail className="w-3 h-3" /> IMAP yapılandırılmadı
-                  </span>
-                )}
                 {acc.otp_requested_at && !acc.manual_otp && (
                   <div className="flex items-center gap-2 mt-1.5">
                     <MessageSquare className="w-3.5 h-3.5 text-orange-500 animate-pulse" />
