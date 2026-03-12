@@ -36,6 +36,21 @@ export default function VfsAccounts() {
 
   useEffect(() => {
     loadAccounts();
+
+    const channel = supabase
+      .channel('vfs-accounts-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'vfs_accounts' },
+        () => {
+          loadAccounts();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const loadAccounts = async () => {
