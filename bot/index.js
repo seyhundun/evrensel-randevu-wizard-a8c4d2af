@@ -387,14 +387,22 @@ async function checkAppointments(config, account) {
 
   let browser;
   try {
+    const proxy = getNextProxy();
+    console.log(`  [PROXY] ${proxy.host}:${proxy.port}`);
+    
     browser = await puppeteer.launch({
       headless: CONFIG.HEADLESS ? "new" : false,
       slowMo: CONFIG.SLOW_MO,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
-        "--disable-blink-features=AutomationControlled", "--window-size=1920,1080"],
+        "--disable-blink-features=AutomationControlled", "--window-size=1920,1080",
+        `--proxy-server=${proxy.url}`],
     });
 
     const page = await browser.newPage();
+    
+    // Proxy authentication
+    await page.authenticate({ username: proxy.user, password: proxy.pass });
+    
     await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
     await page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => false });
