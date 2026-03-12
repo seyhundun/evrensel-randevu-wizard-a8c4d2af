@@ -158,6 +158,10 @@ export type Database = {
           notes: string | null
           otp_requested_at: string | null
           password: string
+          phone: string | null
+          registration_otp: string | null
+          registration_otp_type: string | null
+          registration_status: string | null
           status: string
           updated_at: string
         }
@@ -174,6 +178,10 @@ export type Database = {
           notes?: string | null
           otp_requested_at?: string | null
           password: string
+          phone?: string | null
+          registration_otp?: string | null
+          registration_otp_type?: string | null
+          registration_status?: string | null
           status?: string
           updated_at?: string
         }
@@ -190,6 +198,10 @@ export type Database = {
           notes?: string | null
           otp_requested_at?: string | null
           password?: string
+          phone?: string | null
+          registration_otp?: string | null
+          registration_otp_type?: string | null
+          registration_status?: string | null
           status?: string
           updated_at?: string
         }

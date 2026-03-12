@@ -133,6 +133,63 @@ Deno.serve(async (req) => {
             { headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+
+        // Get accounts pending registration
+        if (body.action === "get_pending_registrations") {
+          const { data } = await supabase
+            .from("vfs_accounts")
+            .select("id, email, password, phone, registration_status, registration_otp_type, registration_otp")
+            .eq("registration_status", "pending");
+          return new Response(
+            JSON.stringify({ ok: true, accounts: data ?? [] }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Bot signals it needs registration OTP (email or sms)
+        if (body.action === "set_registration_otp_needed") {
+          const { account_id, otp_type } = body;
+          await supabase
+            .from("vfs_accounts")
+            .update({ registration_otp_type: otp_type, registration_otp: null })
+            .eq("id", account_id);
+          return new Response(
+            JSON.stringify({ ok: true }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Get registration OTP entered by user
+        if (body.action === "get_registration_otp") {
+          const { account_id } = body;
+          const { data } = await supabase
+            .from("vfs_accounts")
+            .select("registration_otp, registration_otp_type")
+            .eq("id", account_id)
+            .single();
+          return new Response(
+            JSON.stringify({ ok: true, registration_otp: data?.registration_otp || null, otp_type: data?.registration_otp_type }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Bot marks registration complete or failed
+        if (body.action === "complete_registration") {
+          const { account_id, success } = body;
+          await supabase
+            .from("vfs_accounts")
+            .update({
+              registration_status: success ? "completed" : "failed",
+              registration_otp: null,
+              registration_otp_type: null,
+              status: success ? "active" : "active",
+            })
+            .eq("id", account_id);
+          return new Response(
+            JSON.stringify({ ok: true }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
         
         // Regular log posting (JSON)
         let config_id = body.config_id;
