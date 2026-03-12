@@ -78,6 +78,25 @@ export default function VfsAccounts() {
     loadAccounts();
   };
 
+  const submitManualOtp = async (id: string) => {
+    const code = smsOtpInputs[id]?.trim();
+    if (!code) {
+      toast.error("OTP kodu girin");
+      return;
+    }
+    const { error } = await supabase
+      .from("vfs_accounts")
+      .update({ manual_otp: code } as any)
+      .eq("id", id);
+    if (error) {
+      toast.error("OTP gönderilemedi: " + error.message);
+    } else {
+      toast.success("OTP kodu gönderildi, bot kullanacak");
+      setSmsOtpInputs((prev) => ({ ...prev, [id]: "" }));
+      loadAccounts();
+    }
+  };
+
   const reactivateAccount = async (id: string) => {
     await supabase
       .from("vfs_accounts")
