@@ -422,27 +422,54 @@ async function handleOtpVerification(page, account) {
 }
 
 // ==================== CAPTCHA ====================
+async function tryClickTurnstileCheckbox(page) {
+  try {
+    const frame = page.frames().find((f) => f.url().includes("challenges.cloudflare.com"));
+    if (!frame) return false;
+
+    const checkbox = await frame.$('input[type="checkbox"], [role="checkbox"], .cb-i');
+    if (!checkbox) return false;
+
+    await checkbox.click();
+    await delay(1200, 2400);
+    console.log("  [CAPTCHA] ✅ Turnstile iframe checkbox tıklandı");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function solveTurnstile(page) {
   if (!CONFIG.CAPTCHA_API_KEY || !Solver) {
     console.log("  [CAPTCHA] API key veya 2captcha modülü yok, atlıyorum.");
     return false;
   }
+
   let sitekey = await page.evaluate(() => {
+    const direct = document.querySelector('[data-sitekey]');
+    if (direct) return direct.getAttribute('data-sitekey');
+
+    const turnstile = document.querySelector('.cf-turnstile, [name*="turnstile"]');
+    if (turnstile?.getAttribute('data-sitekey')) return turnstile.getAttribute('data-sitekey');
+
     const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
     if (!iframe) return null;
-    const container = iframe.closest("div[data-sitekey]") || document.querySelector("[data-sitekey]");
-    if (container) return container.getAttribute("data-sitekey");
-    const src = iframe.getAttribute("src") || "";
+
+    const container = iframe.closest('div[data-sitekey]') || document.querySelector('[data-sitekey]');
+    if (container) return container.getAttribute('data-sitekey');
+
+    const src = iframe.getAttribute('src') || '';
     const match = src.match(/[?&]k=([^&]+)/);
-    return match ? match[1] : null;
+    return match ? decodeURIComponent(match[1]) : null;
   });
+
   if (!sitekey) {
-    sitekey = await page.evaluate(() => {
-      const el = document.querySelector(".cf-turnstile");
-      return el ? el.getAttribute("data-sitekey") : null;
-    });
-    if (!sitekey) { console.log("  [CAPTCHA] Turnstile bulunamadı."); return true; }
+    const clicked = await tryClickTurnstileCheckbox(page);
+    if (clicked) return true;
+    console.log("  [CAPTCHA] Turnstile sitekey bulunamadı.");
+    return false;
   }
+
   return await _solve(page, sitekey);
 }
 
