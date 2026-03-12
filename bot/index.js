@@ -785,12 +785,349 @@ async function checkAppointments(config, account) {
   }
 }
 
+// ==================== REGISTRATION ====================
+
+async function fetchPendingRegistrations() {
+  try {
+    const res = await fetch(CONFIG.API_URL, {
+      method: "POST",
+      headers: apiHeaders,
+      body: JSON.stringify({ action: "get_pending_registrations" }),
+    });
+    const data = await res.json();
+    return data.ok ? (data.accounts || []) : [];
+  } catch (err) {
+    console.error("  [REG] Kayıt listesi hatası:", err.message);
+    return [];
+  }
+}
+
+async function setRegistrationOtpNeeded(accountId, otpType) {
+  try {
+    await fetch(CONFIG.API_URL, {
+      method: "POST",
+      headers: apiHeaders,
+      body: JSON.stringify({ action: "set_registration_otp_needed", account_id: accountId, otp_type: otpType }),
+    });
+    console.log(`  [REG] 📱 ${otpType.toUpperCase()} doğrulama kodu bekleniyor - dashboard'dan girilebilir`);
+  } catch (err) {
+    console.error("  [REG] OTP istek hatası:", err.message);
+  }
+}
+
+async function getRegistrationOtp(accountId) {
+  try {
+    const res = await fetch(CONFIG.API_URL, {
+      method: "POST",
+      headers: apiHeaders,
+      body: JSON.stringify({ action: "get_registration_otp", account_id: accountId }),
+    });
+    const data = await res.json();
+    return data.registration_otp || null;
+  } catch (err) {
+    console.error("  [REG] OTP okuma hatası:", err.message);
+    return null;
+  }
+}
+
+async function completeRegistration(accountId, success) {
+  try {
+    await fetch(CONFIG.API_URL, {
+      method: "POST",
+      headers: apiHeaders,
+      body: JSON.stringify({ action: "complete_registration", account_id: accountId, success }),
+    });
+    console.log(`  [REG] Kayıt ${success ? "✅ başarılı" : "❌ başarısız"}`);
+  } catch (err) {
+    console.error("  [REG] Kayıt sonuç hatası:", err.message);
+  }
+}
+
+async function waitForRegistrationOtp(accountId, otpType, timeoutMs = 180000) {
+  await setRegistrationOtpNeeded(accountId, otpType);
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    const otp = await getRegistrationOtp(accountId);
+    if (otp) {
+      console.log(`  [REG] ✅ ${otpType} OTP alındı: ${otp}`);
+      return otp;
+    }
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    console.log(`  [REG] ${otpType} OTP bekleniyor... ${elapsed}s / ${Math.round(timeoutMs / 1000)}s`);
+    await delay(5000, 6000);
+  }
+  console.log(`  [REG] ❌ ${otpType} OTP zaman aşımı`);
+  return null;
+}
+
+async function registerVfsAccount(account) {
+  const ts = new Date().toLocaleTimeString("tr-TR");
+  console.log(`\n[${ts}] 📝 VFS Kayıt: ${account.email}`);
+
+  let browser;
+  try {
+    const proxy = getNextProxy();
+    const fp = generateFingerprint();
+    console.log(`  [PROXY] ${proxy.host}:${proxy.port}`);
+
+    browser = await puppeteer.launch({
+      headless: CONFIG.HEADLESS ? "new" : false,
+      slowMo: CONFIG.SLOW_MO,
+      args: [
+        "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
+        "--disable-blink-features=AutomationControlled",
+        `--window-size=${fp.viewport.width},${fp.viewport.height}`,
+        `--proxy-server=${proxy.url}`,
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-web-security",
+      ],
+    });
+
+    const page = await browser.newPage();
+    await page.authenticate({ username: proxy.user, password: proxy.pass });
+    await applyFingerprint(page, fp);
+    await humanMove(page);
+
+    // Navigate to VFS registration page
+    const regUrl = CONFIG.VFS_URL.replace("/login", "/register");
+    console.log("  [REG 1/5] Kayıt sayfası...");
+    await page.goto(regUrl, { waitUntil: "networkidle2", timeout: 60000 });
+    await delay(3000, 6000);
+    await humanMove(page);
+
+    // Cookie banner
+    console.log("  [REG 2/5] Cookie banner...");
+    try {
+      const cookieBtn = await page.evaluateHandle(() => {
+        const btns = [...document.querySelectorAll("button")];
+        return btns.find((b) => {
+          const txt = b.textContent.toLowerCase();
+          return txt.includes("accept all") || txt.includes("kabul") || txt.includes("tümünü kabul");
+        }) || null;
+      });
+      if (cookieBtn && cookieBtn.asElement()) {
+        await delay(500, 1500);
+        await cookieBtn.asElement().click();
+        await delay(1000, 2000);
+      }
+    } catch (e) {}
+
+    // CAPTCHA + Queue
+    console.log("  [REG 3/5] CAPTCHA + sıra kontrol...");
+    await solveTurnstile(page);
+    await delay(2000, 4000);
+
+    // Fill registration form
+    console.log("  [REG 4/5] Kayıt formu dolduruluyor...");
+    await humanMove(page);
+
+    // Fill email
+    const emailInput = await page.$('input[type="email"], input[name="email"], #email');
+    if (emailInput) {
+      await emailInput.click();
+      await delay(300, 600);
+      for (const ch of account.email) {
+        await page.keyboard.type(ch, { delay: Math.random() * 120 + 30 });
+      }
+      await delay(500, 1000);
+    }
+
+    // Fill phone
+    if (account.phone) {
+      const phoneInput = await page.$('input[type="tel"], input[name="phone"], input[name="mobile"], #phone, #mobile');
+      if (phoneInput) {
+        await phoneInput.click();
+        await delay(300, 600);
+        for (const ch of account.phone) {
+          await page.keyboard.type(ch, { delay: Math.random() * 120 + 30 });
+        }
+        await delay(500, 1000);
+      }
+    }
+
+    // Fill password
+    const passwordInputs = await page.$$('input[type="password"]');
+    for (const pwInput of passwordInputs) {
+      await pwInput.click();
+      await delay(300, 600);
+      for (const ch of account.password) {
+        await page.keyboard.type(ch, { delay: Math.random() * 120 + 30 });
+      }
+      await delay(500, 1000);
+    }
+
+    await humanMove(page);
+    await delay(1000, 2000);
+
+    // Accept terms if checkbox exists
+    try {
+      const checkbox = await page.$('input[type="checkbox"]');
+      if (checkbox) {
+        await checkbox.click();
+        await delay(500, 1000);
+      }
+    } catch (e) {}
+
+    // Submit registration
+    const regBtn = await page.evaluateHandle(() => {
+      const btns = [...document.querySelectorAll("button")];
+      return btns.find((b) => {
+        const txt = b.textContent.toLowerCase();
+        return txt.includes("kayıt") || txt.includes("register") || txt.includes("sign up") ||
+               txt.includes("üye ol") || txt.includes("create") || txt.includes("oluştur");
+      }) || document.querySelector('button[type="submit"]') || null;
+    });
+    if (regBtn && regBtn.asElement()) {
+      await regBtn.asElement().click();
+    } else {
+      await page.click('button[type="submit"]');
+    }
+    await delay(5000, 8000);
+
+    // Take screenshot for debugging
+    const ss = await takeScreenshotBase64(page);
+    await reportResult("registration", "checking", `Kayıt formu gönderildi | ${account.email}`, 0, ss);
+
+    // STEP 5: Handle verification codes
+    console.log("  [REG 5/5] Doğrulama kodları...");
+
+    // Check if email verification is needed
+    const pageText = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
+    const needsEmailVerify = pageText.includes("e-posta") || pageText.includes("email") ||
+                              pageText.includes("doğrulama") || pageText.includes("verification") ||
+                              pageText.includes("verify");
+
+    if (needsEmailVerify) {
+      console.log("  [REG] Email doğrulama kodu gerekli");
+      const emailOtp = await waitForRegistrationOtp(account.id, "email", 180000);
+      if (!emailOtp) {
+        await completeRegistration(account.id, false);
+        return false;
+      }
+
+      // Enter email OTP
+      const otpFilled = await page.evaluate((code) => {
+        const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"]');
+        const otpInputs = [...inputs].filter(inp => {
+          const name = (inp.name || "").toLowerCase();
+          const placeholder = (inp.placeholder || "").toLowerCase();
+          const id = (inp.id || "").toLowerCase();
+          return name.includes("otp") || name.includes("code") || name.includes("verification") ||
+                 placeholder.includes("kod") || placeholder.includes("code") || id.includes("otp") || id.includes("code");
+        });
+        if (otpInputs.length > 0) {
+          if (otpInputs[0].maxLength === 1 && otpInputs.length >= 4) {
+            for (let i = 0; i < Math.min(code.length, otpInputs.length); i++) {
+              otpInputs[i].value = code[i];
+              otpInputs[i].dispatchEvent(new Event("input", { bubbles: true }));
+              otpInputs[i].dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          } else {
+            otpInputs[0].value = code;
+            otpInputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+            otpInputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          return true;
+        }
+        const singleInput = document.querySelector('input[type="text"]');
+        if (singleInput) {
+          singleInput.value = code;
+          singleInput.dispatchEvent(new Event("input", { bubbles: true }));
+          singleInput.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        }
+        return false;
+      }, emailOtp);
+
+      if (otpFilled) {
+        await delay(500, 1000);
+        const submitted = await page.evaluate(() => {
+          const btns = [...document.querySelectorAll("button")];
+          const btn = btns.find(b => {
+            const txt = b.textContent.toLowerCase();
+            return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") ||
+                   txt.includes("submit") || txt.includes("gönder") || txt.includes("confirm");
+          }) || document.querySelector('button[type="submit"]');
+          if (btn) { btn.click(); return true; }
+          return false;
+        });
+        if (submitted) {
+          await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => {});
+          await delay(3000, 5000);
+        }
+      }
+    }
+
+    // Check if SMS verification is also needed
+    const pageText2 = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
+    const needsSmsVerify = pageText2.includes("sms") || pageText2.includes("telefon") ||
+                            pageText2.includes("phone") || pageText2.includes("mobile");
+
+    if (needsSmsVerify) {
+      console.log("  [REG] SMS doğrulama kodu gerekli");
+      const smsOtp = await waitForRegistrationOtp(account.id, "sms", 180000);
+      if (!smsOtp) {
+        await completeRegistration(account.id, false);
+        return false;
+      }
+
+      // Enter SMS OTP (same logic)
+      await page.evaluate((code) => {
+        const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"]');
+        for (const inp of inputs) {
+          const name = (inp.name || "").toLowerCase();
+          const placeholder = (inp.placeholder || "").toLowerCase();
+          if (name.includes("otp") || name.includes("code") || name.includes("sms") ||
+              placeholder.includes("kod") || placeholder.includes("code") || placeholder.includes("sms")) {
+            inp.value = code;
+            inp.dispatchEvent(new Event("input", { bubbles: true }));
+            inp.dispatchEvent(new Event("change", { bubbles: true }));
+            break;
+          }
+        }
+      }, smsOtp);
+
+      await delay(500, 1000);
+      await page.evaluate(() => {
+        const btns = [...document.querySelectorAll("button")];
+        const btn = btns.find(b => {
+          const txt = b.textContent.toLowerCase();
+          return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") ||
+                 txt.includes("confirm") || txt.includes("gönder");
+        }) || document.querySelector('button[type="submit"]');
+        if (btn) btn.click();
+      });
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => {});
+      await delay(3000, 5000);
+    }
+
+    // Check if registration was successful
+    const finalText = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
+    const finalUrl = await page.evaluate(() => window.location.href.toLowerCase());
+    const success = finalUrl.includes("login") || finalUrl.includes("dashboard") ||
+                    finalText.includes("başarılı") || finalText.includes("success") ||
+                    finalText.includes("tamamlandı") || finalText.includes("completed");
+
+    const finalSs = await takeScreenshotBase64(page);
+    await reportResult("registration", success ? "found" : "error",
+      `Kayıt ${success ? "başarılı" : "sonucu belirsiz"} | ${account.email}`, 0, finalSs);
+    await completeRegistration(account.id, success);
+    return success;
+  } catch (err) {
+    console.error("  [REG] Genel hata:", err.message);
+    await completeRegistration(account.id, false);
+    return false;
+  } finally {
+    if (browser) await browser.close();
+  }
+}
+
 // ==================== MAIN LOOP ====================
 
 async function main() {
   console.log("═══════════════════════════════════════════");
-  console.log("  VFS Randevu Takip Botu v6");
-  console.log("  Stealth + Fingerprint Randomization");
+  console.log("  VFS Randevu Takip Botu v7");
+  console.log("  Stealth + Fingerprint + Auto Registration");
   console.log("═══════════════════════════════════════════");
 
   if (CONFIG.CAPTCHA_API_KEY) {
@@ -799,7 +1136,7 @@ async function main() {
     console.log("⚠ CAPTCHA_API_KEY yok, Turnstile çözülemeyecek!");
   }
   console.log("✅ Stealth plugin aktif");
-  console.log("✅ Fingerprint randomization aktif");
+  console.log("✅ Otomatik kayıt aktif");
 
   while (true) {
     try {
