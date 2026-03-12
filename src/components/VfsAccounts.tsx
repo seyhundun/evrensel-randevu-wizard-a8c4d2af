@@ -262,10 +262,17 @@ export default function VfsAccounts() {
               <Label className="text-xs">Telefon Numarası</Label>
               <Input
                 type="tel"
-                placeholder="+905xxxxxxxxx"
+                placeholder="5xxxxxxxxx"
                 value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
+                onChange={(e) => {
+                  // Sadece rakam kabul et, başındaki 0 ve +90'ı otomatik kaldır
+                  let val = e.target.value.replace(/\D/g, "");
+                  val = val.replace(/^90/, "").replace(/^0+/, "");
+                  setNewPhone(val);
+                }}
+                maxLength={10}
               />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Başında 0 olmadan, ör: 5321234567</p>
             </div>
           )}
         </div>
