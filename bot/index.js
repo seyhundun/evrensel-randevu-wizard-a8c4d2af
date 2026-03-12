@@ -1464,6 +1464,7 @@ async function registerVfsAccount(account) {
     // DEVAM ET BUTONU
     console.log("  [REG 7/7] Devam Et tıklanıyor...");
     let clickedSubmit = false;
+    let submitError = null;
 
     const btnInfo = await page.evaluate(() => {
       const btns = Array.from(document.querySelectorAll('button'));
@@ -1581,7 +1582,10 @@ async function registerVfsAccount(account) {
         clickedSubmit = true;
         console.log("  [REG] ✅ Devam Et tıklandı");
       }
-    } catch (e) { console.log("  [REG] Submit click hatası:", e.message); }
+    } catch (e) {
+      submitError = e?.message || "Submit click hatası";
+      console.log("  [REG] Submit click hatası:", submitError);
+    }
 
     if (!clickedSubmit) {
       clickedSubmit = await page.evaluate(() => {
@@ -1604,7 +1608,10 @@ async function registerVfsAccount(account) {
         return false;
       });
     }
-    if (!clickedSubmit) throw new Error("Submit butonu bulunamadı");
+    if (!clickedSubmit) {
+      if (submitError?.includes("pasif")) throw new Error(submitError);
+      throw new Error("Submit butonu bulunamadı");
+    }
 
     await delay(4000, 7000);
 
