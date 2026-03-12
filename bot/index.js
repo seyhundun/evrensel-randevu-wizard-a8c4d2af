@@ -135,15 +135,13 @@ async function waitForLoginFormAfterQueue(page) {
       const waitedSec = Math.round((Date.now() - startedAt) / 1000);
       console.log(`  [QUEUE] Sırada bekleniyor... ${waitedSec}s`);
       await solveTurnstile(page);
-      if (attempt % 3 === 0) {
-        await page.reload({ waitUntil: "networkidle2", timeout: 30000 }).catch(() => {});
-      } else {
-        await page.waitForNavigation({ waitUntil: "networkidle2", timeout: CONFIG.QUEUE_POLL_MS }).catch(() => {});
-      }
-      await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 1200);
+      // Agresif reload yapmıyoruz — VFS bunu tespit edip banlıyor
+      // Sadece bekle, sayfa kendisi yenilenecek
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: CONFIG.QUEUE_POLL_MS + 5000 }).catch(() => {});
+      await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 3000);
       continue;
     }
-    await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 1200);
+    await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 3000);
   }
   return { ok: false, reason: `Waiting room timeout (${Math.round(CONFIG.QUEUE_MAX_WAIT_MS / 1000)}s)` };
 }
