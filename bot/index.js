@@ -270,18 +270,64 @@ async function checkAppointments(config) {
     const isStillOnLogin = currentUrl.includes("/login") || currentUrl.includes("login");
     
     if (isStillOnLogin) {
-      // Hala login sayfasındayız - giriş başarısız
       console.log("  [4/5] ❌ GİRİŞ BAŞARISIZ! Hala login sayfasında.");
       
-      // Sayfa metnini kontrol et - hata mesajı var mı?
-      const errorText = await page.evaluate(() => {
-        const errEls = document.querySelectorAll(".error, .alert-danger, .text-danger, [role='alert']");
-        return [...errEls].map((e) => e.textContent.trim()).join(" | ");
+      // Detaylı teşhis bilgisi topla
+      const diagnostics = await page.evaluate(() => {
+        // Hata mesajları
+        const errEls = document.querySelectorAll(".error, .alert-danger, .text-danger, [role='alert'], .toast-error, .notification-error, .invalid-feedback");
+        const errors = [...errEls].map((e) => e.textContent.trim()).filter(Boolean);
+
+        // CAPTCHA durumu
+        const turnstileFrame = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
+        const turnstileDiv = document.querySelector(".cf-turnstile");
+        const captchaInput = document.querySelector('input[name="cf-turnstile-response"]');
+        const captchaStatus = {
+          frameExists: !!turnstileFrame,
+          divExists: !!turnstileDiv,
+          inputValue: captchaInput ? (captchaInput.value ? "HAS_TOKEN" : "EMPTY") : "NO_INPUT",
+        };
+
+        // Submit buton durumu
+        const submitBtn = document.querySelector('button[type="submit"]');
+        const btnStatus = submitBtn ? {
+          disabled: submitBtn.disabled,
+          text: submitBtn.textContent.trim(),
+          classes: submitBtn.className,
+        } : null;
+
+        // Form alanları dolu mu
+        const emailInput = document.querySelector('input[type="email"], #email');
+        const passInput = document.querySelector('input[type="password"]');
+        const formStatus = {
+          emailFilled: emailInput ? !!emailInput.value : false,
+          passFilled: passInput ? !!passInput.value : false,
+        };
+
+        // Sayfa title
+        const title = document.title;
+
+        return { errors, captchaStatus, btnStatus, formStatus, title };
       });
-      if (errorText) console.log("  [4/5] Hata mesajı:", errorText);
+
+      console.log("  [DIAG] Sayfa title:", diagnostics.title);
+      console.log("  [DIAG] Form durumu:", JSON.stringify(diagnostics.formStatus));
+      console.log("  [DIAG] CAPTCHA durumu:", JSON.stringify(diagnostics.captchaStatus));
+      console.log("  [DIAG] Submit buton:", JSON.stringify(diagnostics.btnStatus));
+      if (diagnostics.errors.length > 0) {
+        console.log("  [DIAG] Hata mesajları:", diagnostics.errors.join(" | "));
+      }
 
       const ss = await takeScreenshotBase64(page);
-      await reportResult(id, "error", `Giriş başarısız! Hala login sayfasında. ${errorText || "CAPTCHA veya şifre sorunu olabilir."}`, 0, ss);
+      const diagMsg = [
+        `URL: ${currentUrl}`,
+        diagnostics.errors.length > 0 ? `Hatalar: ${diagnostics.errors.join("; ")}` : null,
+        `CAPTCHA: ${diagnostics.captchaStatus.inputValue}`,
+        `Buton: ${diagnostics.btnStatus ? (diagnostics.btnStatus.disabled ? "DISABLED" : "ENABLED") : "YOK"}`,
+        `Form: email=${diagnostics.formStatus.emailFilled}, şifre=${diagnostics.formStatus.passFilled}`,
+      ].filter(Boolean).join(" | ");
+
+      await reportResult(id, "error", `Giriş başarısız! ${diagMsg}`, 0, ss);
       return false;
     }
 
