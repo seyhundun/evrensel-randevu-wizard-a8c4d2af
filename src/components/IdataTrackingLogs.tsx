@@ -96,6 +96,16 @@ export default function IdataTrackingLogs() {
   const [loading, setLoading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [configActive, setConfigActive] = useState(false);
+
+  const fetchConfig = async () => {
+    const { data } = await supabase
+      .from("idata_config" as any)
+      .select("is_active")
+      .limit(1)
+      .single();
+    if (data) setConfigActive((data as any).is_active);
+  };
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -110,7 +120,7 @@ export default function IdataTrackingLogs() {
 
   useEffect(() => {
     fetchLogs();
-
+    fetchConfig();
     const channel = supabase
       .channel("idata-tracking-logs")
       .on(
@@ -119,6 +129,11 @@ export default function IdataTrackingLogs() {
         (payload) => {
           setLogs((prev) => [payload.new as LogEntry, ...prev].slice(0, 100));
         }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "idata_config" },
+        () => fetchConfig()
       )
       .subscribe();
 
@@ -134,7 +149,7 @@ export default function IdataTrackingLogs() {
   const currentIp = latestIpLog ? extractIp(latestIpLog.message) : null;
   const lastLogTime = logs[0]?.created_at;
   const lastLogAge = lastLogTime ? (Date.now() - new Date(lastLogTime).getTime()) / 1000 : Infinity;
-  const botActive = lastLogAge < 300;
+  const botActive = configActive || lastLogAge < 300;
 
   const filters = [
     { key: "all", label: "Tümü" },
