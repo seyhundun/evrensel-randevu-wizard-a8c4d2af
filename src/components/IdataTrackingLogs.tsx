@@ -52,6 +52,9 @@ const statusConfig: Record<string, { icon: React.ReactNode; label: string; color
   account_banned: { icon: <Ban className="w-4 h-4" />, label: "Hesap Engellendi", color: "text-red-500 bg-red-500/10" },
   account_cooldown: { icon: <Timer className="w-4 h-4" />, label: "Hesap Soğutma", color: "text-amber-500 bg-amber-500/10" },
 
+  cloudflare:     { icon: <ShieldCheck className="w-4 h-4" />, label: "⚠️ Cloudflare Engeli", color: "text-amber-500 bg-amber-500/10 font-bold" },
+  cf_retry:       { icon: <RefreshCw className="w-4 h-4" />, label: "CF Yeniden Deneniyor", color: "text-cyan-500 bg-cyan-500/10" },
+
   // --- Network / page ---
   page_load:      { icon: <Globe className="w-4 h-4" />, label: "Sayfa Yüklendi", color: "text-blue-400 bg-blue-400/10" },
   network_error:  { icon: <Wifi className="w-4 h-4" />, label: "Ağ Hatası", color: "text-destructive bg-destructive/10" },
