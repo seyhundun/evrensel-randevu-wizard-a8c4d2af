@@ -277,7 +277,12 @@ export default function IdataTrackingLogs() {
                   )}
                   {log.screenshot_url && (
                     <button
-                      onClick={() => setLightboxUrl(log.screenshot_url)}
+                      onClick={() => {
+                        const url = log.screenshot_url!;
+                        // Base64 veri ise data URI'ye çevir
+                        const isBase64 = !url.startsWith("http") && !url.startsWith("data:");
+                        setLightboxUrl(isBase64 ? `data:image/png;base64,${url}` : url);
+                      }}
                       className="mt-1 flex items-center gap-1.5 text-primary hover:text-primary/80 transition-colors"
                     >
                       <ImageIcon className="w-3.5 h-3.5" />
