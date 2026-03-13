@@ -156,7 +156,15 @@ export default function IdataTrackingLogs() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "idata_tracking_logs" },
         (payload) => {
-          setLogs((prev) => [payload.new as LogEntry, ...prev].slice(0, 100));
+          const newLog = payload.new as LogEntry;
+          setLogs((prev) => [newLog, ...prev].slice(0, 100));
+          if (newLog.status === "appt_found") {
+            setAppointmentFound(true);
+            setAlarmDismissed(false);
+          }
+          if (newLog.status === "appt_none" && !alarmDismissed) {
+            setAppointmentFound(false);
+          }
         }
       )
       .on(
