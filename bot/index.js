@@ -1445,7 +1445,7 @@ async function checkAppointments(config, account) {
       return {
         url,
         isNotFound: url.includes("page-not-found") || url.includes("404"),
-        isSessionExpired: body.includes("oturum süresi doldu") || body.includes("session expired"),
+        isSessionExpired: body.includes("oturum süresi doldu") || body.includes("oturum süresi dolmuş") || body.includes("session expired") || body.includes("oturumunuzun süresi") || (body.includes("oturum") && body.includes("geçersiz")),
         isBanned: body.includes("engellenmiş") || body.includes("blocked") || body.includes("banned"),
         isWaitingRoom: (document.title || "").toLowerCase().includes("waiting room"),
         isLoginPage: url.includes("/login"),
