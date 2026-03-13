@@ -11,7 +11,7 @@ try {
   const mod = require("2captcha-ts");
   Solver = mod.Solver || mod.default?.Solver || mod;
 } catch (e) {
-  console.log("⚠ 2captcha-ts yüklü değil, CAPTCHA çözülemeyecek.");
+  console.log("⚠ 2captcha-ts yüklü değil, HTTP fallback ile devam edilecek.");
 }
 
 const CONFIG = {
