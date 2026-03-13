@@ -1163,9 +1163,11 @@ async function checkAppointments(config, account) {
 
     // STEP 5: OTP
     console.log("  [5/6] OTP kontrol...");
+    await logStep(id, "login_otp", "OTP doğrulama kontrol ediliyor...");
     const otpResult = await handleOtpVerification(page, account);
     if (!otpResult.ok && otpResult.reason === "otp_required") {
       console.log("  [5/6] ❌ OTP doğrulama gerekli");
+      await logStep(id, "login_fail", `OTP doğrulama gerekli | ${account.email}`);
       await reportResult(id, "error", `OTP doğrulama gerekli | Hesap: ${account.email}`, 0, otpResult.screenshot);
       await updateAccountStatus(account.id, "cooldown", (account.fail_count || 0) + 1);
       return { found: false, accountBanned: false, otpRequired: true };
