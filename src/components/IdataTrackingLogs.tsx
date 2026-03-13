@@ -209,6 +209,34 @@ export default function IdataTrackingLogs() {
 
   return (
     <div className="space-y-3">
+      {/* 🚨 RANDEVU BULUNDU ALARM BANNER */}
+      {appointmentFound && !alarmDismissed && (
+        <div className="relative overflow-hidden rounded-xl border-2 border-green-500 bg-green-500/10 p-4 animate-pulse">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-4xl">🎉</span>
+              <div>
+                <h3 className="text-lg font-bold text-green-600">RANDEVU BULUNDU!</h3>
+                <p className="text-sm text-green-600/80">Hemen giriş yapıp randevuyu alın!</p>
+                <a
+                  href="https://it-tr-appointment.idata.com.tr/tr/membership/dashboard/application/availability"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 mt-2 px-4 py-2 rounded-lg bg-green-600 text-white font-semibold text-sm hover:bg-green-700 transition-colors"
+                >
+                  <Globe className="w-4 h-4" /> iDATA'ya Git
+                </a>
+              </div>
+            </div>
+            <button
+              onClick={() => setAlarmDismissed(true)}
+              className="absolute top-2 right-2 p-1 rounded-md hover:bg-green-500/20 transition-colors"
+            >
+              <X className="w-5 h-5 text-green-600" />
+            </button>
+          </div>
+        </div>
+      )}
       {/* Bot Status Bar */}
       <div className="flex items-center justify-between rounded-lg bg-card border border-border/50 px-4 py-3">
         <div className="flex items-center gap-3">
