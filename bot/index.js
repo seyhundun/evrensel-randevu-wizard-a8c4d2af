@@ -1573,19 +1573,23 @@ async function checkAppointments(config, account) {
       else if (pageCheck.hasTurnstileWidget && pageCheck.loginSubmitDisabled) errorType = "❌ Turnstile doğrulanmadı (submit pasif)";
       else if (isLoginFailed) errorType = "❌ Giriş başarısız";
 
-      // Session expired veya Turnstile hatalarında IP'yi banla — temiz tarayıcıyla yeni IP denenecek
+      // Session expired veya Turnstile hatalarında IP'yi anında banla — sıradaki IP + temiz profil ile yeniden başlasın
       if (pageCheck.isSessionExpired || errorType.includes("Turnstile") || pageCheck.isWaitingRoom) {
-        markIpFail(activeIp);
+        banIpImmediately(activeIp, "post_login_session_or_turnstile_error");
       }
 
-      console.log(`  [5/6] ${errorType} | Hesap: ${account.email}`);
+      const finalDiag = await getTurnstileDiagnostics(page).catch(() => null);
+      const finalDiagText = formatTurnstileDiagnostics(finalDiag);
+      await logStep(id, "login_captcha_debug", `Login sonrası kontrol | ${account.email} | ${finalDiagText}`);
+
+      console.log(`  [5/6] ${errorType} | Hesap: ${account.email} | ${finalDiagText}`);
       const ss = await takeScreenshotBase64(page);
       await reportResult(id, "error", `${errorType} | Hesap: ${account.email}`, 0, ss);
       if (isBanned) { await updateAccountStatus(account.id, "banned"); return { found: false, accountBanned: true, hadError: true }; }
       
-      // Session expired durumunda hesap fail_count artırma — sorun hesapta değil IP/session'da
-      if (pageCheck.isSessionExpired) {
-        return { found: false, accountBanned: false, hadError: true };
+      // Session/Turnstile/waiting-room durumunda hemen sonraki IP ile devam et
+      if (pageCheck.isSessionExpired || errorType.includes("Turnstile") || pageCheck.isWaitingRoom) {
+        return { found: false, accountBanned: false, ipBlocked: true, hadError: true };
       }
       
       const newFailCount = (account.fail_count || 0) + 1;
