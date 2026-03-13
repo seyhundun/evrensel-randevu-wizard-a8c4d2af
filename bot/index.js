@@ -298,6 +298,16 @@ async function reportResult(configId, status, message = "", slotsAvailable = 0, 
   }
 }
 
+// Dashboard'da adım adım görünecek hafif log fonksiyonu
+async function logStep(configId, stepStatus, message = "") {
+  if (!configId) return;
+  try {
+    await apiPost({ config_id: configId, status: stepStatus, message, slots_available: 0 }, `step:${stepStatus}`);
+  } catch (err) {
+    // Adım logları kritik değil, sessizce geç
+  }
+}
+
 async function updateAccountStatus(accountId, status, failCount = null) {
   try {
     const body = { action: "update_account", account_id: accountId, status };
@@ -990,6 +1000,7 @@ async function checkAppointments(config, account) {
   const ts = new Date().toLocaleTimeString("tr-TR");
   const activeIp = getCurrentIp();
   console.log(`\n[${ts}] Kontrol: ${country} ${city} | Hesap: ${account.email} | IP: ${activeIp || "doğrudan"}`);
+  await logStep(id, "bot_start", `Kontrol başlıyor | Hesap: ${account.email} | IP: ${activeIp || "doğrudan"}`);
 
   let browser;
   try {
@@ -1001,6 +1012,7 @@ async function checkAppointments(config, account) {
 
     // STEP 1: Giriş sayfası
     console.log("  [1/6] Giriş sayfası...");
+    await logStep(id, "login_navigate", "VFS giriş sayfası açılıyor...");
     await page.goto(CONFIG.VFS_URL, { waitUntil: "domcontentloaded", timeout: 90000 });
     await humanIdle(4000, 8000); // Sayfa yüklendikten sonra okuyormuş gibi bekle
     await humanMove(page);
@@ -1012,6 +1024,7 @@ async function checkAppointments(config, account) {
       console.log(`  [IP] 🚫 Sayfa yüklenemedi / engellendi! IP: ${activeIp}`);
       markIpFail(activeIp);
       const ss = await takeScreenshotBase64(page);
+      await logStep(id, "network_error", `IP engellendi: ${activeIp || "doğrudan"}`);
       await reportResult(id, "error", `IP engellendi: ${activeIp || "doğrudan"} | Hesap: ${account.email}`, 0, ss);
       const nextIp = getNextIp();
       return { found: false, accountBanned: false, ipBlocked: true };
@@ -1021,6 +1034,7 @@ async function checkAppointments(config, account) {
     await humanMove(page);
 
     // STEP 2: Cookie banner
+    await logStep(id, "page_load", "Sayfa yüklendi, cookie banner kontrol ediliyor...");
     console.log("  [2/6] Cookie banner...");
     try {
       const cookieBtn = await page.evaluateHandle(() => {
@@ -1040,6 +1054,7 @@ async function checkAppointments(config, account) {
 
     // STEP 3: CAPTCHA + Queue
     console.log("  [3/6] CAPTCHA + sıra kontrol...");
+    await logStep(id, "login_captcha", "CAPTCHA çözülüyor ve sıra kontrol ediliyor...");
     await humanMove(page);
     await solveTurnstile(page);
     await delay(1000, 2000);
@@ -1052,6 +1067,7 @@ async function checkAppointments(config, account) {
 
     // STEP 4: Login
     console.log("  [4/6] Giriş yapılıyor...");
+    await logStep(id, "login_form", `Giriş bilgileri dolduruluyor | ${account.email}`);
     try {
       await page.waitForSelector('input[type="email"], input[name="email"], #email', { timeout: 20000 });
       await humanMove(page);
@@ -1148,9 +1164,11 @@ async function checkAppointments(config, account) {
 
     // STEP 5: OTP
     console.log("  [5/6] OTP kontrol...");
+    await logStep(id, "login_otp", "OTP doğrulama kontrol ediliyor...");
     const otpResult = await handleOtpVerification(page, account);
     if (!otpResult.ok && otpResult.reason === "otp_required") {
       console.log("  [5/6] ❌ OTP doğrulama gerekli");
+      await logStep(id, "login_fail", `OTP doğrulama gerekli | ${account.email}`);
       await reportResult(id, "error", `OTP doğrulama gerekli | Hesap: ${account.email}`, 0, otpResult.screenshot);
       await updateAccountStatus(account.id, "cooldown", (account.fail_count || 0) + 1);
       return { found: false, accountBanned: false, otpRequired: true };
@@ -1201,10 +1219,12 @@ async function checkAppointments(config, account) {
     }
 
     console.log("  [5/6] ✅ Giriş başarılı!");
+    await logStep(id, "login_success", `Giriş başarılı! | ${account.email}`);
     await updateAccountStatus(account.id, "active", 0);
 
     // STEP 6: Randevu kontrol
     console.log("  [6/6] Randevu kontrol...");
+    await logStep(id, "search_start", "Dashboard yüklendi, randevu aranıyor...");
     await delay(2000, 4000);
     await humanMove(page);
     try {
@@ -1234,10 +1254,12 @@ async function checkAppointments(config, account) {
 
     if (hasAppointment && !noAppointment) {
       console.log("  ✅ RANDEVU BULUNDU!");
+      await logStep(id, "found", `🎉 RANDEVU BULUNDU! | ${account.email}`);
       await reportResult(id, "found", `Randevu müsait! Hesap: ${account.email}`, 1, ss);
       return { found: true, accountBanned: false };
     } else {
       console.log("  ❌ Randevu yok.");
+      await logStep(id, "no_slots", `Müsait randevu yok | ${account.email}`);
       const msg = noAppointment ? "Müsait randevu yok." : "Dashboard yüklendi, randevu yok.";
       await reportResult(id, "checking", `${msg} | Hesap: ${account.email}`, 0, ss);
       return { found: false, accountBanned: false };
@@ -1801,6 +1823,14 @@ async function postRegError(account, page, reason) {
 async function registerVfsAccount(account) {
   const ts = new Date().toLocaleTimeString("tr-TR");
   console.log(`\n[${ts}] 📝 VFS Kayıt: ${account.email}`);
+  
+  // Dashboard'da göstermek için aktif config ID'yi al
+  let regLogConfigId = null;
+  try {
+    const { configs } = await fetchActiveConfigs();
+    if (configs.length > 0) regLogConfigId = configs[0].id;
+  } catch {}
+  await logStep(regLogConfigId, "reg_start", `Kayıt başlıyor | ${account.email}`);
 
   let browser;
   let page;
@@ -1839,6 +1869,7 @@ async function registerVfsAccount(account) {
 
     // CAPTCHA
     console.log("  [REG 3/7] CAPTCHA...");
+    await logStep(regLogConfigId, "reg_captcha", `CAPTCHA çözülüyor | ${account.email}`);
     await humanMove(page);
     await solveTurnstile(page);
     await humanIdle(3000, 6000);
@@ -1848,6 +1879,7 @@ async function registerVfsAccount(account) {
     const registrationFormResult = await waitForRegistrationFormAfterQueue(page);
     if (!registrationFormResult.ok) {
       const snapshot = await takeScreenshotBase64(page);
+      await logStep(regLogConfigId, "reg_fail", `Form yüklenemedi: ${registrationFormResult.reason} | ${account.email}`);
       await postRegError(account, page, registrationFormResult.reason);
       if (snapshot) console.log("  [REG] 📸 Form timeout screenshot alındı");
       throw new Error(registrationFormResult.reason);
@@ -1858,6 +1890,7 @@ async function registerVfsAccount(account) {
 
     // ========== FORM DOLDURMA ==========
     console.log("  [REG 5/7] Form dolduruluyor...");
+    await logStep(regLogConfigId, "reg_form", `Kayıt formu dolduruluyor | ${account.email}`);
 
     // Angular uyumlu input doldurma helper
     async function fillAngularInput(page, element, value) {
@@ -2296,11 +2329,13 @@ async function registerVfsAccount(account) {
 
     // OTP DOĞRULAMA
     console.log("  [REG] OTP doğrulama kontrol...");
+    await logStep(regLogConfigId, "reg_otp_wait", `Form gönderildi, OTP ekranı bekleniyor | ${account.email}`);
     const otpScreen = await waitForOtpScreenAfterSubmit(page, 45000);
 
     if (!otpScreen.ok) {
       const pageText = otpScreen.pageTextPreview || await page.evaluate(() => (document.body?.innerText || '').substring(0, 300));
       console.log("  [REG] Sayfa durumu:", pageText.substring(0, 200));
+      await logStep(regLogConfigId, "reg_fail", `OTP ekranı bulunamadı | ${account.email}`);
       await postRegError(account, page, "OTP ekranı bulunamadı (submit sonrası)");
       await completeRegistration(account.id, false);
       return false;
@@ -2311,6 +2346,7 @@ async function registerVfsAccount(account) {
       return (t.includes("sms") || t.includes("mobile") || t.includes("telefon")) ? "sms" : "email";
     });
     console.log(`  [REG] 📱 ${otpType.toUpperCase()} OTP bekleniyor - dashboard'dan girin`);
+    await logStep(regLogConfigId, "reg_otp_wait", `${otpType.toUpperCase()} OTP bekleniyor — dashboard'dan girin | ${account.email}`);
 
     const otp = await waitForRegistrationOtp(account.id, otpType, 180000);
     if (!otp) {
@@ -2397,8 +2433,14 @@ async function registerVfsAccount(account) {
                     finalText.includes("tamamlandı") || finalText.includes("completed") ||
                     finalText.includes("kayıt tamamlandı") || finalText.includes("registered");
 
-    if (success) console.log("  [REG] ✅ KAYIT BAŞARILI!");
-    else { console.log("  [REG] ⚠ Sonuç belirsiz"); await postRegError(account, page, "OTP sonrası başarı sinyali bulunamadı"); }
+    if (success) {
+      console.log("  [REG] ✅ KAYIT BAŞARILI!");
+      await logStep(regLogConfigId, "reg_complete", `Kayıt başarılı! | ${account.email}`);
+    } else {
+      console.log("  [REG] ⚠ Sonuç belirsiz");
+      await logStep(regLogConfigId, "reg_fail", `Kayıt sonucu belirsiz | ${account.email}`);
+      await postRegError(account, page, "OTP sonrası başarı sinyali bulunamadı");
+    }
     await completeRegistration(account.id, success);
     return success;
   } catch (err) {
