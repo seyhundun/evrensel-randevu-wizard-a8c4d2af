@@ -1,6 +1,10 @@
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { Search, CheckCircle2, Clock, AlertCircle, Camera, Loader2 } from "lucide-react";
 import { COUNTRIES, CITIES, TrackingStatus } from "@/lib/constants";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface StatusPanelProps {
   status: TrackingStatus;
@@ -9,6 +13,7 @@ interface StatusPanelProps {
   elapsedSeconds: number;
   checksCount: number;
   onSimulateFound: () => void;
+  configId: string | null;
 }
 
 function formatTime(seconds: number) {
@@ -24,9 +29,32 @@ export default function StatusPanel({
   elapsedSeconds,
   checksCount,
   onSimulateFound,
+  configId,
 }: StatusPanelProps) {
+  const [requesting, setRequesting] = useState(false);
   const countryLabel = COUNTRIES.find((c) => c.value === country);
   const cityLabel = CITIES.find((c) => c.value === city);
+
+  const requestScreenshot = async () => {
+    if (!configId) {
+      toast.error("Aktif görev yok");
+      return;
+    }
+    setRequesting(true);
+    try {
+      await supabase
+        .from("tracking_configs")
+        .update({ screenshot_requested: true } as any)
+        .eq("id", configId);
+      toast.success("📸 Screenshot talebi gönderildi", {
+        description: "Bot bir sonraki döngüde ekran görüntüsü alacak.",
+      });
+    } catch {
+      toast.error("Talep gönderilemedi");
+    } finally {
+      setTimeout(() => setRequesting(false), 3000);
+    }
+  };
 
   const config = {
     idle: {
@@ -86,6 +114,23 @@ export default function StatusPanel({
                   {checksCount}
                 </p>
                 <p className="helper-text">Kontrol</p>
+              </div>
+              <div className="w-px h-10 bg-border" />
+              <div className="text-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={requestScreenshot}
+                  disabled={requesting}
+                  className="gap-1.5"
+                >
+                  {requesting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Camera className="w-4 h-4" />
+                  )}
+                  {requesting ? "Bekleniyor..." : "📸 Ekran Görüntüsü"}
+                </Button>
               </div>
             </div>
           )}
