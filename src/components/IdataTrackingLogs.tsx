@@ -96,6 +96,7 @@ export default function IdataTrackingLogs() {
   const [loading, setLoading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [configActive, setConfigActive] = useState(false);
 
   const fetchLogs = async () => {
     setLoading(true);
