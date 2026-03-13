@@ -61,6 +61,90 @@ export type Database = {
           },
         ]
       }
+      idata_accounts: {
+        Row: {
+          banned_until: string | null
+          birth_day: string
+          birth_month: string
+          birth_year: string
+          created_at: string
+          email: string
+          fail_count: number
+          first_name: string
+          id: string
+          idata_office: string | null
+          invoice_address: string | null
+          invoice_city: string | null
+          invoice_district: string | null
+          invoice_type: string
+          last_name: string
+          last_used_at: string | null
+          notes: string | null
+          passport_no: string
+          password: string
+          phone: string | null
+          registration_status: string | null
+          residence_city: string | null
+          status: string
+          travel_purpose: string | null
+          updated_at: string
+        }
+        Insert: {
+          banned_until?: string | null
+          birth_day?: string
+          birth_month?: string
+          birth_year?: string
+          created_at?: string
+          email: string
+          fail_count?: number
+          first_name?: string
+          id?: string
+          idata_office?: string | null
+          invoice_address?: string | null
+          invoice_city?: string | null
+          invoice_district?: string | null
+          invoice_type?: string
+          last_name?: string
+          last_used_at?: string | null
+          notes?: string | null
+          passport_no?: string
+          password: string
+          phone?: string | null
+          registration_status?: string | null
+          residence_city?: string | null
+          status?: string
+          travel_purpose?: string | null
+          updated_at?: string
+        }
+        Update: {
+          banned_until?: string | null
+          birth_day?: string
+          birth_month?: string
+          birth_year?: string
+          created_at?: string
+          email?: string
+          fail_count?: number
+          first_name?: string
+          id?: string
+          idata_office?: string | null
+          invoice_address?: string | null
+          invoice_city?: string | null
+          invoice_district?: string | null
+          invoice_type?: string
+          last_name?: string
+          last_used_at?: string | null
+          notes?: string | null
+          passport_no?: string
+          password?: string
+          phone?: string | null
+          registration_status?: string | null
+          residence_city?: string | null
+          status?: string
+          travel_purpose?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tracking_configs: {
         Row: {
           check_interval: number

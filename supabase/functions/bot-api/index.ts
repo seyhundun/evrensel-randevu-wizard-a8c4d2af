@@ -173,6 +173,35 @@ Deno.serve(async (req) => {
           );
         }
 
+        // ===== iDATA ENDPOINTS =====
+        // Get iDATA accounts pending registration
+        if (body.action === "get_idata_pending_registrations") {
+          const { data } = await supabase
+            .from("idata_accounts")
+            .select("*")
+            .eq("registration_status", "pending");
+          return new Response(
+            JSON.stringify({ ok: true, accounts: data ?? [] }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Bot marks iDATA registration complete or failed
+        if (body.action === "complete_idata_registration") {
+          const { account_id, success } = body;
+          await supabase
+            .from("idata_accounts")
+            .update({
+              registration_status: success ? "completed" : "failed",
+              status: success ? "active" : "active",
+            })
+            .eq("id", account_id);
+          return new Response(
+            JSON.stringify({ ok: true }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
         // Bot marks registration complete or failed
         if (body.action === "complete_registration") {
           const { account_id, success } = body;
