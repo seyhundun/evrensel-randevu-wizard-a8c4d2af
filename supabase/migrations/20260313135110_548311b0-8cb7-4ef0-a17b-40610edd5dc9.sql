@@ -1,0 +1,1 @@
+ALTER TABLE public.idata_accounts ADD COLUMN IF NOT EXISTS membership_number TEXT DEFAULT '';

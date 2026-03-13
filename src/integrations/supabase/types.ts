@@ -80,6 +80,7 @@ export type Database = {
           last_name: string
           last_used_at: string | null
           manual_otp: string | null
+          membership_number: string | null
           notes: string | null
           otp_requested_at: string | null
           passport_no: string
@@ -111,6 +112,7 @@ export type Database = {
           last_name?: string
           last_used_at?: string | null
           manual_otp?: string | null
+          membership_number?: string | null
           notes?: string | null
           otp_requested_at?: string | null
           passport_no?: string
@@ -142,6 +144,7 @@ export type Database = {
           last_name?: string
           last_used_at?: string | null
           manual_otp?: string | null
+          membership_number?: string | null
           notes?: string | null
           otp_requested_at?: string | null
           passport_no?: string
