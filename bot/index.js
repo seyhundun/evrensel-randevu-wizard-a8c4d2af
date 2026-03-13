@@ -1280,27 +1280,51 @@ async function checkAppointments(config, account) {
       await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
       await delay(3000, 5000);
 
-      // İlk submit sonrası captcha validasyon hatasında 1 kez daha çöz + submit dene
-      let loginCaptchaState = await getLoginCaptchaState(page);
-      if (
-        loginCaptchaState.isLoginPage &&
-        loginCaptchaState.hasLoginForm &&
-        loginCaptchaState.hasTurnstileWidget &&
-        (!loginCaptchaState.hasCaptchaToken || loginCaptchaState.hasCaptchaError)
-      ) {
-        console.log("  [4/6] 🔁 CAPTCHA validasyon hatası tespit edildi, tekrar deneniyor...");
-        await logStep(id, "login_captcha_retry", `CAPTCHA tekrar çözülüyor | ${account.email}`);
+      // İlk submit sonrası captcha validasyon hatasında tekrar çöz + submit dene (3 deneme)
+      for (let captchaRetry = 1; captchaRetry <= 3; captchaRetry++) {
+        let loginCaptchaState = await getLoginCaptchaState(page);
+        if (
+          loginCaptchaState.isLoginPage &&
+          loginCaptchaState.hasLoginForm &&
+          loginCaptchaState.hasTurnstileWidget &&
+          (!loginCaptchaState.hasCaptchaToken || loginCaptchaState.hasCaptchaError)
+        ) {
+          console.log(`  [4/6] 🔁 CAPTCHA retry ${captchaRetry}/3...`);
+          await logStep(id, "login_captcha_retry", `CAPTCHA tekrar çözülüyor (${captchaRetry}/3) | ${account.email}`);
 
-        token = await ensureLoginTurnstileToken(page, 3);
-        if (token) {
-          submitAttempt = await submitLoginForm(page);
-          if (!submitAttempt.clicked) {
-            await page.keyboard.press("Enter");
+          // Sayfayı yenile ve formu tekrar doldur
+          if (captchaRetry >= 2) {
+            console.log("  [4/6] 🔄 Sayfa yenileniyor (temiz CAPTCHA için)...");
+            await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+            await humanIdle(3000, 5000);
+            // Cookie banner kapat
+            try {
+              const cookieBtn = await page.$('#onetrust-accept-btn-handler');
+              if (cookieBtn) { await cookieBtn.click(); await delay(1000, 2000); }
+            } catch {}
+            // Formu tekrar doldur
+            await page.waitForSelector('input[type="email"], input[name="email"], #email', { timeout: 15000 }).catch(() => {});
+            await humanType(page, 'input[type="email"], input[name="email"], #email', account.email, { clearFirst: true, minDelay: 40, maxDelay: 140 });
+            await delay(400, 900);
+            await humanType(page, 'input[type="password"]', account.password, { clearFirst: true, minDelay: 40, maxDelay: 140 });
+            await delay(600, 1200);
           }
-          await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
-          await delay(2500, 4000);
+
+          token = await ensureLoginTurnstileToken(page, 4);
+          if (token) {
+            console.log(`  [4/6] ✅ Retry ${captchaRetry} Turnstile token alındı`);
+            submitAttempt = await submitLoginForm(page);
+            if (!submitAttempt.clicked) {
+              await page.keyboard.press("Enter");
+            }
+            await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
+            await delay(2500, 4000);
+          } else {
+            console.log(`  [4/6] ❌ Retry ${captchaRetry} token alınamadı`);
+            await delay(2000, 4000);
+          }
         } else {
-          console.log("  [4/6] ❌ Retry sonrası da Turnstile token alınamadı");
+          break; // Token var veya login sayfasından çıkmış
         }
       }
     } catch (loginErr) {
