@@ -998,7 +998,9 @@ async function _solve(page, context) {
 
     console.log("  [CAPTCHA] ✅ Çözüldü!");
 
+    // Token'ı sayfaya enjekte et — Angular + Turnstile callback'leri dahil
     await page.evaluate((t) => {
+      // 1) Tüm bilinen Turnstile input/textarea alanlarını doldur
       const selectors =
         'input[name="cf-turnstile-response"], textarea[name="cf-turnstile-response"], input[name*="turnstile"], textarea[name*="turnstile"], textarea[name="g-recaptcha-response"], input[name="g-recaptcha-response"]';
       let targets = Array.from(document.querySelectorAll(selectors));
@@ -1022,16 +1024,89 @@ async function _solve(page, context) {
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
         el.dispatchEvent(new Event("blur", { bubbles: true }));
+        // Angular uyumluluğu
+        el.dispatchEvent(new Event("ngModelChange", { bubbles: true }));
       }
 
+      // 2) Turnstile global callback'leri tetikle
       if (typeof window.turnstileCallback === "function") window.turnstileCallback(t);
       if (typeof window.onTurnstileSuccess === "function") window.onTurnstileSuccess(t);
+      
+      // 3) Turnstile widget API'yi override et
       if (window.turnstile) {
         try {
           window.turnstile.getResponse = () => t;
+          // Widget ID ile de callback tetikle
+          if (typeof window.turnstile.execute === "function") {
+            try { window.turnstile.execute(); } catch {}
+          }
         } catch {}
       }
+
+      // 4) cf-turnstile div'inin data-response attribute'unu da set et
+      const cfDivs = document.querySelectorAll('.cf-turnstile, [data-sitekey]');
+      for (const div of cfDivs) {
+        div.setAttribute('data-response', t);
+      }
+
+      // 5) Tüm iframe'lerin parent container'ına token ekle
+      const iframes = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]');
+      for (const iframe of iframes) {
+        const container = iframe.closest('.cf-turnstile') || iframe.parentElement;
+        if (container) {
+          container.setAttribute('data-response', t);
+          // Container altındaki hidden input'u da güncelle
+          const hiddenInput = container.querySelector('input[type="hidden"]');
+          if (hiddenInput) {
+            if (inputSetter) inputSetter.call(hiddenInput, t);
+            else hiddenInput.value = t;
+            hiddenInput.dispatchEvent(new Event("input", { bubbles: true }));
+            hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        }
+      }
+
+      // 6) Angular form validation tetikleme — submit butonunu aktif et
+      try {
+        const forms = document.querySelectorAll('form');
+        for (const form of forms) {
+          form.dispatchEvent(new Event('change', { bubbles: true }));
+          form.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        // Angular zone tick
+        if (window.ng && window.ng.getComponent) {
+          const appRoot = document.querySelector('app-root') || document.querySelector('[ng-version]');
+          if (appRoot) {
+            const comp = window.ng.getComponent(appRoot);
+            if (comp) {
+              try { window.ng.applyChanges(comp); } catch {}
+            }
+          }
+        }
+      } catch {}
     }, token);
+
+    await delay(1500, 3000);
+    
+    // Submit butonunun aktif olmasını bekle
+    const btnActive = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("button"));
+      const submitBtn = btns.find((b) => {
+        const txt = (b.textContent || "").toLowerCase();
+        return txt.includes("oturum") || txt.includes("sign in") || txt.includes("login") || 
+               txt.includes("giriş") || txt.includes("devam") || txt.includes("continue");
+      }) || document.querySelector('button[type="submit"]');
+      if (submitBtn && (submitBtn.disabled || submitBtn.hasAttribute("disabled"))) {
+        // Zorla aktif et
+        submitBtn.disabled = false;
+        submitBtn.removeAttribute("disabled");
+        submitBtn.removeAttribute("aria-disabled");
+        submitBtn.classList.remove("disabled");
+        return "forced";
+      }
+      return submitBtn ? "active" : "not_found";
+    });
+    console.log(`  [CAPTCHA] Submit buton durumu: ${btnActive}`);
 
     const confirmedToken = await waitForTurnstileToken(page, 9000);
     return !!confirmedToken;
