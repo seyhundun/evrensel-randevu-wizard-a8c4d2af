@@ -1415,11 +1415,18 @@ async function checkAppointments(config, account) {
 
       // Login ekranındaki Turnstile çözümü (kuyruktan ayrı doğrulama gerekiyor)
       let token = await ensureLoginTurnstileToken(page, 4);
+      const initialDiag = await getTurnstileDiagnostics(page);
+      const initialDiagText = formatTurnstileDiagnostics(initialDiag);
 
       if (token) {
-        console.log("  [4/6] ✅ Login Turnstile token alındı");
+        console.log(`  [4/6] ✅ Login Turnstile token alındı | ${initialDiagText}`);
       } else {
-        console.log("  [4/6] ⚠ Login Turnstile token alınamadı");
+        console.log(`  [4/6] ❌ Login Turnstile token alınamadı | ${initialDiagText}`);
+        await logStep(id, "login_captcha_debug", `İlk token alınamadı | ${account.email} | ${initialDiagText}`);
+        banIpImmediately(activeIp, "login_turnstile_token_missing_initial");
+        const ss = await takeScreenshotBase64(page);
+        await reportResult(id, "error", `❌ Turnstile token alınamadı (ilk deneme) | Hesap: ${account.email} | IP: ${activeIp || "doğrudan"}`, 0, ss);
+        return { found: false, accountBanned: false, ipBlocked: true, hadError: true };
       }
 
       let submitAttempt = await submitLoginForm(page);
@@ -1434,17 +1441,20 @@ async function checkAppointments(config, account) {
       await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
       await delay(3000, 5000);
 
-      // İlk submit sonrası captcha validasyon hatasında tekrar çöz + submit dene (3 deneme)
+      // İlk submit sonrası captcha validasyon hatasında tekrar çöz + submit dene
       for (let captchaRetry = 1; captchaRetry <= 3; captchaRetry++) {
-        let loginCaptchaState = await getLoginCaptchaState(page);
+        const loginCaptchaState = await getLoginCaptchaState(page);
         if (
           loginCaptchaState.isLoginPage &&
           loginCaptchaState.hasLoginForm &&
           loginCaptchaState.hasTurnstileWidget &&
           (!loginCaptchaState.hasCaptchaToken || loginCaptchaState.hasCaptchaError)
         ) {
-          console.log(`  [4/6] 🔁 CAPTCHA retry ${captchaRetry}/3...`);
+          const retryPreDiag = await getTurnstileDiagnostics(page);
+          const retryPreDiagText = formatTurnstileDiagnostics(retryPreDiag);
+          console.log(`  [4/6] 🔁 CAPTCHA retry ${captchaRetry}/3... | ${retryPreDiagText}`);
           await logStep(id, "login_captcha_retry", `CAPTCHA tekrar çözülüyor (${captchaRetry}/3) | ${account.email}`);
+          await logStep(id, "login_captcha_debug", `Retry ${captchaRetry} öncesi | ${account.email} | ${retryPreDiagText}`);
 
           // Sayfayı yenile ve formu tekrar doldur
           if (captchaRetry >= 2) {
@@ -1465,8 +1475,12 @@ async function checkAppointments(config, account) {
           }
 
           token = await ensureLoginTurnstileToken(page, 4);
+          const retryPostDiag = await getTurnstileDiagnostics(page);
+          const retryPostDiagText = formatTurnstileDiagnostics(retryPostDiag);
+
           if (token) {
-            console.log(`  [4/6] ✅ Retry ${captchaRetry} Turnstile token alındı`);
+            console.log(`  [4/6] ✅ Retry ${captchaRetry} Turnstile token alındı | ${retryPostDiagText}`);
+            await logStep(id, "login_captcha_debug", `Retry ${captchaRetry} token alındı | ${account.email} | ${retryPostDiagText}`);
             submitAttempt = await submitLoginForm(page);
             if (!submitAttempt.clicked) {
               await page.keyboard.press("Enter");
@@ -1474,8 +1488,12 @@ async function checkAppointments(config, account) {
             await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
             await delay(2500, 4000);
           } else {
-            console.log(`  [4/6] ❌ Retry ${captchaRetry} token alınamadı`);
-            await delay(2000, 4000);
+            console.log(`  [4/6] ❌ Retry ${captchaRetry} token alınamadı | ${retryPostDiagText}`);
+            await logStep(id, "login_captcha_debug", `Retry ${captchaRetry} token yok | ${account.email} | ${retryPostDiagText}`);
+            banIpImmediately(activeIp, `login_turnstile_token_missing_retry_${captchaRetry}`);
+            const ss = await takeScreenshotBase64(page);
+            await reportResult(id, "error", `❌ Turnstile token alınamadı (retry ${captchaRetry}) | Hesap: ${account.email} | IP: ${activeIp || "doğrudan"}`, 0, ss);
+            return { found: false, accountBanned: false, ipBlocked: true, hadError: true };
           }
         } else {
           break; // Token var veya login sayfasından çıkmış
