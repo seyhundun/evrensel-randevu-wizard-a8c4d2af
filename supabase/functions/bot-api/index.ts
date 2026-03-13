@@ -208,13 +208,29 @@ Deno.serve(async (req) => {
 
         // Bot logs iDATA activity
         if (body.action === "idata_log") {
-          const { status: logStatus, message, screenshot_url } = body;
+          const { status: logStatus, message, screenshot_base64 } = body;
+          let screenshot_url: string | null = null;
+
+          if (screenshot_base64) {
+            const bytes = Uint8Array.from(atob(screenshot_base64), c => c.charCodeAt(0));
+            const fileName = `idata/${Date.now()}_${logStatus || "info"}.png`;
+            const { error: uploadError } = await supabase.storage
+              .from("bot-screenshots")
+              .upload(fileName, bytes, { contentType: "image/png", upsert: false });
+            if (!uploadError) {
+              const { data: urlData } = supabase.storage
+                .from("bot-screenshots")
+                .getPublicUrl(fileName);
+              screenshot_url = urlData.publicUrl;
+            }
+          }
+
           const { error: logErr } = await supabase
             .from("idata_tracking_logs")
             .insert({ status: logStatus || "info", message, screenshot_url });
           if (logErr) throw logErr;
           return new Response(
-            JSON.stringify({ ok: true }),
+            JSON.stringify({ ok: true, screenshot_url }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }

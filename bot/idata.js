@@ -170,7 +170,7 @@ async function reportLog(configId, status, message = "", screenshotBase64 = null
 async function idataLog(status, message = "", screenshotBase64 = null) {
   try {
     const body = { action: "idata_log", status, message };
-    if (screenshotBase64) body.screenshot_url = screenshotBase64; // edge function handles it
+    if (screenshotBase64) body.screenshot_base64 = screenshotBase64;
     await apiPost(body, `idata_log:${status}`);
   } catch (err) {
     console.error("  [API] iDATA Log hatası:", err.message);
