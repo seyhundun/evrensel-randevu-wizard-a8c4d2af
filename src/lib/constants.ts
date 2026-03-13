@@ -1,15 +1,20 @@
 export const COUNTRIES = [
-  { value: "netherlands", label: "Hollanda", flag: "🇳🇱" },
-  { value: "denmark", label: "Danimarka", flag: "🇩🇰" },
-  { value: "france", label: "Fransa", flag: "🇫🇷" },
-  { value: "italy", label: "İtalya", flag: "🇮🇹" },
-  { value: "austria", label: "Avusturya", flag: "🇦🇹" },
-  { value: "belgium", label: "Belçika", flag: "🇧🇪" },
-  { value: "germany", label: "Almanya", flag: "🇩🇪" },
-  { value: "spain", label: "İspanya", flag: "🇪🇸" },
-  { value: "sweden", label: "İsveç", flag: "🇸🇪" },
-  { value: "norway", label: "Norveç", flag: "🇳🇴" },
+  { value: "france", label: "Fransa", flag: "🇫🇷", code: "fra" },
+  { value: "netherlands", label: "Hollanda", flag: "🇳🇱", code: "nld" },
 ] as const;
+
+// Country code'a göre VFS URL üret
+export function getVfsLoginUrl(countryCode: string): string {
+  const country = COUNTRIES.find(c => c.value === countryCode);
+  const code = country?.code || "fra";
+  return `https://visa.vfsglobal.com/tur/tr/${code}/login`;
+}
+
+export function getVfsRegisterUrl(countryCode: string): string {
+  const country = COUNTRIES.find(c => c.value === countryCode);
+  const code = country?.code || "fra";
+  return `https://visa.vfsglobal.com/tur/tr/${code}/register`;
+}
 
 export const CITIES = [
   { value: "ankara", label: "Ankara" },

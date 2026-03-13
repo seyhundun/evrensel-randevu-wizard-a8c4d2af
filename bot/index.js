@@ -90,10 +90,25 @@ try {
   console.log("⚠ 2captcha-ts yüklü değil, HTTP fallback ile devam edilecek.");
 }
 
+// Ülke → VFS URL kodu eşlemesi
+const COUNTRY_VFS_CODES = {
+  france: "fra",
+  netherlands: "nld",
+};
+
+function getVfsLoginUrl(country) {
+  const code = COUNTRY_VFS_CODES[country] || "fra";
+  return `https://visa.vfsglobal.com/tur/tr/${code}/login`;
+}
+
+function getVfsRegisterUrl(country) {
+  const code = COUNTRY_VFS_CODES[country] || "fra";
+  return `https://visa.vfsglobal.com/tur/tr/${code}/register`;
+}
+
 const CONFIG = {
   API_URL: "https://ocrpzwrsyiprfuzsyivf.supabase.co/functions/v1/bot-api",
   API_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jcnB6d3JzeWlwcmZ1enN5aXZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMDQ1NzksImV4cCI6MjA4ODg4MDU3OX0.5MzKGm6byd1zLxjgxaXyQq5VfPFo_CE2MhcXijIRarc",
-  VFS_URL: "https://visa.vfsglobal.com/tur/tr/fra/login",
   CAPTCHA_API_KEY: (process.env.CAPTCHA_API_KEY || process.env.TWOCAPTCHA_API_KEY || process.env.TWO_CAPTCHA_API_KEY || "").trim(),
   QUEUE_MAX_WAIT_MS: Number(process.env.QUEUE_MAX_WAIT_MS || 360000),
   QUEUE_POLL_MS: Number(process.env.QUEUE_POLL_MS || 10000),
@@ -1136,7 +1151,9 @@ async function checkAppointments(config, account) {
     // STEP 1: Giriş sayfası
     console.log("  [1/6] Giriş sayfası...");
     await logStep(id, "login_navigate", "VFS giriş sayfası açılıyor...");
-    await page.goto(CONFIG.VFS_URL, { waitUntil: "domcontentloaded", timeout: 90000 });
+    const vfsLoginUrl = getVfsLoginUrl(country);
+    console.log(`  [1/6] URL: ${vfsLoginUrl}`);
+    await page.goto(vfsLoginUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
     await humanIdle(4000, 8000); // Sayfa yüklendikten sonra okuyormuş gibi bekle
     await humanMove(page);
     
@@ -2114,8 +2131,14 @@ async function registerVfsAccount(account) {
     await applyFingerprint(page, fp);
     await humanMove(page);
 
-    const regUrl = CONFIG.VFS_URL.replace("/login", "/register");
-    console.log("  [REG 1/7] Kayıt sayfası...");
+    // Aktif config'den ülkeyi al ve ona göre kayıt URL'sini belirle
+    let regCountry = "france";
+    try {
+      const { configs } = await fetchActiveConfigs();
+      if (configs.length > 0 && configs[0].country) regCountry = configs[0].country;
+    } catch {}
+    const regUrl = getVfsRegisterUrl(regCountry);
+    console.log(`  [REG 1/7] Kayıt sayfası: ${regUrl}`);
     await page.goto(regUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
     await humanIdle(5000, 10000); // Sayfayı okuyormuş gibi bekle
     await humanMove(page);
@@ -2833,7 +2856,7 @@ async function main() {
             const fp = generateFingerprint();
             const { browser: ssBrowser, page: ssPage } = await launchBrowser();
             await applyFingerprint(ssPage, fp);
-            await ssPage.goto(CONFIG.VFS_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+            await ssPage.goto(getVfsLoginUrl(config.country), { waitUntil: "domcontentloaded", timeout: 60000 });
             await delay(3000, 5000);
             const ss = await takeScreenshotBase64(ssPage);
             if (ss) {
