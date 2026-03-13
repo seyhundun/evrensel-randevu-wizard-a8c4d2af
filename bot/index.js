@@ -2810,7 +2810,7 @@ async function registerVfsAccount(account) {
   } catch (err) {
     console.error("  [REG] Genel hata:", err.message);
     await postRegError(account, page, err.message);
-    await completeRegistration(account.id, false);
+    // completeRegistration çağırma — retry loop tekrar deneyecek
     return false;
   } finally {
     if (browser) try { await browser.close(); } catch {}
