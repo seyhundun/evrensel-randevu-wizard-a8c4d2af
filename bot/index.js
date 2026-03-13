@@ -2116,6 +2116,28 @@ async function main() {
       console.log(`\n📊 ${accounts.length} aktif hesap, ${configs.length} aktif görev`);
 
       for (const config of configs) {
+        // Screenshot talep kontrolü
+        if (config.screenshot_requested) {
+          console.log(`\n📸 Screenshot talebi algılandı (${config.id.substring(0, 8)}...)`);
+          try {
+            const fp = generateFingerprint();
+            const { browser: ssBrowser, page: ssPage } = await launchBrowser();
+            await applyFingerprint(ssPage, fp);
+            await ssPage.goto(CONFIG.VFS_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+            await delay(3000, 5000);
+            const ss = await takeScreenshotBase64(ssPage);
+            if (ss) {
+              await reportResult(config.id, "checking", `📸 Manuel screenshot talebi | ${new Date().toLocaleTimeString("tr-TR")}`, 0, ss);
+              console.log("  📸 ✅ Screenshot gönderildi");
+            }
+            await apiPost({ action: "clear_screenshot_requested", config_id: config.id }, "clear_screenshot_requested");
+            try { await ssBrowser.close(); } catch {}
+          } catch (ssErr) {
+            console.error("  📸 Screenshot hatası:", ssErr.message);
+            await apiPost({ action: "clear_screenshot_requested", config_id: config.id }, "clear_screenshot_requested").catch(() => {});
+          }
+        }
+
         const now = Date.now();
         const availableAccounts = accounts.filter(acc => {
           const lastUsed = accountLastUsed.get(acc.id) || 0;
