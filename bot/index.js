@@ -933,13 +933,35 @@ async function launchBrowser(proxyIp = null) {
 async function checkAppointments(config, account) {
   const { id, country, city } = config;
   const ts = new Date().toLocaleTimeString("tr-TR");
-  console.log(`\n[${ts}] Kontrol: ${country} ${city} | Hesap: ${account.email}`);
+  const activeIp = getCurrentIp();
+  console.log(`\n[${ts}] Kontrol: ${country} ${city} | Hesap: ${account.email} | IP: ${activeIp || "doğrudan"}`);
 
   let browser;
   try {
     const fp = generateFingerprint();
-    const { browser: br, page } = await launchBrowser();
+    const { browser: br, page } = await launchBrowser(activeIp);
     browser = br;
+    await applyFingerprint(page, fp);
+    await humanMove(page);
+
+    // STEP 1: Giriş sayfası
+    console.log("  [1/6] Giriş sayfası...");
+    await page.goto(CONFIG.VFS_URL, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await delay(3000, 6000);
+    
+    // IP engel kontrolü
+    const pageContent = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+    const pageHtml = await page.evaluate(() => document.documentElement?.outerHTML || "").catch(() => "");
+    if (isPageBlocked(pageContent) || pageHtml.trim().length < 500) {
+      console.log(`  [IP] 🚫 Sayfa yüklenemedi / engellendi! IP: ${activeIp}`);
+      markIpFail(activeIp);
+      const ss = await takeScreenshotBase64(page);
+      await reportResult(id, "error", `IP engellendi: ${activeIp || "doğrudan"} | Hesap: ${account.email}`, 0, ss);
+      const nextIp = getNextIp();
+      return { found: false, accountBanned: false, ipBlocked: true };
+    }
+    markIpSuccess(activeIp);
+    await humanMove(page);
     await applyFingerprint(page, fp);
     await humanMove(page);
 
