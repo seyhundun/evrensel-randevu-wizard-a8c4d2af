@@ -476,6 +476,49 @@ export default function IdataAccounts() {
                   </Button>
                 </div>
               </div>
+
+              {/* Registration OTP input */}
+              {isRegistering(acc) && acc.registration_otp_type && !acc.registration_otp && (
+                <div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-950/20 rounded-lg p-2">
+                  {acc.registration_otp_type === "email" ? (
+                    <Mail className="w-4 h-4 text-orange-500 animate-pulse shrink-0" />
+                  ) : (
+                    <Phone className="w-4 h-4 text-orange-500 animate-pulse shrink-0" />
+                  )}
+                  <span className="text-xs font-medium text-orange-600">
+                    {acc.registration_otp_type === "email" ? "Email doğrulama kodu bekleniyor!" : "SMS doğrulama kodu bekleniyor!"}
+                  </span>
+                  <Input
+                    placeholder="Kodu girin"
+                    maxLength={8}
+                    className="h-7 w-24 text-xs font-mono"
+                    value={regOtpInputs[acc.id] || ""}
+                    onChange={(e) => setRegOtpInputs(prev => ({ ...prev, [acc.id]: e.target.value }))}
+                  />
+                  <Button size="sm" variant="outline" className="h-7 px-2 gap-1" onClick={() => submitRegOtp(acc.id)}>
+                    <Send className="w-3 h-3" /> Gönder
+                  </Button>
+                </div>
+              )}
+
+              {/* Login OTP input (manual_otp) */}
+              {acc.otp_requested_at && !acc.manual_otp && acc.status === "active" && !isRegistering(acc) && (
+                <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/20 rounded-lg p-2">
+                  <MessageSquare className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
+                  <span className="text-xs font-medium text-amber-600">Giriş OTP kodu bekleniyor!</span>
+                  <Input
+                    placeholder="OTP kodu"
+                    maxLength={8}
+                    className="h-7 w-24 text-xs font-mono"
+                    value={otpInputs[acc.id] || ""}
+                    onChange={(e) => setOtpInputs(prev => ({ ...prev, [acc.id]: e.target.value }))}
+                  />
+                  <Button size="sm" variant="outline" className="h-7 px-2 gap-1" onClick={() => submitManualOtp(acc.id)}>
+                    <Send className="w-3 h-3" /> Gönder
+                  </Button>
+                </div>
+              )}
+
               {acc.notes && (
                 <p className="text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">{acc.notes}</p>
               )}
