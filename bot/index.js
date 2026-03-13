@@ -2637,7 +2637,7 @@ async function registerVfsAccount(account) {
             console.log(`  [REG] Force submit: clicked=${forceResult.clicked}, forced=${forceResult.forced}, reason=${forceResult.reason}`);
 
             if (!forceResult.clicked) {
-              throw new Error("Devam Et butonu pasif kaldı (form invalid)");
+              throw new Error(`Devam Et butonu pasif kaldı (form invalid) | Ülke: ${regCountryLabel}`);
             }
 
             clickedSubmit = true;
