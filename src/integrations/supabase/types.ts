@@ -169,6 +169,30 @@ export type Database = {
         }
         Relationships: []
       }
+      idata_config: {
+        Row: {
+          check_interval: number
+          created_at: string
+          id: string
+          is_active: boolean
+          updated_at: string
+        }
+        Insert: {
+          check_interval?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+        }
+        Update: {
+          check_interval?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       idata_tracking_logs: {
         Row: {
           created_at: string

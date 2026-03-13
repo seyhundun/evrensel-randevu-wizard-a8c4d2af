@@ -52,6 +52,26 @@ Deno.serve(async (req) => {
       });
     }
 
+    // GET — iDATA config + accounts
+    if (req.method === "GET" && path === "idata") {
+      const { data: config } = await supabase
+        .from("idata_config")
+        .select("*")
+        .limit(1)
+        .single();
+
+      const { data: accounts } = await supabase
+        .from("idata_accounts")
+        .select("*")
+        .in("status", ["active"])
+        .order("last_used_at", { ascending: true, nullsFirst: true });
+
+      return new Response(
+        JSON.stringify({ ok: true, config, accounts: accounts ?? [] }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // POST — Bot posts check results or account status updates
     if (req.method === "POST") {
       const contentType = req.headers.get("content-type") || "";
