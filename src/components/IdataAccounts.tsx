@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Plus, Trash2, Eye, EyeOff, UserCheck, Ban, Clock, UserPlus, Loader2, RefreshCw, Pencil } from "lucide-react";
+import { Plus, Trash2, Eye, EyeOff, UserCheck, Ban, Clock, UserPlus, Loader2, RefreshCw, Pencil, Mail, Phone, MessageSquare, Send } from "lucide-react";
 
 const IDATA_PASSWORD_SPECIAL = "@$!%*#?&";
 
@@ -56,6 +56,10 @@ interface IdataAccount {
   last_used_at: string | null;
   fail_count: number;
   notes: string | null;
+  manual_otp: string | null;
+  otp_requested_at: string | null;
+  registration_otp: string | null;
+  registration_otp_type: string | null;
 }
 
 interface CityOffice {
@@ -68,6 +72,8 @@ export default function IdataAccounts() {
   const [accounts, setAccounts] = useState<IdataAccount[]>([]);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+  const [otpInputs, setOtpInputs] = useState<Record<string, string>>({});
+  const [regOtpInputs, setRegOtpInputs] = useState<Record<string, string>>({});
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [cityOffices, setCityOffices] = useState<CityOffice[]>([]);
@@ -216,9 +222,33 @@ export default function IdataAccounts() {
     toast.success("Hesap tekrar aktif edildi");
   };
 
+  const isRegistering = (acc: IdataAccount) =>
+    acc.registration_status === "pending" || acc.registration_status === "email_otp" || acc.registration_status === "sms_otp";
+
+  const submitManualOtp = async (id: string) => {
+    const code = otpInputs[id]?.trim();
+    if (!code) { toast.error("OTP kodu girin"); return; }
+    const { error } = await supabase.from("idata_accounts" as any)
+      .update({ manual_otp: code } as any).eq("id", id);
+    if (error) { toast.error("OTP gönderilemedi: " + error.message); }
+    else { toast.success("OTP kodu gönderildi"); setOtpInputs(prev => ({ ...prev, [id]: "" })); }
+  };
+
+  const submitRegOtp = async (id: string) => {
+    const code = regOtpInputs[id]?.trim();
+    if (!code) { toast.error("Doğrulama kodu girin"); return; }
+    const { error } = await supabase.from("idata_accounts" as any)
+      .update({ registration_otp: code } as any).eq("id", id);
+    if (error) { toast.error("Kod gönderilemedi: " + error.message); }
+    else { toast.success("Doğrulama kodu gönderildi"); setRegOtpInputs(prev => ({ ...prev, [id]: "" })); }
+  };
+
   const statusBadge = (acc: IdataAccount) => {
     if (acc.registration_status === "pending") {
       return <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Kayıt Bekliyor</Badge>;
+    }
+    if (acc.registration_status === "email_otp" || acc.registration_status === "sms_otp") {
+      return <Badge className="bg-orange-500/10 text-orange-600 border-orange-500/20"><MessageSquare className="w-3 h-3 mr-1 animate-pulse" /> {acc.registration_otp_type === "email" ? "Email" : "SMS"} Doğrulama</Badge>;
     }
     if (acc.registration_status === "failed") {
       return <Badge variant="destructive">Kayıt Başarısız</Badge>;
@@ -446,6 +476,49 @@ export default function IdataAccounts() {
                   </Button>
                 </div>
               </div>
+
+              {/* Registration OTP input */}
+              {isRegistering(acc) && acc.registration_otp_type && !acc.registration_otp && (
+                <div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-950/20 rounded-lg p-2">
+                  {acc.registration_otp_type === "email" ? (
+                    <Mail className="w-4 h-4 text-orange-500 animate-pulse shrink-0" />
+                  ) : (
+                    <Phone className="w-4 h-4 text-orange-500 animate-pulse shrink-0" />
+                  )}
+                  <span className="text-xs font-medium text-orange-600">
+                    {acc.registration_otp_type === "email" ? "Email doğrulama kodu bekleniyor!" : "SMS doğrulama kodu bekleniyor!"}
+                  </span>
+                  <Input
+                    placeholder="Kodu girin"
+                    maxLength={8}
+                    className="h-7 w-24 text-xs font-mono"
+                    value={regOtpInputs[acc.id] || ""}
+                    onChange={(e) => setRegOtpInputs(prev => ({ ...prev, [acc.id]: e.target.value }))}
+                  />
+                  <Button size="sm" variant="outline" className="h-7 px-2 gap-1" onClick={() => submitRegOtp(acc.id)}>
+                    <Send className="w-3 h-3" /> Gönder
+                  </Button>
+                </div>
+              )}
+
+              {/* Login OTP input (manual_otp) */}
+              {acc.otp_requested_at && !acc.manual_otp && acc.status === "active" && !isRegistering(acc) && (
+                <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/20 rounded-lg p-2">
+                  <MessageSquare className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
+                  <span className="text-xs font-medium text-amber-600">Giriş OTP kodu bekleniyor!</span>
+                  <Input
+                    placeholder="OTP kodu"
+                    maxLength={8}
+                    className="h-7 w-24 text-xs font-mono"
+                    value={otpInputs[acc.id] || ""}
+                    onChange={(e) => setOtpInputs(prev => ({ ...prev, [acc.id]: e.target.value }))}
+                  />
+                  <Button size="sm" variant="outline" className="h-7 px-2 gap-1" onClick={() => submitManualOtp(acc.id)}>
+                    <Send className="w-3 h-3" /> Gönder
+                  </Button>
+                </div>
+              )}
+
               {acc.notes && (
                 <p className="text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">{acc.notes}</p>
               )}

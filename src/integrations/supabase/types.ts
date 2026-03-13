@@ -79,10 +79,14 @@ export type Database = {
           invoice_type: string
           last_name: string
           last_used_at: string | null
+          manual_otp: string | null
           notes: string | null
+          otp_requested_at: string | null
           passport_no: string
           password: string
           phone: string | null
+          registration_otp: string | null
+          registration_otp_type: string | null
           registration_status: string | null
           residence_city: string | null
           status: string
@@ -106,10 +110,14 @@ export type Database = {
           invoice_type?: string
           last_name?: string
           last_used_at?: string | null
+          manual_otp?: string | null
           notes?: string | null
+          otp_requested_at?: string | null
           passport_no?: string
           password: string
           phone?: string | null
+          registration_otp?: string | null
+          registration_otp_type?: string | null
           registration_status?: string | null
           residence_city?: string | null
           status?: string
@@ -133,10 +141,14 @@ export type Database = {
           invoice_type?: string
           last_name?: string
           last_used_at?: string | null
+          manual_otp?: string | null
           notes?: string | null
+          otp_requested_at?: string | null
           passport_no?: string
           password?: string
           phone?: string | null
+          registration_otp?: string | null
+          registration_otp_type?: string | null
           registration_status?: string | null
           residence_city?: string | null
           status?: string
