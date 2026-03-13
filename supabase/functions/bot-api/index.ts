@@ -193,6 +193,47 @@ Deno.serve(async (req) => {
           );
         }
 
+        // ===== iDATA LOGIN OTP ENDPOINTS =====
+        // Bot signals it needs login OTP
+        if (body.action === "idata_set_login_otp_requested") {
+          const { account_id } = body;
+          await supabase
+            .from("idata_accounts")
+            .update({ otp_requested_at: new Date().toISOString(), manual_otp: null })
+            .eq("id", account_id);
+          return new Response(
+            JSON.stringify({ ok: true }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Bot polls for login OTP
+        if (body.action === "idata_get_login_otp") {
+          const { account_id } = body;
+          const { data } = await supabase
+            .from("idata_accounts")
+            .select("manual_otp")
+            .eq("id", account_id)
+            .single();
+          return new Response(
+            JSON.stringify({ ok: true, manual_otp: data?.manual_otp || null }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Bot clears login OTP after use
+        if (body.action === "idata_clear_login_otp") {
+          const { account_id } = body;
+          await supabase
+            .from("idata_accounts")
+            .update({ manual_otp: null, otp_requested_at: null })
+            .eq("id", account_id);
+          return new Response(
+            JSON.stringify({ ok: true }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
         // ===== iDATA ENDPOINTS =====
         // Get iDATA accounts pending registration
         if (body.action === "get_idata_pending_registrations") {

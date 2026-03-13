@@ -455,7 +455,22 @@ async function selectDropdownOption(page, dropdownSelector, optionText) {
   }
 }
 
-// ==================== REGISTRATION ====================
+// ==================== LOGIN OTP WAIT ====================
+async function waitForLoginOtp(accountId, timeoutMs = 180000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const data = await apiPost({ action: "idata_get_login_otp", account_id: accountId }, "get_login_otp");
+      if (data?.manual_otp) {
+        return data.manual_otp;
+      }
+    } catch (err) {
+      console.log(`  [OTP] Poll hatası: ${err.message}`);
+    }
+    await delay(CONFIG.OTP_POLL_MS, CONFIG.OTP_POLL_MS + 1000);
+  }
+  return null;
+}
 async function registerAccount(page, account) {
   console.log(`\n📝 [iDATA] Kayıt başlıyor: ${account.email}`);
 
