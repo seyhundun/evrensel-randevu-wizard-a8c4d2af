@@ -94,6 +94,7 @@ try {
 const COUNTRY_VFS_CODES = {
   france: "fra",
   netherlands: "nld",
+  denmark: "dnk",
 };
 
 function getVfsLoginUrl(country) {

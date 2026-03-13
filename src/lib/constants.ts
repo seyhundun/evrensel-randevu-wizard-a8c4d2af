@@ -1,6 +1,7 @@
 export const COUNTRIES = [
   { value: "france", label: "Fransa", flag: "🇫🇷", code: "fra" },
   { value: "netherlands", label: "Hollanda", flag: "🇳🇱", code: "nld" },
+  { value: "denmark", label: "Danimarka", flag: "🇩🇰", code: "dnk" },
 ] as const;
 
 // Country code'a göre VFS URL üret
