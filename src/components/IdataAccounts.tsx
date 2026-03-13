@@ -69,6 +69,7 @@ export default function IdataAccounts() {
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [cityOffices, setCityOffices] = useState<CityOffice[]>([]);
   const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [filteredOffices, setFilteredOffices] = useState<CityOffice[]>([]);
