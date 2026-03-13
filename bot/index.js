@@ -2922,17 +2922,37 @@ async function registerVfsAccount(account) {
               console.log("  [REG] ⚠ CAPTCHA token yok, son kez çözüm deneniyor...");
               const solvedAgain = await solveTurnstile(page);
               await delay(1200, 2200);
-              const tokenAfterRetry = await waitForTurnstileToken(page, 8000);
+              let tokenAfterRetry = await waitForTurnstileToken(page, 8000);
+
               if (!solvedAgain || !tokenAfterRetry) {
-                throw new Error(`Devam Et butonu pasif: CAPTCHA doğrulaması tamamlanmadı | Ülke: ${regCountryLabel}`);
+                usedCaptchaManualFallback = true;
+                await logStep(regLogConfigId, "reg_captcha", `CAPTCHA otomatik doğrulanamadı, manuel/fallback submit deneniyor | ${account.email} | Ülke: ${regCountryLabel}`);
+                console.log("  [REG] ⚠ CAPTCHA manuel/fallback moda geçiliyor...");
+
+                for (let manualTry = 1; manualTry <= 3; manualTry++) {
+                  await tryClickTurnstileCheckbox(page);
+                  await delay(1500, 2800);
+                  tokenAfterRetry = await waitForTurnstileToken(page, 6000);
+                  if (tokenAfterRetry) {
+                    console.log(`  [REG] ✅ Fallback deneme ${manualTry}/3 ile token alındı`);
+                    break;
+                  }
+                }
               }
             }
 
-            const forceResult = await tryForceRegistrationSubmit(page);
+            let forceResult = await tryForceRegistrationSubmit(page, { forceEnableDisabled: true });
             console.log(`  [REG] Force submit: clicked=${forceResult.clicked}, forced=${forceResult.forced}, reason=${forceResult.reason}`);
 
+            if (!forceResult.clicked && usedCaptchaManualFallback) {
+              console.log("  [REG] ⚠ Manuel/fallback sonrası ikinci zorunlu submit deneniyor...");
+              await delay(900, 1700);
+              forceResult = await tryForceRegistrationSubmit(page, { forceEnableDisabled: true });
+              console.log(`  [REG] Force submit #2: clicked=${forceResult.clicked}, forced=${forceResult.forced}, reason=${forceResult.reason}`);
+            }
+
             if (!forceResult.clicked) {
-              throw new Error(`Devam Et butonu pasif kaldı (form invalid) | Ülke: ${regCountryLabel}`);
+              throw new Error(`Devam Et butonu pasif kaldı (form invalid/captcha) | Ülke: ${regCountryLabel}`);
             }
 
             clickedSubmit = true;
