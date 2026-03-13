@@ -130,6 +130,11 @@ export default function IdataTrackingLogs() {
           setLogs((prev) => [payload.new as LogEntry, ...prev].slice(0, 100));
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "idata_config" },
+        () => fetchConfig()
+      )
       .subscribe();
 
     const interval = setInterval(fetchLogs, 15000);
