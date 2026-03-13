@@ -3241,15 +3241,13 @@ async function main() {
         });
 
         if (availableAccounts.length === 0) {
+          // Beklemek yerine en eski hesabı yeni IP ile hemen kullan
           const oldestUsed = accounts.reduce((oldest, acc) => {
             const t = accountLastUsed.get(acc.id) || 0;
             return t < (accountLastUsed.get(oldest.id) || 0) ? acc : oldest;
           }, accounts[0]);
-          const lastUsed = accountLastUsed.get(oldestUsed.id) || 0;
-          const waitMs = Math.max(0, CONFIG.MIN_ACCOUNT_GAP_MS - (now - lastUsed));
-          console.log(`\n⏳ Tüm hesaplar yakın zamanda kullanıldı. ${Math.round(waitMs / 1000)}s bekleniyor...`);
-          await logStep(config.id, "bot_idle", `Hesap bekleme: ${Math.round(waitMs / 1000)}s`);
-          await new Promise((r) => setTimeout(r, waitMs));
+          console.log(`\n🔄 Tüm hesaplar yakın zamanda kullanıldı — yeni IP ile devam ediliyor (${oldestUsed.email})`);
+          await logStep(config.id, "ip_change", `Hesap gap dolmadı, yeni IP ile devam: ${oldestUsed.email}`);
         }
 
         const readyAccounts = accounts.filter(acc => {
