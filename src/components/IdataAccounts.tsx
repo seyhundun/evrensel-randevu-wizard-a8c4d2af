@@ -50,6 +50,7 @@ interface IdataAccount {
   invoice_city: string | null;
   invoice_district: string | null;
   invoice_address: string | null;
+  membership_number: string | null;
   status: string;
   registration_status: string | null;
   banned_until: string | null;
