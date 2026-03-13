@@ -1283,15 +1283,16 @@ async function mainLoop() {
         await processPendingRegistrations();
       }
 
-      // 2. Aktif hesaplarla randevu kontrol
+      // 2. Aktif hesaplarla randevu kontrol — HER SEFERİNDE FARKLI IP
       const idataData = await fetch(CONFIG.API_URL + "/idata", { method: "GET", headers: apiHeaders }).then(r => r.json()).catch(() => null);
       const accounts = idataData?.accounts || [];
       
       if (accounts.length > 0) {
         const account = accounts[0]; // En az kullanılan hesap
-        const ip = getNextIp();
+        const ip = getNextIp(); // Her girişte farklı IP
         let browser, page;
         try {
+          console.log(`\n🔄 IP Rotasyonu: ${ip || "doğrudan"}`);
           await idataLog("login_start", `Giriş: ${account.email} | IP: ${ip || "doğrudan"}`);
           ({ browser, page } = await launchBrowser(ip));
           
@@ -1305,23 +1306,26 @@ async function mainLoop() {
             
             if (apptResult.found) {
               await idataLog("appt_found", `🎉 RANDEVU BULUNDU! | Hesap: ${account.email}`, apptResult.screenshot);
-              startAlarm(); // 🔔 Sesli alarm başlat
+              startAlarm();
               
-              // Randevu bulunduğunda hızlı döngüye geç (her 15sn kontrol)
+              // Hızlı kontrol modunda bile her döngüde screenshot al
               console.log("  ⚡ Randevu bulundu! Hızlı kontrol moduna geçildi.");
-              while (true) {
+              let fastCheckCount = 0;
+              while (fastCheckCount < 20) { // Max 20 hızlı kontrol (~5dk)
                 await delay(15000, 20000);
+                fastCheckCount++;
                 const recheck = await checkAppointments(page, account);
                 if (recheck.found) {
-                  await idataLog("appt_found", `🎉 RANDEVU HALA MEVCUT! | Hesap: ${account.email}`, recheck.screenshot);
+                  await idataLog("appt_found", `🎉 RANDEVU HALA MEVCUT! (${fastCheckCount}) | Hesap: ${account.email}`, recheck.screenshot);
                 } else {
                   await idataLog("appt_none", `Randevu kapandı | ${recheck.message || ""} | Hesap: ${account.email}`, recheck.screenshot);
                   stopAlarm();
                   break;
                 }
               }
+              if (fastCheckCount >= 20) stopAlarm();
             } else {
-              stopAlarm(); // Alarm varsa kapat
+              stopAlarm();
               await idataLog("appt_none", `Randevu yok | ${apptResult.message || ""} | Hesap: ${account.email}`, apptResult.screenshot);
             }
           } else {
