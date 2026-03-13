@@ -2595,14 +2595,13 @@ async function registerVfsAccount(account) {
           }
         }, otp2);
         await delay(500, 1000);
-        await page.evaluate(() => {
-          const btns = [...document.querySelectorAll("button")];
-          const btn = btns.find(b => {
-            const txt = b.textContent.toLowerCase();
-            return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") || txt.includes("confirm");
-          }) || document.querySelector('button[type="submit"]');
-          if (btn) btn.click();
-        });
+        const verifyClick2 = await clickOtpVerification(page);
+        if (!verifyClick2.clicked) {
+          await page.keyboard.press("Enter").catch(() => {});
+          console.log(`  [REG] İkinci OTP doğrulama fallback Enter (${verifyClick2.reason})`);
+        } else {
+          console.log(`  [REG] İkinci OTP doğrulama tıklandı (${verifyClick2.reason})`);
+        }
         await delay(4000, 7000);
       } else {
         await postRegError(account, page, `${secondOtpType} OTP timeout`);
