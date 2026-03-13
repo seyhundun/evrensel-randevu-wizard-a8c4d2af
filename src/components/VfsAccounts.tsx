@@ -68,6 +68,8 @@ interface VfsAccount {
   registration_status: string | null;
   registration_otp_type: string | null;
   registration_otp: string | null;
+  captcha_waiting_at: string | null;
+  captcha_manual_approved: boolean;
 }
 
 export default function VfsAccounts() {
