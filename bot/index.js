@@ -1055,6 +1055,7 @@ async function checkAppointments(config, account) {
     // STEP 3: CAPTCHA + Queue
     console.log("  [3/6] CAPTCHA + sıra kontrol...");
     await logStep(id, "login_captcha", "CAPTCHA çözülüyor ve sıra kontrol ediliyor...");
+    await humanMove(page);
     await solveTurnstile(page);
     await delay(1000, 2000);
     const queueResult = await waitForLoginFormAfterQueue(page);
