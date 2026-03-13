@@ -34,7 +34,7 @@ const Index = () => {
         onStop={t.stopTracking}
       />
 
-      <main className="p-6 md:p-10 lg:p-12 space-y-8 max-w-4xl">
+      <main className="p-4 md:p-6 lg:p-8 space-y-6 overflow-y-auto max-h-screen">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="vfs" className="gap-1.5">

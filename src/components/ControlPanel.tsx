@@ -51,7 +51,7 @@ export default function ControlPanel({
   const isActive = status === "searching";
 
   return (
-    <aside className="bg-secondary p-6 flex flex-col gap-7 min-h-screen border-r border-border/50">
+    <aside className="bg-secondary p-4 md:p-5 flex flex-col gap-5 md:min-h-screen md:max-h-screen md:overflow-y-auto border-r border-border/50">
       <div>
         <h1 className="section-title text-foreground flex items-center gap-2">
           <Globe className="w-5 h-5 text-primary" />
