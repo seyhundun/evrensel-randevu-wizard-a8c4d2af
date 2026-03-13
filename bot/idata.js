@@ -172,16 +172,37 @@ async function readPageState(page) {
   });
 }
 
-async function waitCloudflareBypass(page, context = "sayfa", timeoutMs = 30000) {
+async function waitCloudflareBypass(page, context = "sayfa", timeoutMs = 60000) {
   const start = Date.now();
+  let lastLog = 0;
 
   while (Date.now() - start < timeoutMs) {
     const state = await readPageState(page);
     if (!state.isCloudflare) return { ok: true, state };
-    await delay(1500, 2500);
+    
+    // Her 10 saniyede bir log
+    const elapsed = Math.floor((Date.now() - start) / 1000);
+    if (elapsed - lastLog >= 10) {
+      console.log(`  [CF] ⏳ ${context}: Cloudflare bekleniyor... (${elapsed}s)`);
+      lastLog = elapsed;
+    }
+    
+    // Turnstile checkbox'ı varsa tıklamayı dene
+    try {
+      const cfIframe = await page.$('iframe[src*="challenges.cloudflare.com"]');
+      if (cfIframe) {
+        const box = await cfIframe.boundingBox();
+        if (box) {
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+          await delay(2000, 3000);
+        }
+      }
+    } catch {}
+    
+    await delay(2000, 3000);
   }
 
-  console.log(`  [CF] ❌ ${context}: Cloudflare doğrulaması aşılamadı`);
+  console.log(`  [CF] ❌ ${context}: Cloudflare doğrulaması aşılamadı (${timeoutMs/1000}s)`);
   const screenshot = await takeScreenshotBase64(page);
   return { ok: false, reason: "cloudflare_queue", screenshot };
 }
