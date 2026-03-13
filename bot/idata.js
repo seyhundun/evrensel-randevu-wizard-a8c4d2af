@@ -172,16 +172,37 @@ async function readPageState(page) {
   });
 }
 
-async function waitCloudflareBypass(page, context = "sayfa", timeoutMs = 30000) {
+async function waitCloudflareBypass(page, context = "sayfa", timeoutMs = 60000) {
   const start = Date.now();
+  let lastLog = 0;
 
   while (Date.now() - start < timeoutMs) {
     const state = await readPageState(page);
     if (!state.isCloudflare) return { ok: true, state };
-    await delay(1500, 2500);
+    
+    // Her 10 saniyede bir log
+    const elapsed = Math.floor((Date.now() - start) / 1000);
+    if (elapsed - lastLog >= 10) {
+      console.log(`  [CF] ⏳ ${context}: Cloudflare bekleniyor... (${elapsed}s)`);
+      lastLog = elapsed;
+    }
+    
+    // Turnstile checkbox'ı varsa tıklamayı dene
+    try {
+      const cfIframe = await page.$('iframe[src*="challenges.cloudflare.com"]');
+      if (cfIframe) {
+        const box = await cfIframe.boundingBox();
+        if (box) {
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+          await delay(2000, 3000);
+        }
+      }
+    } catch {}
+    
+    await delay(2000, 3000);
   }
 
-  console.log(`  [CF] ❌ ${context}: Cloudflare doğrulaması aşılamadı`);
+  console.log(`  [CF] ❌ ${context}: Cloudflare doğrulaması aşılamadı (${timeoutMs/1000}s)`);
   const screenshot = await takeScreenshotBase64(page);
   return { ok: false, reason: "cloudflare_queue", screenshot };
 }
@@ -1284,57 +1305,79 @@ async function mainLoop() {
       }
 
       // 2. Aktif hesaplarla randevu kontrol — HER SEFERİNDE FARKLI IP
+      // Cloudflare'da takılırsa farklı IP ile 3 kez dene
       const idataData = await fetch(CONFIG.API_URL + "/idata", { method: "GET", headers: apiHeaders }).then(r => r.json()).catch(() => null);
       const accounts = idataData?.accounts || [];
       
       if (accounts.length > 0) {
-        const account = accounts[0]; // En az kullanılan hesap
-        const ip = getNextIp(); // Her girişte farklı IP
-        let browser, page;
-        try {
-          console.log(`\n🔄 IP Rotasyonu: ${ip || "doğrudan"}`);
-          await idataLog("login_start", `Giriş: ${account.email} | IP: ${ip || "doğrudan"}`);
-          ({ browser, page } = await launchBrowser(ip));
-          
-          const loginResult = await loginToIdata(page, account);
-          if (loginResult.success) {
-            await idataLog("login_success", `Giriş başarılı: ${account.email}`);
+        const account = accounts[0];
+        let success = false;
+        
+        for (let attempt = 1; attempt <= 3 && !success; attempt++) {
+          const ip = getNextIp();
+          let browser, page;
+          try {
+            console.log(`\n🔄 IP Rotasyonu: ${ip || "doğrudan"} (deneme ${attempt}/3)`);
+            await idataLog("login_start", `Giriş: ${account.email} | IP: ${ip || "doğrudan"} | Deneme: ${attempt}/3`);
+            ({ browser, page } = await launchBrowser(ip));
             
-            // Randevu kontrol
-            await idataLog("appt_check", `Randevu kontrol ediliyor | Hesap: ${account.email}`);
-            const apptResult = await checkAppointments(page, account);
-            
-            if (apptResult.found) {
-              await idataLog("appt_found", `🎉 RANDEVU BULUNDU! | Hesap: ${account.email}`, apptResult.screenshot);
-              startAlarm();
+            const loginResult = await loginToIdata(page, account);
+            if (loginResult.success) {
+              await idataLog("login_success", `Giriş başarılı: ${account.email}`);
               
-              // Hızlı kontrol modunda bile her döngüde screenshot al
-              console.log("  ⚡ Randevu bulundu! Hızlı kontrol moduna geçildi.");
-              let fastCheckCount = 0;
-              while (fastCheckCount < 20) { // Max 20 hızlı kontrol (~5dk)
-                await delay(15000, 20000);
-                fastCheckCount++;
-                const recheck = await checkAppointments(page, account);
-                if (recheck.found) {
-                  await idataLog("appt_found", `🎉 RANDEVU HALA MEVCUT! (${fastCheckCount}) | Hesap: ${account.email}`, recheck.screenshot);
-                } else {
-                  await idataLog("appt_none", `Randevu kapandı | ${recheck.message || ""} | Hesap: ${account.email}`, recheck.screenshot);
-                  stopAlarm();
-                  break;
-                }
+              // Randevu kontrol
+              await idataLog("appt_check", `Randevu kontrol ediliyor | Hesap: ${account.email}`);
+              const apptResult = await checkAppointments(page, account);
+              
+              if (apptResult.reason === "cloudflare") {
+                // Appointment sayfasında CF takıldı — IP değiştir
+                console.log(`  [CF] Randevu sayfasında Cloudflare! IP değiştiriliyor...`);
+                await idataLog("cloudflare", `Randevu sayfasında CF engeli | IP: ${ip} | Deneme: ${attempt}`, apptResult.screenshot);
+                if (ip) markIpBanned(ip);
+                continue; // Sonraki IP ile tekrar dene
               }
-              if (fastCheckCount >= 20) stopAlarm();
+              
+              if (apptResult.found) {
+                await idataLog("appt_found", `🎉 RANDEVU BULUNDU! | Hesap: ${account.email}`, apptResult.screenshot);
+                startAlarm();
+                
+                console.log("  ⚡ Randevu bulundu! Hızlı kontrol moduna geçildi.");
+                let fastCheckCount = 0;
+                while (fastCheckCount < 20) {
+                  await delay(15000, 20000);
+                  fastCheckCount++;
+                  const recheck = await checkAppointments(page, account);
+                  if (recheck.found) {
+                    await idataLog("appt_found", `🎉 RANDEVU HALA MEVCUT! (${fastCheckCount}) | Hesap: ${account.email}`, recheck.screenshot);
+                  } else {
+                    await idataLog("appt_none", `Randevu kapandı | ${recheck.message || ""} | Hesap: ${account.email}`, recheck.screenshot);
+                    stopAlarm();
+                    break;
+                  }
+                }
+                if (fastCheckCount >= 20) stopAlarm();
+              } else {
+                stopAlarm();
+                await idataLog("appt_none", `Randevu yok | ${apptResult.message || ""} | Hesap: ${account.email}`, apptResult.screenshot);
+              }
+              success = true;
             } else {
-              stopAlarm();
-              await idataLog("appt_none", `Randevu yok | ${apptResult.message || ""} | Hesap: ${account.email}`, apptResult.screenshot);
+              const reason = loginResult.reason ? ` | Sebep: ${loginResult.reason}` : "";
+              await idataLog("login_fail", `Giriş başarısız: ${account.email}${reason}`, loginResult.screenshot);
+              if (ip && ["cloudflare_queue", "cloudflare_challenge"].includes(loginResult.reason)) {
+                markIpBanned(ip);
+                // Cloudflare engeli — sonraki IP ile dene
+                continue;
+              }
+              success = true; // CF dışı hata, tekrar deneme
             }
-          } else {
-            const reason = loginResult.reason ? ` | Sebep: ${loginResult.reason}` : "";
-            await idataLog("login_fail", `Giriş başarısız: ${account.email}${reason}`, loginResult.screenshot);
-            if (ip && ["cloudflare_queue", "cloudflare_challenge"].includes(loginResult.reason)) {
-              markIpBanned(ip);
-            }
+          } catch (err) {
+            await idataLog("error", `Hata: ${err.message} | IP: ${ip || "doğrudan"} | Deneme: ${attempt}`);
+            if (ip) markIpBanned(ip);
+          } finally {
+            try { if (browser) await browser.close(); } catch {}
           }
+        }
         } catch (err) {
           await idataLog("error", `Hata: ${err.message} | IP: ${ip || "doğrudan"}`);
           if (ip) markIpBanned(ip);
