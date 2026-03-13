@@ -1917,6 +1917,21 @@ async function waitForOtpScreenAfterSubmit(page, timeoutMs = 45000) {
       continue;
     }
 
+    const elapsedMs = Date.now() - startedAt;
+    if (!retriedSubmitOnce && state.hasRegisterForm && elapsedMs > 7000) {
+      retriedSubmitOnce = true;
+      console.log("  [REG] ⚠ OTP ekranı gelmedi, submit tekrar deneniyor...");
+
+      let retry = await tryForceRegistrationSubmit(page, { forceEnableDisabled: false });
+      if (!retry.clicked && state.submitDisabled) {
+        retry = await tryForceRegistrationSubmit(page, { forceEnableDisabled: true });
+      }
+
+      console.log(`  [REG] Submit re-try: clicked=${retry.clicked}, forced=${retry.forced}, reason=${retry.reason}`);
+      await delay(1800, 3200);
+      continue;
+    }
+
     await delay(900, 1600);
   }
 
