@@ -467,8 +467,9 @@ export default function IdataAccounts() {
                     <button onClick={() => setShowPasswords(prev => ({ ...prev, [acc.id]: !prev[acc.id] }))} className="text-muted-foreground hover:text-foreground">
                       {showPasswords[acc.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
-                    {acc.passport_no && <span className="text-xs text-muted-foreground">🛂 {acc.passport_no}</span>}
-                    {acc.idata_office && <span className="text-xs text-muted-foreground">🏢 {acc.idata_office}</span>}
+                     {acc.passport_no && <span className="text-xs text-muted-foreground">🛂 {acc.passport_no}</span>}
+                     {acc.membership_number && <span className="text-xs text-muted-foreground font-mono">🆔 {acc.membership_number}</span>}
+                     {acc.idata_office && <span className="text-xs text-muted-foreground">🏢 {acc.idata_office}</span>}
                   </div>
                 </div>
                 <div className="flex gap-1.5 shrink-0">
