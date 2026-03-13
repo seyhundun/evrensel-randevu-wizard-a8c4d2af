@@ -193,6 +193,18 @@ export default function VfsAccounts() {
     toast.success("Hesap tekrar aktif edildi");
   };
 
+  const approveCaptchaManual = async (id: string) => {
+    const { error } = await supabase
+      .from("vfs_accounts")
+      .update({ captcha_manual_approved: true } as any)
+      .eq("id", id);
+    if (error) {
+      toast.error("Onay gönderilemedi: " + error.message);
+    } else {
+      toast.success("Manuel devralma onayı gönderildi! Bot devam edecek.");
+    }
+  };
+
   const togglePassword = (id: string) => {
     setShowPasswords((prev) => ({ ...prev, [id]: !prev[id] }));
   };
