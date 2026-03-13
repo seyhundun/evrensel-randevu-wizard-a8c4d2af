@@ -368,8 +368,13 @@ export default function IdataAccounts() {
             </div>
           </div>
 
-          <h3 className="text-sm font-semibold pt-2">Başvuru Bilgileri</h3>
-          <div className="grid grid-cols-3 gap-3">
+          <h3 className="text-sm font-semibold pt-2">Üyelik & Başvuru Bilgileri</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <Label className="text-xs">Üyelik Numarası</Label>
+              <Input placeholder="IT85461419533" value={form.membership_number} onChange={e => updateForm("membership_number", e.target.value.toUpperCase())} />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Kayıt sonrası iDATA'dan alınan numara</p>
+            </div>
             <div>
               <Label className="text-xs">İkametgah Şehri</Label>
               <select
