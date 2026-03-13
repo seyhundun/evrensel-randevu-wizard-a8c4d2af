@@ -186,6 +186,9 @@ export type Database = {
       }
       idata_config: {
         Row: {
+          cf_blocked_ip: string | null
+          cf_blocked_since: string | null
+          cf_retry_requested: boolean
           check_interval: number
           created_at: string
           id: string
@@ -193,6 +196,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cf_blocked_ip?: string | null
+          cf_blocked_since?: string | null
+          cf_retry_requested?: boolean
           check_interval?: number
           created_at?: string
           id?: string
@@ -200,6 +206,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cf_blocked_ip?: string | null
+          cf_blocked_since?: string | null
+          cf_retry_requested?: boolean
           check_interval?: number
           created_at?: string
           id?: string
