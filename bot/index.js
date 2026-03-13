@@ -8,7 +8,7 @@ require("dotenv").config();
 
 // ==================== IP ROTATION ====================
 const IP_LIST = (process.env.IP_LIST || "").split(",").map(s => s.trim()).filter(Boolean);
-let currentIpIndex = 0;
+let currentIpIndex = -1;
 let ipFailCounts = new Map(); // IP başına hata sayısı
 const IP_MAX_FAILS = 3; // Bu kadar ardışık hatadan sonra IP'yi atla
 const IP_BAN_DURATION_MS = Number(process.env.IP_BAN_DURATION_MS || 1800000); // 30 dk ban
