@@ -2783,7 +2783,7 @@ async function registerVfsAccount(account) {
         await delay(4000, 7000);
       } else {
         await postRegError(account, page, `${secondOtpType} OTP timeout`);
-        await completeRegistration(account.id, false);
+        // completeRegistration çağırma — retry loop tekrar deneyecek
         return false;
       }
     }
