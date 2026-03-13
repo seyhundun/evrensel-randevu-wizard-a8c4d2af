@@ -2716,7 +2716,7 @@ async function registerVfsAccount(account) {
     const otp = await waitForRegistrationOtp(account.id, otpType, 180000);
     if (!otp) {
       await postRegError(account, page, `${otpType} OTP timeout (180s)`);
-      await completeRegistration(account.id, false);
+      // completeRegistration çağırma — retry loop tekrar deneyecek
       return false;
     }
 
