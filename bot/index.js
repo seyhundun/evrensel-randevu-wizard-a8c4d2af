@@ -225,9 +225,32 @@ async function isWaitingRoomPage(page) {
   });
 }
 
+async function postQueueScreenshot(page, context, waitedSec) {
+  try {
+    const ss = await takeScreenshotBase64(page);
+    if (!ss) return;
+    const cfgData = await apiGet("queue_screenshot:get_configs");
+    const configId = cfgData?.configs?.[0]?.id;
+    if (!configId) return;
+    const pageUrl = await page.url();
+    const pageTitle = await page.evaluate(() => document.title).catch(() => "");
+    await apiPost({
+      config_id: configId,
+      status: "checking",
+      message: `[${context}] Sıra bekleniyor (${waitedSec}s) | URL: ${pageUrl.substring(0, 80)} | Başlık: ${pageTitle.substring(0, 60)}`,
+      slots_available: 0,
+      screenshot_base64: ss,
+    }, "queue_screenshot:insert_log");
+    console.log(`  [${context}] 📸 Kuyruk screenshot gönderildi (${waitedSec}s)`);
+  } catch (e) {
+    console.log(`  [${context}] Screenshot hatası: ${e.message}`);
+  }
+}
+
 async function waitForLoginFormAfterQueue(page) {
   const startedAt = Date.now();
   let attempt = 0;
+  let lastScreenshotAt = 0;
   while (Date.now() - startedAt < CONFIG.QUEUE_MAX_WAIT_MS) {
     attempt++;
     const emailInput = await page.$('input[type="email"], input[name="email"], #email');
@@ -236,13 +259,23 @@ async function waitForLoginFormAfterQueue(page) {
       return { ok: true };
     }
     const waitingRoom = await isWaitingRoomPage(page);
+    const waitedSec = Math.round((Date.now() - startedAt) / 1000);
     if (waitingRoom) {
-      const waitedSec = Math.round((Date.now() - startedAt) / 1000);
       console.log(`  [QUEUE] Sırada bekleniyor... ${waitedSec}s`);
+      // Her 30s'de bir screenshot gönder
+      if (Date.now() - lastScreenshotAt > 30000) {
+        await postQueueScreenshot(page, "QUEUE", waitedSec);
+        lastScreenshotAt = Date.now();
+      }
       await solveTurnstile(page);
       await page.waitForNavigation({ waitUntil: "networkidle2", timeout: CONFIG.QUEUE_POLL_MS + 5000 }).catch(() => {});
       await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 3000);
       continue;
+    }
+    // Bekleme odası değilse ama form da yoksa — durumu logla
+    if (attempt % 3 === 0 && Date.now() - lastScreenshotAt > 30000) {
+      await postQueueScreenshot(page, "QUEUE", waitedSec);
+      lastScreenshotAt = Date.now();
     }
     await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 3000);
   }
