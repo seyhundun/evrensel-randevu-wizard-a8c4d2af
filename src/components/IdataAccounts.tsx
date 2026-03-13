@@ -157,6 +157,7 @@ export default function IdataAccounts() {
       invoice_city: acc.invoice_city || "",
       invoice_district: acc.invoice_district || "",
       invoice_address: acc.invoice_address || "",
+      membership_number: acc.membership_number || "",
     });
     setEditingId(acc.id);
     setShowForm(true);
