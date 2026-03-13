@@ -1961,17 +1961,20 @@ async function registerVfsAccount(account) {
     }
 
     await humanMove(page);
-    await delay(1000, 2000);
+    await humanIdle(2000, 5000); // Telefon sonrası düşünme
 
     // CHECKBOX'LAR
     console.log("  [REG 6/7] Onay kutuları...");
+    await humanScroll(page); // Aşağı scroll — checkbox'ları görmek için
+    await humanIdle(1500, 3000);
     await tickAllCheckboxes(page);
-    await delay(1000, 2000);
+    await humanIdle(2000, 4000);
 
     // CAPTCHA
     console.log("  [REG] CAPTCHA kontrol...");
+    await humanMove(page);
     await solveTurnstile(page);
-    await delay(2000, 4000);
+    await humanIdle(3000, 6000);
 
     // Screenshot gönder (submit öncesi)
     const preSubmitSS = await takeScreenshotBase64(page);
