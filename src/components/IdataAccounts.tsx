@@ -268,7 +268,7 @@ export default function IdataAccounts() {
       <Button
         size="sm"
         variant={showForm ? "secondary" : "default"}
-        onClick={() => setShowForm(!showForm)}
+        onClick={() => { if (showForm) { resetForm(); } else { setEditingId(null); setShowForm(true); } }}
         className="gap-1.5"
       >
         <UserPlus className="w-4 h-4" />
