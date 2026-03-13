@@ -915,11 +915,40 @@ async function checkAppointments(page, account) {
       return { found: false, reason: "cloudflare", screenshot: cfCheck.screenshot };
     }
 
+    // Giriş sayfasına yönlendirildiyse oturum düşmüş demektir
+    const currentUrl = await page.url();
+    if (currentUrl.includes("/membership/login") || currentUrl.includes("/login")) {
+      console.log("  [CHECK] ❌ Oturum düşmüş, login sayfasına yönlendirildi");
+      return { found: false, reason: "session_expired" };
+    }
+
+    // Sayfanın yüklendiğinden emin ol
+    await delay(2000, 3000);
+
+    // Ekran görüntüsünü şimdiden alalım (debug amaçlı)
+    const preScreenshot = await takeScreenshotBase64(page);
+
+    // Sayfada form var mı kontrol et
+    const pageState = await page.evaluate(() => {
+      const body = (document.body?.innerText || "");
+      const lower = body.toLowerCase();
+      const selects = document.querySelectorAll("select");
+      const textInputs = document.querySelectorAll('input[type="text"]');
+      return {
+        hasSelects: selects.length,
+        hasTextInputs: textInputs.length,
+        bodyPreview: body.substring(0, 500),
+        bodyLower: lower.substring(0, 1000),
+        url: window.location.href,
+      };
+    });
+
+    console.log(`  [CHECK] Sayfa: ${pageState.url} | ${pageState.hasSelects} select, ${pageState.hasTextInputs} input`);
+
     // 1) Üyelik numarasını gir ve Ekle butonuna tıkla
     if (account.membership_number) {
       console.log(`  [CHECK] Üyelik no giriliyor: ${account.membership_number}`);
       
-      // Üyelik numarası input alanını bul ve doldur
       const memberInput = await page.$('input[type="text"]');
       if (memberInput) {
         await humanType(page, memberInput, account.membership_number);
@@ -935,15 +964,16 @@ async function checkAppointments(page, account) {
           if (addBtn) addBtn.click();
         });
         await delay(3000, 5000);
+      } else {
+        console.log("  [CHECK] ⚠ Üyelik numarası input'u bulunamadı");
       }
     }
 
-    // 2) Şehir seçimi (dropdown)
+    // 2) Şehir seçimi
     if (account.residence_city) {
       console.log(`  [CHECK] Şehir seçiliyor: ${account.residence_city}`);
       await page.evaluate((city) => {
         const selects = Array.from(document.querySelectorAll("select"));
-        // İlk select genelde şehir
         for (const sel of selects) {
           const opts = Array.from(sel.options);
           const match = opts.find(o => o.text.trim().toLowerCase() === city.toLowerCase());
@@ -993,7 +1023,7 @@ async function checkAppointments(page, account) {
       await delay(2000, 3000);
     }
 
-    // 5) Hizmet tipi (STANDART) — genellikle son select
+    // 5) Hizmet tipi (STANDART)
     await page.evaluate(() => {
       const selects = Array.from(document.querySelectorAll("select"));
       for (const sel of selects) {
@@ -1008,43 +1038,46 @@ async function checkAppointments(page, account) {
     });
     await delay(3000, 5000);
 
-    // 6) Sonucu kontrol et
+    // 6) Sonucu kontrol et — ÇOK SIKI TESPİT
     const result = await page.evaluate(() => {
       const body = (document.body?.innerText || "");
       const lower = body.toLowerCase();
 
-      // Randevu YOK durumu
+      // === KESİN RANDEVU YOK ===
       if (lower.includes("uygun randevu tarihi bulunmamaktadır") || 
           lower.includes("randevu tarihi bulunmamaktadır") ||
-          lower.includes("uygun randevu bulunmamaktadır")) {
-        // Açık olan tarihleri bul
+          lower.includes("uygun randevu bulunmamaktadır") ||
+          lower.includes("no available appointment")) {
         const dateMatch = body.match(/(\d{2}\.\d{2}\.\d{4})/g);
         return { 
           found: false, 
+          status: "no_appointment",
           text: "Uygun randevu tarihi bulunmamaktadır",
           openUntil: dateMatch ? dateMatch[dateMatch.length - 1] : null 
         };
       }
 
-      // Randevu VAR durumu — tarih seçimi aktif
-      if (lower.includes("tarih seçin") || lower.includes("select date") || 
-          lower.includes("müsait randevu") || lower.includes("available") ||
-          lower.includes("randevu tarihi seçin")) {
-        const dates = [];
-        const dateElements = document.querySelectorAll(".available, .open, td:not(.disabled):not(.past), .day:not(.disabled)");
-        dateElements.forEach(el => {
-          if (el.textContent.trim()) dates.push(el.textContent.trim());
-        });
-        return { found: true, dates, text: body.substring(0, 500) };
+      // === KESİN RANDEVU VAR === (çok spesifik kontroller)
+      // Sadece gerçek tarih seçim arayüzü görünüyorsa "found" de
+      const hasDatePicker = !!document.querySelector('input[type="date"], .datepicker-days, .flatpickr-calendar');
+      const hasAvailableSlots = lower.includes("müsait randevu tarihleri") || 
+                                  lower.includes("aşağıdaki tarihlerden") ||
+                                  lower.includes("randevu tarihini seçiniz");
+      
+      if (hasDatePicker || hasAvailableSlots) {
+        return { found: true, status: "appointment_available", text: body.substring(0, 500) };
       }
 
-      // Kalıntı kontrol: sayfada takvim varsa
-      const hasCalendar = !!document.querySelector('.calendar, .datepicker, [class*="calendar"], table.month');
-      if (hasCalendar) {
-        return { found: true, dates: [], text: "Takvim tespit edildi: " + body.substring(0, 300) };
+      // === FORM HENÜZ DOLDURULMADI / SONUÇ BELİRSİZ ===
+      // Form hala görünüyorsa ve sonuç mesajı yoksa → randevu yok say
+      const selects = document.querySelectorAll("select");
+      if (selects.length >= 2) {
+        // Form görünüyor, henüz sonuç yok veya seçim yapılmadı
+        return { found: false, status: "form_visible", text: "Form görünüyor, sonuç belirsiz: " + body.substring(0, 300) };
       }
 
-      return { found: false, text: body.substring(0, 300) };
+      // Sayfa boş veya beklenmeyen durum
+      return { found: false, status: "unknown", text: body.substring(0, 300) };
     });
 
     const ss = await takeScreenshotBase64(page);
@@ -1055,8 +1088,8 @@ async function checkAppointments(page, account) {
     }
 
     const extraInfo = result.openUntil ? ` | Açık tarih: ${result.openUntil}` : "";
-    console.log(`  [CHECK] ❌ Randevu yok${extraInfo}`);
-    return { found: false, screenshot: ss, message: result.text + extraInfo };
+    console.log(`  [CHECK] ❌ Randevu yok (${result.status})${extraInfo}`);
+    return { found: false, screenshot: ss, message: `[${result.status}] ${result.text}${extraInfo}` };
 
   } catch (err) {
     console.error(`  [CHECK] Hata: ${err.message}`);
