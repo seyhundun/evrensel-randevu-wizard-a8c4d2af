@@ -180,10 +180,16 @@ async function humanMove(page) {
     const vp = page.viewport();
     const w = vp?.width || 1366;
     const h = vp?.height || 768;
-    const x = Math.floor(Math.random() * w * 0.6 + w * 0.2);
-    const y = Math.floor(Math.random() * h * 0.6 + h * 0.2);
-    await page.mouse.move(x, y, { steps: Math.floor(Math.random() * 10 + 5) });
-    await delay(100, 300);
+    // Birden fazla hareket yap — gerçek kullanıcı gibi
+    const moves = Math.floor(Math.random() * 3) + 1;
+    for (let i = 0; i < moves; i++) {
+      const x = Math.floor(Math.random() * w * 0.6 + w * 0.2);
+      const y = Math.floor(Math.random() * h * 0.6 + h * 0.2);
+      await page.mouse.move(x, y, { steps: Math.floor(Math.random() * 20 + 10) });
+      await delay(300, 800);
+    }
+    // Bazen scroll da yap
+    if (Math.random() > 0.5) await humanScroll(page);
   } catch {}
 }
 
