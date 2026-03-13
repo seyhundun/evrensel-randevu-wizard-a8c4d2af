@@ -1213,11 +1213,11 @@ async function checkAppointments(config, account) {
       console.log(`  [5/6] ${errorType} | Hesap: ${account.email}`);
       const ss = await takeScreenshotBase64(page);
       await reportResult(id, "error", `${errorType} | Hesap: ${account.email}`, 0, ss);
-      if (isBanned) { await updateAccountStatus(account.id, "banned"); return { found: false, accountBanned: true }; }
+      if (isBanned) { await updateAccountStatus(account.id, "banned"); return { found: false, accountBanned: true, hadError: true }; }
       const newFailCount = (account.fail_count || 0) + 1;
       if (newFailCount >= 3) { await updateAccountStatus(account.id, "cooldown", newFailCount); }
       else { await updateAccountStatus(account.id, "active", newFailCount); }
-      return { found: false, accountBanned: false };
+      return { found: false, accountBanned: false, hadError: true };
     }
 
     console.log("  [5/6] ✅ Giriş başarılı!");
