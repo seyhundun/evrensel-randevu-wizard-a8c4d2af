@@ -6,6 +6,7 @@ import TrackingLogs from "@/components/TrackingLogs";
 import VfsAccounts from "@/components/VfsAccounts";
 import IdataAccounts from "@/components/IdataAccounts";
 import IdataTrackingLogs from "@/components/IdataTrackingLogs";
+import IdataControlPanel from "@/components/IdataControlPanel";
 import { useTracking } from "@/hooks/useTracking";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
