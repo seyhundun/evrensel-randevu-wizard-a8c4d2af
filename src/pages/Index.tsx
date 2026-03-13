@@ -15,7 +15,7 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState("vfs");
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] min-h-screen">
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] min-h-screen">
       <ControlPanel
         country={t.country}
         setCountry={t.setCountry}
