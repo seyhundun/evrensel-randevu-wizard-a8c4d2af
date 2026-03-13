@@ -309,7 +309,7 @@ async function launchBrowser(ip = null) {
   const { browser, page } = await connect({
     headless: false,
     args,
-    turnstile: false, // iData Turnstile kullanmıyor
+    turnstile: true, // iData Cloudflare Turnstile kullanıyor
     fingerprint: true,
     connectOption: { defaultViewport: vp },
   });
