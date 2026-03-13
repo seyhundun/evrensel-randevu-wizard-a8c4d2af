@@ -7,9 +7,11 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "2captcha-ts": "^2.4.1",
+    "dotenv": "^16.4.0",
     "puppeteer": "^22.0.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "dotenv": "^16.4.0"
+    "puppeteer-real-browser": "^1.4.4"
   }
 }
