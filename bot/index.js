@@ -998,7 +998,8 @@ async function launchBrowser(proxyIp = null) {
 async function checkAppointments(config, account) {
   const { id, country, city } = config;
   const ts = new Date().toLocaleTimeString("tr-TR");
-  const activeIp = getCurrentIp();
+  // Her kontrolde sıradaki IP'yi kullan (round-robin)
+  const activeIp = IP_LIST.length > 0 ? getNextIp() : null;
   console.log(`\n[${ts}] Kontrol: ${country} ${city} | Hesap: ${account.email} | IP: ${activeIp || "doğrudan"}`);
   await logStep(id, "bot_start", `Kontrol başlıyor | Hesap: ${account.email} | IP: ${activeIp || "doğrudan"}`);
   await logStep(id, "ip_change", `Aktif IP: ${activeIp || "doğrudan"} | Hesap: ${account.email}`);
