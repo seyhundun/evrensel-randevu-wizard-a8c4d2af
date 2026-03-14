@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { LogOut, Clock, PanelLeftClose, PanelLeft } from "lucide-react";
+import { LogOut, Clock, PanelLeftClose, PanelLeft, Network, Globe, Settings } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import ControlPanel from "@/components/ControlPanel";
 import ModuleStatus from "@/components/ModuleStatus";
 import BotActions from "@/components/BotActions";
@@ -29,6 +30,22 @@ function LiveClock() {
       <Clock className="w-3.5 h-3.5" />
       {time.toLocaleTimeString("tr-TR")}
     </span>
+  );
+}
+
+function SidebarSection({ icon, title, defaultOpen = false, children }: { icon: React.ReactNode; title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="flex items-center gap-2 w-full px-2 py-2 rounded-md hover:bg-secondary/60 transition-colors text-left">
+        <span className="text-muted-foreground">{icon}</span>
+        <span className="text-xs font-semibold text-foreground flex-1">{title}</span>
+        <svg className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-1">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -78,26 +95,34 @@ const Index = () => {
             {sidebarOpen && (
               <aside className="w-[320px] shrink-0 border-r border-border bg-card/50">
                 <ScrollArea className="h-full">
-                  <div className="p-3 space-y-3">
-                    <ProxySettings configId={t.configId} />
-                    <ControlPanel
-                      country={t.country}
-                      setCountry={t.setCountry}
-                      city={t.city}
-                      setCity={t.setCity}
-                      visaCategory={t.visaCategory}
-                      setVisaCategory={t.setVisaCategory}
-                      personCount={t.personCount}
-                      setPersonCount={t.setPersonCount}
-                      interval={t.interval}
-                      setIntervalValue={t.setIntervalValue}
-                      keepAlive={t.keepAlive}
-                      setKeepAlive={t.setKeepAlive}
-                      status={t.status}
-                      onStart={t.startTracking}
-                      onStop={t.stopTracking}
-                    />
-                    <BotSettingsPanel />
+                  <div className="p-3 space-y-1">
+                    <SidebarSection icon={<Network className="w-3.5 h-3.5" />} title="Proxy & Durum" defaultOpen>
+                      <ProxySettings configId={t.configId} />
+                    </SidebarSection>
+
+                    <SidebarSection icon={<Globe className="w-3.5 h-3.5" />} title="Randevu Ayarları" defaultOpen>
+                      <ControlPanel
+                        country={t.country}
+                        setCountry={t.setCountry}
+                        city={t.city}
+                        setCity={t.setCity}
+                        visaCategory={t.visaCategory}
+                        setVisaCategory={t.setVisaCategory}
+                        personCount={t.personCount}
+                        setPersonCount={t.setPersonCount}
+                        interval={t.interval}
+                        setIntervalValue={t.setIntervalValue}
+                        keepAlive={t.keepAlive}
+                        setKeepAlive={t.setKeepAlive}
+                        status={t.status}
+                        onStart={t.startTracking}
+                        onStop={t.stopTracking}
+                      />
+                    </SidebarSection>
+
+                    <SidebarSection icon={<Settings className="w-3.5 h-3.5" />} title="Bot & Ülke Ayarları">
+                      <BotSettingsPanel />
+                    </SidebarSection>
                   </div>
                 </ScrollArea>
               </aside>
