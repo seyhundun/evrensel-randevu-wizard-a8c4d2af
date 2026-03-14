@@ -1762,9 +1762,8 @@ async function loginToIdata(page, account) {
 
       console.log(`  [LOGIN] ✅ OTP alındı: ${otpCode}`);
       
-      // OTP kodunu gir — placeholder veya pozisyon bazlı
+      // OTP kodunu gir — "E-Posta Doğrulama Kodu" alanını hedefle (CAPTCHA input'unu atla)
       const otpTyped = await page.evaluate((code) => {
-        // Sayfadaki tüm visible text input'ları bul
         const inputs = Array.from(document.querySelectorAll('input')).filter(inp => {
           const t = (inp.type || 'text').toLowerCase();
           if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'file', 'password'].includes(t)) return false;
@@ -1773,16 +1772,25 @@ async function loginToIdata(page, account) {
           return rect.width > 0 && rect.height > 0;
         });
         
-        // Placeholder veya name/id ile OTP input'u bul
+        // 1) "E-Posta Doğrulama" veya "mail" içeren placeholder (en spesifik)
         let target = inputs.find(inp => {
-          const ph = (inp.placeholder || '').toLowerCase();
-          const meta = ((inp.name || '') + ' ' + (inp.id || '')).toLowerCase();
-          return /otp|do[gğ]rulama|verification|kod|code/.test(ph) || /otp|verification|code/.test(meta);
+          const ph = (inp.placeholder || '').toLowerCase().normalize("NFC");
+          return /e-?posta.*do[gğ]rulama|mail.*do[gğ]rulama|mail.*verification|e-?mail.*code|e-?posta.*kod/i.test(ph);
         });
         
-        // Bulamazsa: boş olan son input
+        // 2) OTP spesifik placeholder/attr (CAPTCHA "Doğrulama Kodu"'nu hariç tut)
+        if (!target) {
+          target = inputs.find(inp => {
+            const ph = (inp.placeholder || '').toLowerCase().normalize("NFC");
+            const meta = ((inp.name || '') + ' ' + (inp.id || '')).toLowerCase();
+            // "Doğrulama Kodu" tek başına ise CAPTCHA olabilir — atla
+            if (/^do[gğ]rulama\s*kodu$/i.test(ph.trim())) return false;
+            return /otp|verification|one.time|tek.kullanımlık/i.test(ph) || /otp|verification|one.time/i.test(meta);
+          });
+        }
+        
+        // 3) Son boş input (en alttaki — CAPTCHA dolu olacağından atlanır)
         if (!target) target = [...inputs].reverse().find(inp => !inp.value.trim());
-        if (!target && inputs.length) target = inputs[inputs.length - 1];
         
         if (target) {
           target.focus();
