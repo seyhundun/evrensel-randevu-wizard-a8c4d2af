@@ -84,11 +84,20 @@ serve(async (req) => {
 
     const data = await response.json();
     const rawText = data.choices?.[0]?.message?.content?.trim() || "";
-    
-    // Clean: only keep alphanumeric characters
-    const code = rawText.replace(/[^a-zA-Z0-9]/g, "");
-    
-    console.log(`CAPTCHA solved: raw="${rawText}" clean="${code}"`);
+
+    // Clean: only keep alphanumeric characters + normalize uppercase
+    const code = rawText.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    const blockedTokens = new Set(["IDATA", "ITALYA", "ITALIA", "LOGIN", "REGISTER", "CAPTCHA"]);
+    const isValidCode = code.length >= 4 && code.length <= 6 && !blockedTokens.has(code) && !/^(.)\1{3,}$/.test(code);
+
+    console.log(`CAPTCHA solved: raw="${rawText}" clean="${code}" valid=${isValidCode}`);
+
+    if (!isValidCode) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "invalid_captcha_read", raw: rawText, code }),
+        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     return new Response(
       JSON.stringify({ ok: true, code, raw: rawText }),
