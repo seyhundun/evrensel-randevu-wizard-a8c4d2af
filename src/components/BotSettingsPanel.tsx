@@ -335,13 +335,62 @@ export default function BotSettingsPanel() {
         </div>
 
         <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">Proxy Bölge (Region)</Label>
-          <Input
-            className="h-8 text-xs font-mono"
-            value={getDraft("proxy_region")}
-            onChange={e => setDraftValue("proxy_region", e.target.value)}
-            placeholder="ankara"
-          />
+          <div className="flex items-center justify-between">
+            <Label className="text-[11px] text-muted-foreground">Proxy Bölge (Region)</Label>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 text-[10px] gap-1 px-1.5"
+              onClick={fetchEvomiRegions}
+              disabled={loadingRegions}
+            >
+              {loadingRegions ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              API'den Çek
+            </Button>
+          </div>
+          {evomiRegions.length > 0 ? (
+            <Select
+              value={getDraft("proxy_region") || ""}
+              onValueChange={v => setDraftValue("proxy_region", v)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Bölge seçin..." />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                <SelectItem value="">Yok (rastgele)</SelectItem>
+                {evomiRegions.map(r => (
+                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              className="h-8 text-xs font-mono"
+              value={getDraft("proxy_region")}
+              onChange={e => setDraftValue("proxy_region", e.target.value)}
+              placeholder="ankara (API'den çekmek için butona tıklayın)"
+            />
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Evomi API Key</Label>
+          <div className="relative">
+            <Input
+              className="h-8 text-xs font-mono pr-8"
+              type={showPass ? "text" : "password"}
+              value={getDraft("evomi_api_key")}
+              onChange={e => setDraftValue("evomi_api_key", e.target.value)}
+              placeholder="Evomi dashboard'dan alın"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass(!showPass)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
       </div>
 
