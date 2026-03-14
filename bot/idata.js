@@ -19,8 +19,14 @@ const CONFIG = {
   OTP_POLL_MS: Number(process.env.OTP_POLL_MS || 5000),
 };
 
+// ==================== CAPTCHA PROVIDER ====================
+const CAPTCHA_PROVIDER = (process.env.CAPTCHA_PROVIDER || "auto").toLowerCase();
+const CAPSOLVER_API_KEY = (process.env.CAPSOLVER_API_KEY || "").trim();
+
 console.log("🇮🇹 iDATA İtalya Botu v1.0 başlatılıyor...");
-console.log(`🔐 CAPTCHA API key: ${CONFIG.CAPTCHA_API_KEY ? `var (${CONFIG.CAPTCHA_API_KEY.length} karakter)` : "yok"}`);
+console.log(`🔐 CAPTCHA Provider: ${CAPTCHA_PROVIDER}`);
+console.log(`🔐 2captcha API key: ${CONFIG.CAPTCHA_API_KEY ? `var (${CONFIG.CAPTCHA_API_KEY.length} karakter)` : "yok"}`);
+if (CAPSOLVER_API_KEY) console.log(`🔐 Capsolver API key: var (${CAPSOLVER_API_KEY.length} karakter)`);
 
 // ==================== IP ROTATION ====================
 const IP_LIST = (process.env.IP_LIST || "").split(",").map(s => s.trim()).filter(Boolean);
