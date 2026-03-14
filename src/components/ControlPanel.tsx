@@ -1,4 +1,6 @@
-import { COUNTRIES, CITIES, VISA_CATEGORIES } from "@/lib/constants";
+import { useEffect, useState } from "react";
+import { CITIES, VISA_CATEGORIES } from "@/lib/constants";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Select,
   SelectContent,
@@ -12,6 +14,13 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Shield, Clock, Users, MapPin, Globe } from "lucide-react";
 import type { TrackingStatus } from "@/lib/constants";
+
+interface DynCountry {
+  value: string;
+  label: string;
+  flag: string;
+  code: string;
+}
 
 interface ControlPanelProps {
   country: string;
