@@ -655,8 +655,8 @@ async function refreshCaptchaImage(page) {
 
 async function solveImageCaptcha(page, options = {}) {
   const { maxAttempts = 3 } = options;
+  const fetch = (await import("node-fetch")).default;
 
-  // Önce AI ile çöz (Lovable AI - Gemini Vision), başarısızsa 2captcha/capsolver'a düş
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       if (attempt > 1) {
