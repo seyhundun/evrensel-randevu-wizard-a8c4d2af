@@ -6,13 +6,32 @@
 
 require("dotenv").config();
 
+// ==================== PROXY CONFIG ====================
+// Proxy modu: "datacenter" (varsayılan, microsocks SOCKS5) veya "residential" (Evomi HTTP)
+const PROXY_MODE = (process.env.PROXY_MODE || "datacenter").toLowerCase();
+const EVOMI_PROXY_HOST = process.env.EVOMI_PROXY_HOST || "rp.evomi.com";
+const EVOMI_PROXY_PORT = Number(process.env.EVOMI_PROXY_PORT || 1000);
+const EVOMI_PROXY_USER = process.env.EVOMI_PROXY_USER || "";
+const EVOMI_PROXY_PASS = process.env.EVOMI_PROXY_PASS || "";
+const EVOMI_PROXY_COUNTRY = process.env.EVOMI_PROXY_COUNTRY || "TR"; // Ülke kodu (TR, PL, DE vb.)
+
+if (PROXY_MODE === "residential") {
+  console.log(`🌐 Proxy modu: RESIDENTIAL (Evomi)`);
+  console.log(`   Host: ${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT}`);
+  console.log(`   Kullanıcı: ${EVOMI_PROXY_USER ? "var" : "yok"}`);
+  console.log(`   Ülke: ${EVOMI_PROXY_COUNTRY}`);
+} else {
+  console.log(`🌐 Proxy modu: DATACENTER (microsocks SOCKS5)`);
+}
+
 // ==================== IP ROTATION ====================
 const IP_LIST = (process.env.IP_LIST || "").split(",").map(s => s.trim()).filter(Boolean);
 let currentIpIndex = -1;
-let ipFailCounts = new Map(); // IP başına hata sayısı
-const IP_MAX_FAILS = 3; // Bu kadar ardışık hatadan sonra IP'yi atla
-const IP_BAN_DURATION_MS = Number(process.env.IP_BAN_DURATION_MS || 1800000); // 30 dk ban
-let ipBannedUntil = new Map(); // IP ban süreleri
+let ipFailCounts = new Map();
+const IP_MAX_FAILS = 3;
+const IP_BAN_DURATION_MS = Number(process.env.IP_BAN_DURATION_MS || 1800000);
+let ipBannedUntil = new Map();
+let residentialSessionId = 0; // Evomi oturum rotasyonu için
 
 function getNextIp() {
   if (IP_LIST.length === 0) return null;
