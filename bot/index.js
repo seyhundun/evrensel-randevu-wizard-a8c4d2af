@@ -10,7 +10,7 @@ require("dotenv").config();
 // Proxy modu: "datacenter" (varsayılan, microsocks SOCKS5) veya "residential" (Evomi HTTP)
 const PROXY_MODE = (process.env.PROXY_MODE || "residential").toLowerCase();
 let EVOMI_PROXY_HOST = process.env.EVOMI_PROXY_HOST || "core-residential.evomi-proxy.com";
-let EVOMI_PROXY_PORT = Number(process.env.EVOMI_PROXY_PORT || 1001);
+let EVOMI_PROXY_PORT = Number(process.env.EVOMI_PROXY_PORT || 1000);
 const EVOMI_PROXY_USER = process.env.EVOMI_PROXY_USER || "";
 const EVOMI_PROXY_PASS = process.env.EVOMI_PROXY_PASS || "";
 let EVOMI_PROXY_COUNTRY = process.env.EVOMI_PROXY_COUNTRY || "TR";
@@ -1510,13 +1510,16 @@ function cleanupUserDataDir(dir) {
 }
 
 function getResidentialProxyUrl() {
-  // Evomi uzman format: password_country-TR_region-ankara_isp-xxx_session-ID
-  residentialSessionId++;
-  const sessionId = `${Date.now()}_${residentialSessionId}`;
-  const region = getNextProxyRegion();
-  const pass = `${EVOMI_PROXY_PASS}_country-${EVOMI_PROXY_COUNTRY}_region-${region}_isp-${PROXY_ISP_LIST}_session-${sessionId}`;
-  console.log(`  [PROXY] 🏠 Residential proxy: ${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT} (session: ${sessionId}, ülke: ${EVOMI_PROXY_COUNTRY}, bölge: ${region}, ISP filtreli)`);
-  return { proxyUrl: `http://${EVOMI_PROXY_USER}:${pass}@${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT}`, user: EVOMI_PROXY_USER, pass, host: EVOMI_PROXY_HOST, port: EVOMI_PROXY_PORT, region };
+  // Not: Bu hesapta _session/_region/_isp ekleri 400 döndü, sade format kullanıyoruz
+  const pass = `${EVOMI_PROXY_PASS}_country-${EVOMI_PROXY_COUNTRY}`;
+  console.log(`  [PROXY] 🏠 Residential proxy: ${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT} (ülke: ${EVOMI_PROXY_COUNTRY}, auth: simple)`);
+  return {
+    proxyUrl: `http://${EVOMI_PROXY_USER}:${pass}@${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT}`,
+    user: EVOMI_PROXY_USER,
+    pass,
+    host: EVOMI_PROXY_HOST,
+    port: EVOMI_PROXY_PORT,
+  };
 }
 
 async function launchBrowser(proxyIp = null) {
