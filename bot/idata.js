@@ -911,10 +911,10 @@ async function solveImageCaptcha(page, options = {}) {
           const createRes = await fetch("https://api.capsolver.com/createTask", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              clientKey: CAPSOLVER_API_KEY,
-              task: { type: "ImageToTextTask", body: captchaImgBase64 },
-            }),
+             body: JSON.stringify({
+               clientKey: CAPSOLVER_API_KEY,
+               task: { type: "ImageToTextTask", body: captchaImgBase64, module: "common", case: false },
+             }),
           });
 
           const createText = await createRes.text();
