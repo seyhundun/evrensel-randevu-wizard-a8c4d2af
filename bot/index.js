@@ -42,7 +42,7 @@ async function loadProxySettingsFromDB() {
       if (map.proxy_country) EVOMI_PROXY_COUNTRY = map.proxy_country;
       if (map.proxy_host) EVOMI_PROXY_HOST = map.proxy_host;
       if (map.proxy_port) EVOMI_PROXY_PORT = Number(map.proxy_port);
-      if (map.proxy_region !== undefined) EVOMI_PROXY_REGION = map.proxy_region;
+      if (map.proxy_region !== undefined) { EVOMI_PROXY_REGION = map.proxy_region; DB_PROXY_REGION = map.proxy_region; }
       if (map.proxy_user) EVOMI_PROXY_USER = map.proxy_user;
       if (map.proxy_pass) EVOMI_PROXY_PASS = map.proxy_pass;
       if (map.captcha_provider) CAPTCHA_PROVIDER = map.captcha_provider.toLowerCase();
@@ -77,14 +77,21 @@ let IP_ROTATION_INTERVAL_MS = Number(process.env.IP_ROTATION_INTERVAL_MS || 0); 
 let lastIpRotationTime = Date.now();
 
 // ==================== PROXY REGION ROTATION ====================
-const PROXY_REGIONS = ["ankara", "adana", "konya", "istanbul", "izmir", "bursa", "antalya"];
+const PROXY_REGIONS_FALLBACK = ["ankara", "adana", "konya", "istanbul", "izmir", "bursa", "antalya"];
 let currentRegionIndex = -1;
+let DB_PROXY_REGION = ""; // Dashboard'dan seçilen sabit bölge
 const PROXY_ISP_LIST = "vodafonenetdslm,turkcellinterne,vodafonenetadsl,superonlinebroa,turktelekom,turktelekomunik,vodafoneturkey,vodafonenetdslk";
 
 function getNextProxyRegion() {
-  currentRegionIndex = (currentRegionIndex + 1) % PROXY_REGIONS.length;
-  const region = PROXY_REGIONS[currentRegionIndex];
-  console.log(`  [PROXY] 🏙 Bölge rotasyonu: ${region} (${currentRegionIndex + 1}/${PROXY_REGIONS.length})`);
+  // Dashboard'dan bölge seçilmişse sabit kullan
+  if (DB_PROXY_REGION) {
+    console.log(`  [PROXY] 🏙 Dashboard bölgesi kullanılıyor: ${DB_PROXY_REGION}`);
+    return DB_PROXY_REGION;
+  }
+  // Bölge seçilmemişse fallback rotasyon
+  currentRegionIndex = (currentRegionIndex + 1) % PROXY_REGIONS_FALLBACK.length;
+  const region = PROXY_REGIONS_FALLBACK[currentRegionIndex];
+  console.log(`  [PROXY] 🏙 Bölge rotasyonu: ${region} (${currentRegionIndex + 1}/${PROXY_REGIONS_FALLBACK.length})`);
   return region;
 }
 

@@ -64,7 +64,7 @@ async function loadProxySettingsFromDB() {
       if (map.proxy_country) EVOMI_PROXY_COUNTRY = map.proxy_country;
       if (map.proxy_host) EVOMI_PROXY_HOST = map.proxy_host;
       if (map.proxy_port) EVOMI_PROXY_PORT = Number(map.proxy_port);
-      if (map.proxy_region !== undefined) EVOMI_PROXY_REGION = map.proxy_region;
+      if (map.proxy_region !== undefined) { EVOMI_PROXY_REGION = map.proxy_region; DB_PROXY_REGION = map.proxy_region; }
       if (map.proxy_user) EVOMI_PROXY_USER = map.proxy_user;
       if (map.proxy_pass) EVOMI_PROXY_PASS = map.proxy_pass;
       if (map.captcha_provider) CAPTCHA_PROVIDER = map.captcha_provider.toLowerCase();
@@ -90,14 +90,19 @@ const ipBannedUntil = new Map();
 const IP_BAN_DURATION_MS = Number(process.env.IP_BAN_DURATION_MS || 1800000);
 
 // ==================== PROXY REGION ROTATION ====================
-const PROXY_REGIONS = ["ankara", "adana", "konya", "istanbul", "izmir", "bursa", "antalya"];
+const PROXY_REGIONS_FALLBACK = ["ankara", "adana", "konya", "istanbul", "izmir", "bursa", "antalya"];
 let currentRegionIndex = -1;
+let DB_PROXY_REGION = ""; // Dashboard'dan seçilen sabit bölge
 const PROXY_ISP_LIST = "vodafonenetdslm,turkcellinterne,vodafonenetadsl,superonlinebroa,turktelekom,turktelekomunik,vodafoneturkey,vodafonenetdslk";
 
 function getNextProxyRegion() {
-  currentRegionIndex = (currentRegionIndex + 1) % PROXY_REGIONS.length;
-  const region = PROXY_REGIONS[currentRegionIndex];
-  console.log(`  [PROXY] 🏙 Bölge rotasyonu: ${region} (${currentRegionIndex + 1}/${PROXY_REGIONS.length})`);
+  if (DB_PROXY_REGION) {
+    console.log(`  [PROXY] 🏙 Dashboard bölgesi kullanılıyor: ${DB_PROXY_REGION}`);
+    return DB_PROXY_REGION;
+  }
+  currentRegionIndex = (currentRegionIndex + 1) % PROXY_REGIONS_FALLBACK.length;
+  const region = PROXY_REGIONS_FALLBACK[currentRegionIndex];
+  console.log(`  [PROXY] 🏙 Bölge rotasyonu: ${region} (${currentRegionIndex + 1}/${PROXY_REGIONS_FALLBACK.length})`);
   return region;
 }
 
@@ -1569,11 +1574,16 @@ async function mainLoop() {
         
         for (let attempt = 1; attempt <= 3 && !success; attempt++) {
           const ip = getNextIp();
+          // Residential modda her denemede bölge rotasyonu yap
+          if (PROXY_MODE === "residential") {
+            residentialSessionId++;
+            EVOMI_PROXY_REGION = getNextProxyRegion();
+          }
           let browser, page;
           try {
             const proxyLabel = getProxyLabel(ip);
-            console.log(`\n🔄 IP Rotasyonu: ${proxyLabel} (deneme ${attempt}/3)`);
-            await idataLog("login_start", `Giriş: ${account.email} | IP: ${proxyLabel} | Deneme: ${attempt}/3`);
+            console.log(`\n🔄 IP Rotasyonu: ${proxyLabel} | Bölge: ${EVOMI_PROXY_REGION || 'yok'} (deneme ${attempt}/3)`);
+            await idataLog("login_start", `Giriş: ${account.email} | IP: ${proxyLabel} | Bölge: ${EVOMI_PROXY_REGION || 'yok'} | Deneme: ${attempt}/3`);
             ({ browser, page } = await launchBrowser(ip));
             
             const loginResult = await loginToIdata(page, account);
