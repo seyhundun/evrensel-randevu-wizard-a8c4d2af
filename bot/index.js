@@ -1203,21 +1203,7 @@ async function _solve(page, context) {
   if (userAgent) payload.userAgent = userAgent;
 
   try {
-    let token = "";
-
-    if (Solver) {
-      try {
-        const solver = new (Solver.Solver || Solver)(CONFIG.CAPTCHA_API_KEY);
-        const result = await solver.cloudflareTurnstile(payload);
-        token = result?.data || result?.token || result?.request || result?.code || "";
-      } catch (solverErr) {
-        console.log(`  [CAPTCHA] SDK çözümü başarısız, HTTP fallback: ${solverErr.message}`);
-      }
-    }
-
-    if (!token) {
-      token = await solveTurnstileWithHttp(payload);
-    }
+    const token = await solveWithProvider(payload);
 
     if (!token) throw new Error("Token alınamadı");
 
