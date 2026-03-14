@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Monitor, RefreshCw, Maximize2, Minimize2, ExternalLink, Wifi, WifiOff, Settings2 } from "lucide-react";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Monitor, RefreshCw, Maximize2, Minimize2, ExternalLink, Wifi, WifiOff, Settings2, ShieldAlert } from "lucide-react";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 
 interface VncViewerProps {
   title: string;
@@ -15,18 +16,21 @@ interface VncViewerProps {
 const VncViewer = ({ title, defaultHost = "187.77.161.201", defaultPort = 6080, className }: VncViewerProps) => {
   const [host, setHost] = useState(defaultHost);
   const [port, setPort] = useState(defaultPort);
+  const [scheme, setScheme] = useState<"http" | "https">("http");
   const [isConnected, setIsConnected] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const vncUrl = `http://${host}:${port}/vnc.html?autoconnect=1&resize=scale&path=websockify&reconnect=true&reconnect_delay=3000`;
+  const isHttpsApp = useMemo(() => window.location.protocol === "https:", []);
+  const mixedContentBlocked = isHttpsApp && scheme === "http";
+
+  const vncUrl = `${scheme}://${host}:${port}/vnc.html?autoconnect=1&resize=scale&path=websockify&reconnect=true&reconnect_delay=3000`;
 
   const handleConnect = useCallback(() => {
     setIsConnected(true);
-    setIframeKey(prev => prev + 1);
+    setIframeKey((prev) => prev + 1);
   }, []);
 
   const handleDisconnect = useCallback(() => {
@@ -34,7 +38,7 @@ const VncViewer = ({ title, defaultHost = "187.77.161.201", defaultPort = 6080, 
   }, []);
 
   const handleRefresh = useCallback(() => {
-    setIframeKey(prev => prev + 1);
+    setIframeKey((prev) => prev + 1);
   }, []);
 
   const handleFullscreen = useCallback(() => {
@@ -49,7 +53,7 @@ const VncViewer = ({ title, defaultHost = "187.77.161.201", defaultPort = 6080, 
   }, []);
 
   const handleOpenExternal = useCallback(() => {
-    window.open(vncUrl, "_blank");
+    window.open(vncUrl, "_blank", "noopener,noreferrer");
   }, [vncUrl]);
 
   return (
@@ -60,11 +64,11 @@ const VncViewer = ({ title, defaultHost = "187.77.161.201", defaultPort = 6080, 
             <Monitor className="w-4 h-4 text-primary" />
             {title}
             {isConnected ? (
-              <span className="flex items-center gap-1 text-xs text-emerald-500">
+              <span className="flex items-center gap-1 text-xs text-primary">
                 <Wifi className="w-3 h-3" />
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-70" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
                 </span>
               </span>
             ) : (
@@ -74,7 +78,13 @@ const VncViewer = ({ title, defaultHost = "187.77.161.201", defaultPort = 6080, 
             )}
           </CardTitle>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setShowSettings(!showSettings)} title="Ayarlar">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => setShowSettings(!showSettings)}
+              title="Ayarlar"
+            >
               <Settings2 className="w-3.5 h-3.5" />
             </Button>
             {isConnected && (
@@ -96,20 +106,40 @@ const VncViewer = ({ title, defaultHost = "187.77.161.201", defaultPort = 6080, 
 
       <Collapsible open={showSettings} onOpenChange={setShowSettings}>
         <CollapsibleContent>
-          <div className="px-3 pb-2 flex items-center gap-2">
-            <Input
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="IP Adresi"
-              className="h-7 text-xs flex-1"
-            />
-            <Input
-              value={port}
-              onChange={(e) => setPort(Number(e.target.value))}
-              placeholder="Port"
-              className="h-7 text-xs w-20"
-              type="number"
-            />
+          <div className="px-3 pb-2 space-y-2">
+            <div className="flex items-center gap-2">
+              <Input
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="IP Adresi"
+                className="h-7 text-xs flex-1"
+              />
+              <Input
+                value={port}
+                onChange={(e) => setPort(Number(e.target.value))}
+                placeholder="Port"
+                className="h-7 text-xs w-20"
+                type="number"
+              />
+            </div>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant={scheme === "http" ? "default" : "outline"}
+                className="h-6 text-[10px]"
+                onClick={() => setScheme("http")}
+              >
+                HTTP
+              </Button>
+              <Button
+                size="sm"
+                variant={scheme === "https" ? "default" : "outline"}
+                className="h-6 text-[10px]"
+                onClick={() => setScheme("https")}
+              >
+                HTTPS
+              </Button>
+            </div>
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -119,17 +149,35 @@ const VncViewer = ({ title, defaultHost = "187.77.161.201", defaultPort = 6080, 
           <div className="flex flex-col items-center justify-center py-10 gap-3 bg-muted/30">
             <Monitor className="w-10 h-10 text-muted-foreground/40" />
             <p className="text-xs text-muted-foreground">Tarayıcı ekranını izlemek için bağlanın</p>
-            <p className="text-[10px] text-muted-foreground/60 font-mono">{host}:{port}</p>
+            <p className="text-[10px] text-muted-foreground/60 font-mono">{scheme}://{host}:{port}</p>
             <Button size="sm" onClick={handleConnect} className="gap-1.5">
               <Wifi className="w-3.5 h-3.5" />
               Bağlan
             </Button>
           </div>
+        ) : mixedContentBlocked ? (
+          <div className="p-3 bg-muted/30">
+            <Alert>
+              <ShieldAlert className="h-4 w-4" />
+              <AlertDescription className="space-y-2">
+                <p className="text-xs">
+                  HTTPS dashboard içinde HTTP VNC iframe güvenlik nedeniyle bloklanır.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" className="h-7 text-xs" onClick={handleOpenExternal}>
+                    Yeni Sekmede Aç
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setScheme("https")}>
+                    HTTPS Dene
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          </div>
         ) : (
           <div className="relative bg-black">
             <iframe
               key={iframeKey}
-              ref={iframeRef}
               src={vncUrl}
               className="w-full border-0"
               style={{ height: isFullscreen ? "100vh" : "400px" }}
