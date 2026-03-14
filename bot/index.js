@@ -14,6 +14,7 @@ let EVOMI_PROXY_PORT = Number(process.env.EVOMI_PROXY_PORT || 1000);
 const EVOMI_PROXY_USER = process.env.EVOMI_PROXY_USER || "";
 const EVOMI_PROXY_PASS = process.env.EVOMI_PROXY_PASS || "";
 let EVOMI_PROXY_COUNTRY = process.env.EVOMI_PROXY_COUNTRY || "TR";
+let EVOMI_PROXY_REGION = process.env.EVOMI_PROXY_REGION || "";
 
 // DB'den proxy ayarlarını yükle (dashboard'dan değiştirilebilir)
 async function loadProxySettingsFromDB() {
