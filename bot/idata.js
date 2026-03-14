@@ -503,6 +503,14 @@ async function solveImageCaptcha(page) {
 }
 
 // ==================== BROWSER LAUNCH ====================
+function getResidentialProxyUrl() {
+  residentialSessionId++;
+  const sessionPart = `session-${EVOMI_PROXY_COUNTRY.toLowerCase()}_${residentialSessionId}_${Date.now()}`;
+  const user = `${EVOMI_PROXY_USER}-country-${EVOMI_PROXY_COUNTRY.toLowerCase()}-session-${sessionPart}`;
+  console.log(`  [PROXY] 🏠 Residential: ${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT} (session: ${sessionPart})`);
+  return { user, pass: EVOMI_PROXY_PASS, host: EVOMI_PROXY_HOST, port: EVOMI_PROXY_PORT };
+}
+
 async function launchBrowser(ip = null) {
   const { connect } = require("puppeteer-real-browser");
 
@@ -514,7 +522,13 @@ async function launchBrowser(ip = null) {
     "--lang=tr-TR",
   ];
 
-  if (ip) {
+  let proxyAuth = null;
+
+  if (PROXY_MODE === "residential" && EVOMI_PROXY_USER) {
+    const rp = getResidentialProxyUrl();
+    args.push(`--proxy-server=http://${rp.host}:${rp.port}`);
+    proxyAuth = { username: rp.user, password: rp.pass };
+  } else if (ip) {
     const port = 10800 + IP_LIST.indexOf(ip);
     args.push(`--proxy-server=socks5://127.0.0.1:${port}`);
     console.log(`  [BROWSER] Proxy: socks5://127.0.0.1:${port} (${ip})`);
@@ -526,10 +540,15 @@ async function launchBrowser(ip = null) {
   const { browser, page } = await connect({
     headless: false,
     args,
-    turnstile: true, // iData Cloudflare Turnstile kullanıyor
+    turnstile: true,
     fingerprint: true,
     connectOption: { defaultViewport: vp },
   });
+
+  if (proxyAuth) {
+    await page.authenticate(proxyAuth);
+    console.log(`  [BROWSER] 🔑 Residential proxy auth uygulandı`);
+  }
 
   await page.setUserAgent(ua);
   await page.setViewport(vp);
