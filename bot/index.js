@@ -1597,11 +1597,8 @@ async function launchBrowser(proxyIp = null) {
   const { connect } = require("puppeteer-real-browser");
   console.log(`  [BROWSER] DISPLAY=${process.env.DISPLAY || "yok"}`);
 
-  // Test scriptiyle birebir aynı — minimal args
+  // Minimal args — sandbox flag'leri kaldırıldı (tespit riski)
   const args = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
     "--window-size=1920,1080",
     "--start-maximized",
   ];
