@@ -1574,7 +1574,8 @@ function getResidentialProxyUrl() {
 
 async function launchBrowser(proxyIp = null) {
   const { connect } = require("puppeteer-real-browser");
-  
+  console.log(`  [BROWSER] DISPLAY=${process.env.DISPLAY || "yok"}`);
+
   // Test scriptiyle birebir aynı — minimal args
   const args = [
     "--no-sandbox",
