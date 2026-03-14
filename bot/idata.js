@@ -517,7 +517,8 @@ async function getCaptchaImageBase64(page) {
   // 1) Sayfadaki CAPTCHA img elementini bul
   const imgHandle = await page.evaluateHandle(() => {
     const keywordRegex = /(captcha|doğrulama|dogrulama|verification|security|code)/i;
-    const denyRegex = /(logo|icon|brand|header|footer|idata|svg)/i;
+    // NOT: "idata" burada yasaklı olmamalı; captcha src'si idata domaininden geliyor olabilir
+    const denyRegex = /(logo|icon|brand|header|footer|svg)/i;
 
     const inputs = Array.from(document.querySelectorAll("input"));
     const captchaInputRects = inputs
