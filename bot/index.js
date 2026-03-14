@@ -281,8 +281,7 @@ const USER_AGENTS = [
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 ];
 const VIEWPORTS = [
-  { width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 1536, height: 864 },
-  { width: 1440, height: 900 }, { width: 1680, height: 1050 }, { width: 1280, height: 720 },
+  { width: 1920, height: 1080 },
 ];
 const TIMEZONES = ["Europe/Istanbul", "Europe/Berlin", "Europe/Paris", "Europe/London"];
 const LANGUAGES = [
@@ -1597,6 +1596,7 @@ async function launchBrowser(proxyIp = null) {
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
     "--window-size=1920,1080",
+    "--start-maximized",
   ];
   
   let proxyConfig = undefined;

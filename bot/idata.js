@@ -174,7 +174,7 @@ const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
 ];
 const VIEWPORTS = [
-  { width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 1536, height: 864 },
+  { width: 1920, height: 1080 },
 ];
 
 function getRandomItem(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -581,6 +581,8 @@ async function launchBrowser(ip = null) {
     "--use-gl=swiftshader",
     "--enable-unsafe-swiftshader",
     "--enable-webgl",
+    "--start-maximized",
+    "--window-size=1920,1080",
   ];
 
   let proxyConfig = undefined;
