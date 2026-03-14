@@ -1479,40 +1479,63 @@ async function loginToIdata(page, account) {
     let captchaTyped = false;
 
     captchaInput = await page.evaluateHandle(() => {
-      // 1) Placeholder ile bul (en güvenilir — iDATA "Doğrulama Kodu" kullanıyor)
-      const byPlaceholder = document.querySelector(
-        'input[placeholder*="oğrulama" i], input[placeholder*="Dogrulama" i], input[placeholder*="verification" i], input[placeholder*="captcha" i]'
-      );
-      if (byPlaceholder) return byPlaceholder;
+      // Tüm görünür text-like input'ları topla (type attribute olmayan input'lar dahil)
+      const allInputs = Array.from(document.querySelectorAll('input')).filter(inp => {
+        const t = (inp.type || 'text').toLowerCase();
+        if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'file'].includes(t)) return false;
+        if (inp.readOnly || inp.disabled) return false;
+        const rect = inp.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+
+      // 1) Placeholder ile bul — normalize ederek karşılaştır
+      const placeholderMatch = allInputs.find(inp => {
+        const ph = (inp.placeholder || '').toLowerCase().normalize('NFC');
+        return /do[gğ]rulama|verification|captcha/i.test(ph);
+      });
+      if (placeholderMatch) return placeholderMatch;
 
       // 2) Name/id ile bul
-      const byAttr = document.querySelector(
-        'input[name*="captcha" i], input[id*="captcha" i], input[name*="dogrulama" i], input[id*="dogrulama" i], input[name*="verification" i]'
-      );
-      if (byAttr) return byAttr;
+      const attrMatch = allInputs.find(inp => {
+        const meta = ((inp.name || '') + ' ' + (inp.id || '')).toLowerCase();
+        return /captcha|dogrulama|verification/.test(meta);
+      });
+      if (attrMatch) return attrMatch;
 
-      // 3) Captcha resmi/canvas yakınındaki input
-      const captchaImg = Array.from(document.querySelectorAll('img, canvas')).find(el => {
+      // 3) CAPTCHA görseli (img/canvas) bul, Y ekseninde hemen altındaki boş input'u seç
+      const captchaEl = Array.from(document.querySelectorAll('img, canvas')).find(el => {
+        const rect = el.getBoundingClientRect();
+        // Mantıklı boyut — çok küçük ikonları atla
+        if (rect.width < 60 || rect.height < 25) return false;
         const meta = [
           el.getAttribute('src') || '', el.getAttribute('alt') || '',
-          el.className || '', el.id || '',
-          (el.closest('div, fieldset, section, form')?.textContent || '')
+          el.className || '', el.id || ''
         ].join(' ').toLowerCase();
-        return /(captcha|doğrulama|dogrulama|verification|security)/i.test(meta);
+        // Captcha benzeri kaynak veya form ortasında duran resim/canvas
+        if (/captcha|dogrulama|verification|security|validat/i.test(meta)) return true;
+        // Formdaki tek bağımsız resim/canvas (login form avatar/icon değil)
+        if (el.tagName === 'CANVAS') return true;
+        if (el.tagName === 'IMG' && /base64|captcha|securimage|validate/i.test(el.src || '')) return true;
+        return false;
       });
-      if (captchaImg) {
-        let parent = captchaImg.parentElement;
-        for (let i = 0; i < 6 && parent; i++) {
-          const inp = parent.querySelector('input[type="text"]:not([type="hidden"]):not([readonly])');
-          if (inp) return inp;
-          parent = parent.parentElement;
-        }
+
+      if (captchaEl) {
+        const captchaRect = captchaEl.getBoundingClientRect();
+        // CAPTCHA'nın altındaki en yakın boş input
+        const below = allInputs
+          .filter(inp => {
+            const r = inp.getBoundingClientRect();
+            return r.top >= captchaRect.bottom - 10; // biraz tolerans
+          })
+          .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+        const emptyBelow = below.find(inp => !inp.value.trim());
+        if (emptyBelow) return emptyBelow;
+        if (below.length) return below[0];
       }
 
-      // 4) Son fallback: formdaki son boş text input (dolu olanları atla)
-      const allInputs = Array.from(document.querySelectorAll('input[type="text"]:not([type="hidden"]):not([readonly])'));
-      const emptyInput = allInputs.reverse().find(inp => !inp.value.trim());
-      return emptyInput || allInputs[0] || null;
+      // 4) Son fallback: sayfadaki son boş input
+      const emptyInput = [...allInputs].reverse().find(inp => !inp.value.trim());
+      return emptyInput || null;
     });
 
     if (captchaInput && captchaInput.asElement()) {
