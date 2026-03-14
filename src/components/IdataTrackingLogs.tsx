@@ -282,6 +282,10 @@ export default function IdataTrackingLogs() {
           )}
         </div>
         <span className="text-xs text-muted-foreground">{logs.length} kayıt</span>
+        <Button variant="ghost" size="sm" onClick={clearLogs} className="gap-1.5 text-xs text-muted-foreground hover:text-destructive">
+          <Trash2 className="w-3.5 h-3.5" />
+          Temizle
+        </Button>
       </div>
 
       <div className="flex items-center justify-between">
