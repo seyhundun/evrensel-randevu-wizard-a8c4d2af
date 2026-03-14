@@ -1726,16 +1726,8 @@ async function loginToIdata(page, account) {
         if (retryTyped) {
           await delay(800, 1200);
           // Tekrar Giriş'e tıkla
-          await page.evaluate(() => {
-            const candidates = Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button'], a, [role='button']"));
-            const loginBtn = candidates.find(b => {
-              const txt = (b.textContent || b.value || "").trim().toLowerCase().normalize("NFC");
-              return /^giri[sş]$/i.test(txt) || txt === "login";
-            }) || document.querySelector('button[type="submit"], input[type="submit"]');
-            if (loginBtn) loginBtn.click();
-            else { const f = document.querySelector("form"); if (f) f.submit(); }
-          });
-          await idataLog("login_captcha", `CAPTCHA tekrar çözüldü: ${retryCaptchaCode} — Giriş tıklandı`);
+          const retrySubmit = await clickAuthSubmitButton(page, "captcha_retry_giris");
+          await idataLog("login_captcha", `CAPTCHA tekrar çözüldü: ${retryCaptchaCode} — submit=${retrySubmit?.found ? "ok" : "fail"}`);
           await delay(3000, 5000);
         }
       } else {
