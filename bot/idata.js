@@ -2068,7 +2068,7 @@ async function loginToIdata(page, account) {
       await apiPost({ action: "idata_set_login_otp_requested", account_id: account.id }, "set_login_otp");
       await idataLog("login_otp", `📧 Giriş OTP bekleniyor (geç) | Hesap: ${account.email}`);
       
-      const otpCode2 = await waitForLoginOtp(account.id, 180000);
+      const otpCode2 = await waitForLoginOtp(account.id, 180000, !!(account.imap_password));
       if (otpCode2) {
         console.log(`  [LOGIN] ✅ OTP alındı (geç): ${otpCode2}`);
         await page.evaluate((code) => {
