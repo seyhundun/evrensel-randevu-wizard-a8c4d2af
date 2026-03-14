@@ -18,15 +18,26 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
   });
 
   useEffect(() => {
+    loadBotSettings();
     if (!configId) return;
     loadData();
     const channel = supabase
       .channel("proxy-status")
       .on("postgres_changes", { event: "*", schema: "public", table: "tracking_logs", filter: `config_id=eq.${configId}` }, () => loadData())
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tracking_configs", filter: `id=eq.${configId}` }, () => loadCfStatus())
+      .on("postgres_changes", { event: "*", schema: "public", table: "bot_settings" }, () => loadBotSettings())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [configId]);
+
+  const loadBotSettings = async () => {
+    const { data } = await supabase.from("bot_settings").select("key, value");
+    if (data) {
+      const map = Object.fromEntries(data.map(d => [d.key, d.value]));
+      setProxyHost(map.proxy_host || "—");
+      setProxyCountry(map.proxy_country || "—");
+    }
+  };
 
   const loadData = async () => {
     if (!configId) return;
