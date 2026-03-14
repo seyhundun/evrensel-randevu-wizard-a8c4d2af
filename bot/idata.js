@@ -312,7 +312,11 @@ async function readPageState(page) {
       title.includes("attention required");
 
     const otpFieldExists = !!document.querySelector('input[name*="otp" i], input[id*="otp" i], input[autocomplete="one-time-code"]');
-    const otpHint = body.includes("otp") || body.includes("tek kullanımlık") || body.includes("sms kod") || body.includes("email kod") || body.includes("doğrulama kod");
+    // "doğrulama kod" hariç tut: CAPTCHA alanının placeholder'ı ile karışmaması için
+    // sadece "doğrulama kodu gönderildi" veya "tek kullanımlık" gibi OTP-spesifik ifadeleri ara
+    const otpHint = body.includes("otp") || body.includes("tek kullanımlık") || body.includes("sms kod") || body.includes("email kod") || 
+                    body.includes("doğrulama kodu gönderildi") || body.includes("mailinize") && body.includes("kod gönder") ||
+                    body.includes("doğrulama kodunu giriniz");
 
     return {
       url,
