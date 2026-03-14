@@ -554,8 +554,10 @@ async function waitForCaptchaImageLoad(page, maxWaitMs = 8000) {
 }
 
 async function getCaptchaImageBase64(page) {
-  // 1) Sayfadaki CAPTCHA img elementini bul
-  const imgHandle = await page.evaluateHandle(() => {
+  const fetch = (await import("node-fetch")).default;
+
+  // 1) Sayfadaki CAPTCHA img elementini ve src URL'sini bul
+  const imgInfo = await page.evaluate(() => {
     const keywordRegex = /(captcha|doğrulama|dogrulama|verification|security|code)/i;
     const denyRegex = /(logo|icon|brand|header|footer|svg)/i;
 
@@ -581,9 +583,8 @@ async function getCaptchaImageBase64(page) {
       const id = (img.id || "").toLowerCase();
       const parentText = (img.closest("div, fieldset, section, form")?.textContent || "").toLowerCase();
       const meta = `${src} ${alt} ${cls} ${id} ${parentText}`;
-      const rect = img.getBoundingClientRect();
-      const width = img.naturalWidth || rect.width || img.width || 0;
-      const height = img.naturalHeight || rect.height || img.height || 0;
+      const width = img.naturalWidth || img.width || 0;
+      const height = img.naturalHeight || img.height || 0;
 
       let score = 0;
       if (keywordRegex.test(meta)) score += 60;
@@ -594,6 +595,7 @@ async function getCaptchaImageBase64(page) {
       if (src.startsWith("data:image/svg")) score -= 50;
 
       if (captchaInputRects.length > 0) {
+        const rect = img.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
         const minDistance = Math.min(
@@ -608,43 +610,84 @@ async function getCaptchaImageBase64(page) {
         else score -= 10;
       }
 
-      return { img, score, src, width, height };
+      return { score, src: img.getAttribute("src") || "", width, height };
     }).sort((a, b) => b.score - a.score);
 
     const best = scored[0];
     if (!best || best.score < 25) return null;
-    return best.img;
+    return { src: best.src, width: best.width, height: best.height, score: best.score };
   });
 
-  // 2) Element bulunamadıysa
-  const element = imgHandle.asElement();
-  if (!element) {
+  if (!imgInfo) {
     return { base64: null, reason: "captcha_img_not_found" };
   }
 
-  // 3) Görselin gerçekten yüklendiğini kontrol et
-  const isLoaded = await page.evaluate((el) => {
-    return el.complete && el.naturalWidth > 10 && el.naturalHeight > 10;
-  }, element);
+  console.log(`  [CAPTCHA] Resim bulundu: score=${imgInfo.score} w=${imgInfo.width} h=${imgInfo.height} src=${imgInfo.src.slice(0, 80)}`);
 
-  if (!isLoaded) {
-    console.log("  [CAPTCHA] ⚠ Captcha img bulundu ama yüklenmemiş (broken image)");
-    return { base64: null, reason: "captcha_img_broken" };
+  // 2) Önce canvas ile base64 almayı dene (same-origin resimler için)
+  const canvasBase64 = await page.evaluate((srcUrl) => {
+    try {
+      const img = Array.from(document.querySelectorAll("img")).find(
+        (el) => el.getAttribute("src") === srcUrl
+      );
+      if (!img || !img.complete || img.naturalWidth < 10) return null;
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      return canvas.toDataURL("image/png").split(",")[1];
+    } catch (e) {
+      return null; // cross-origin tainted canvas
+    }
+  }, imgInfo.src);
+
+  if (canvasBase64 && canvasBase64.length > 100) {
+    console.log(`  [CAPTCHA] ✅ Canvas ile base64 alındı (${canvasBase64.length} karakter)`);
+    return { base64: canvasBase64, meta: imgInfo };
   }
 
-  // 4) Puppeteer element screenshot — cross-origin sorununu atlar
+  // 3) Canvas başarısızsa → resmi HTTP ile doğrudan indir
   try {
-    const screenshotBuffer = await element.screenshot({ encoding: "base64" });
-    const meta = await page.evaluate((el) => {
-      const src = (el.getAttribute("src") || "").toLowerCase();
-      const w = el.naturalWidth || el.width || 0;
-      const h = el.naturalHeight || el.height || 0;
-      return { src, width: w, height: h, score: 999 };
-    }, element);
-    return { base64: screenshotBuffer, meta };
+    let fullUrl = imgInfo.src;
+    if (fullUrl.startsWith("/")) {
+      const pageUrl = await page.url();
+      const origin = new URL(pageUrl).origin;
+      fullUrl = origin + fullUrl;
+    } else if (!fullUrl.startsWith("http")) {
+      const pageUrl = await page.url();
+      const base = pageUrl.substring(0, pageUrl.lastIndexOf("/") + 1);
+      fullUrl = base + fullUrl;
+    }
+
+    // Sayfadaki cookie'leri al
+    const cookies = await page.cookies();
+    const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+
+    console.log(`  [CAPTCHA] HTTP fetch ile indiriliyor: ${fullUrl.slice(0, 100)}`);
+    const resp = await fetch(fullUrl, {
+      headers: {
+        Cookie: cookieStr,
+        Referer: await page.url(),
+        "User-Agent": await page.evaluate(() => navigator.userAgent),
+      },
+    });
+
+    if (!resp.ok) {
+      console.log(`  [CAPTCHA] HTTP fetch hata: ${resp.status}`);
+      return { base64: null, reason: `http_fetch_${resp.status}` };
+    }
+
+    const buffer = await resp.buffer();
+    const b64 = buffer.toString("base64");
+    if (b64.length < 100) {
+      return { base64: null, reason: "http_fetch_empty" };
+    }
+    console.log(`  [CAPTCHA] ✅ HTTP fetch ile base64 alındı (${b64.length} karakter)`);
+    return { base64: b64, meta: imgInfo };
   } catch (err) {
-    console.log(`  [CAPTCHA] Element screenshot hatası: ${err.message}`);
-    return { base64: null, reason: `screenshot_error:${err.message}` };
+    console.log(`  [CAPTCHA] HTTP fetch hatası: ${err.message}`);
+    return { base64: null, reason: `http_fetch_error:${err.message}` };
   }
 }
 
