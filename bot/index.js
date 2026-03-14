@@ -511,7 +511,7 @@ async function isWaitingRoomPage(page) {
   });
 }
 
-async function postQueueScreenshot(page, context, waitedSec) {
+async function postQueueScreenshot(page, context, waitedSec, note = "Sıra bekleniyor") {
   try {
     const ss = await takeScreenshotBase64(page);
     if (!ss) return;
@@ -523,11 +523,11 @@ async function postQueueScreenshot(page, context, waitedSec) {
     await apiPost({
       config_id: configId,
       status: "checking",
-      message: `[${context}] Sıra bekleniyor (${waitedSec}s) | URL: ${pageUrl.substring(0, 80)} | Başlık: ${pageTitle.substring(0, 60)}`,
+      message: `[${context}] ${note} (${waitedSec}s) | URL: ${pageUrl.substring(0, 80)} | Başlık: ${pageTitle.substring(0, 60)}`,
       slots_available: 0,
       screenshot_base64: ss,
     }, "queue_screenshot:insert_log");
-    console.log(`  [${context}] 📸 Kuyruk screenshot gönderildi (${waitedSec}s)`);
+    console.log(`  [${context}] 📸 Screenshot gönderildi (${waitedSec}s) | ${note}`);
   } catch (e) {
     console.log(`  [${context}] Screenshot hatası: ${e.message}`);
   }
@@ -548,9 +548,8 @@ async function waitForLoginFormAfterQueue(page) {
     const waitedSec = Math.round((Date.now() - startedAt) / 1000);
     if (waitingRoom) {
       console.log(`  [QUEUE] Sırada bekleniyor... ${waitedSec}s`);
-      // Her 30s'de bir screenshot gönder
       if (Date.now() - lastScreenshotAt > 30000) {
-        await postQueueScreenshot(page, "QUEUE", waitedSec);
+        await postQueueScreenshot(page, "QUEUE", waitedSec, "Sırada bekleniyor");
         lastScreenshotAt = Date.now();
       }
       await solveTurnstile(page);
@@ -558,9 +557,9 @@ async function waitForLoginFormAfterQueue(page) {
       await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 3000);
       continue;
     }
-    // Bekleme odası değilse ama form da yoksa — durumu logla
+
     if (attempt % 3 === 0 && Date.now() - lastScreenshotAt > 30000) {
-      await postQueueScreenshot(page, "QUEUE", waitedSec);
+      await postQueueScreenshot(page, "QUEUE", waitedSec, "Login formu henüz görünmedi");
       lastScreenshotAt = Date.now();
     }
     await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 3000);
@@ -568,10 +567,11 @@ async function waitForLoginFormAfterQueue(page) {
   return { ok: false, reason: `Waiting room timeout (${Math.round(CONFIG.QUEUE_MAX_WAIT_MS / 1000)}s)` };
 }
 
-async function waitForRegistrationFormAfterQueue(page) {
+async function waitForRegistrationFormAfterQueue(page, registerUrl) {
   const startedAt = Date.now();
   let attempt = 0;
   let lastScreenshotAt = 0;
+  let notFoundRecoveries = 0;
 
   while (Date.now() - startedAt < CONFIG.QUEUE_MAX_WAIT_MS) {
     attempt++;
@@ -589,12 +589,16 @@ async function waitForRegistrationFormAfterQueue(page) {
 
       const hasVisibleEmail = emailCandidates.some(isVisible);
       const visiblePasswordCount = passwordCandidates.filter(isVisible).length;
+      const title = (document.title || "").toLowerCase();
+      const body = (document.body?.innerText || "").toLowerCase();
+      const url = (window.location.href || "").toLowerCase();
 
       return {
         hasVisibleEmail,
         visiblePasswordCount,
-        title: (document.title || "").toLowerCase(),
-        body: (document.body?.innerText || "").toLowerCase(),
+        title,
+        body,
+        url,
       };
     });
 
@@ -603,18 +607,46 @@ async function waitForRegistrationFormAfterQueue(page) {
       return { ok: true };
     }
 
-    const waitingRoom = await isWaitingRoomPage(page);
     const waitedSec = Math.round((Date.now() - startedAt) / 1000);
+    const waitingRoom = await isWaitingRoomPage(page);
     if (waitingRoom) {
       console.log(`  [REG] Sırada bekleniyor... ${waitedSec}s`);
       if (Date.now() - lastScreenshotAt > 30000) {
-        await postQueueScreenshot(page, "REG-QUEUE", waitedSec);
+        await postQueueScreenshot(page, "REG-QUEUE", waitedSec, "Sırada bekleniyor");
         lastScreenshotAt = Date.now();
       }
       await solveTurnstile(page);
       await page.waitForNavigation({ waitUntil: "networkidle2", timeout: CONFIG.QUEUE_POLL_MS + 5000 }).catch(() => {});
       await delay(CONFIG.QUEUE_POLL_MS, CONFIG.QUEUE_POLL_MS + 3000);
       continue;
+    }
+
+    const notFoundLike =
+      formState.url.includes("page-not-found") ||
+      formState.url.includes("/404") ||
+      formState.title.includes("bir şeyler ters gitti") ||
+      formState.title.includes("üzgünüm") ||
+      formState.body.includes("bir şeyler ters gitti") ||
+      formState.body.includes("sorry, something went wrong");
+
+    if (notFoundLike) {
+      notFoundRecoveries += 1;
+      console.log(`  [REG] ⚠ Not-found sayfasına düştü (${notFoundRecoveries}/3), register sayfasına dönülüyor...`);
+      if (Date.now() - lastScreenshotAt > 15000) {
+        await postQueueScreenshot(page, "REG-QUEUE", waitedSec, "Not-found algılandı, register sayfasına dönülüyor");
+        lastScreenshotAt = Date.now();
+      }
+
+      if (notFoundRecoveries > 3) {
+        return { ok: false, reason: "Kayıt sayfası yerine sürekli not-found açılıyor" };
+      }
+
+      if (registerUrl) {
+        await page.goto(registerUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
+        await delay(2500, 4500);
+        await solveTurnstile(page);
+        continue;
+      }
     }
 
     if (attempt % 3 === 0) {
@@ -630,7 +662,7 @@ async function waitForRegistrationFormAfterQueue(page) {
       } catch {}
 
       if (Date.now() - lastScreenshotAt > 30000) {
-        await postQueueScreenshot(page, "REG-QUEUE", waitedSec);
+        await postQueueScreenshot(page, "REG-QUEUE", waitedSec, "Form henüz görünmedi");
         lastScreenshotAt = Date.now();
       }
     }
@@ -1542,7 +1574,8 @@ function getResidentialProxyUrl() {
 
 async function launchBrowser(proxyIp = null) {
   const { connect } = require("puppeteer-real-browser");
-  
+  console.log(`  [BROWSER] DISPLAY=${process.env.DISPLAY || "yok"}`);
+
   // Test scriptiyle birebir aynı — minimal args
   const args = [
     "--no-sandbox",
@@ -2743,7 +2776,7 @@ async function registerVfsAccount(account) {
 
     // Form yüklenmesini bekle
     console.log("  [REG 4/7] Form bekleniyor...");
-    const registrationFormResult = await waitForRegistrationFormAfterQueue(page);
+    const registrationFormResult = await waitForRegistrationFormAfterQueue(page, regUrl);
     if (!registrationFormResult.ok) {
       const snapshot = await takeScreenshotBase64(page);
       await logStep(regLogConfigId, "reg_fail", `Form yüklenemedi: ${registrationFormResult.reason} | ${account.email}`);
