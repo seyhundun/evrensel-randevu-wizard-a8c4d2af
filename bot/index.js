@@ -3355,6 +3355,9 @@ async function main() {
 
   while (true) {
     try {
+      // DB'den güncel proxy ayarlarını yükle
+      await loadProxySettingsFromDB();
+
       // Bekleyen kayıtları kontrol et — başarısız olanları IP değiştirerek tekrar dene
       const pendingRegs = await fetchPendingRegistrations();
       if (pendingRegs.length > 0) {

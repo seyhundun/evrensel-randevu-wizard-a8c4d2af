@@ -1450,6 +1450,9 @@ async function mainLoop() {
 
   while (true) {
     try {
+      // DB'den güncel proxy ayarlarını yükle
+      await loadProxySettingsFromDB();
+
       // Config kontrolü — dashboard'dan aktif mi?
       const active = await isIdataActive();
       if (!active) {
