@@ -952,7 +952,7 @@ async function loginToIdata(page, account) {
     await page.goto(CONFIG.LOGIN_URL, { waitUntil: "networkidle2", timeout: 60000 });
     await delay(3000, 5000);
 
-    const cfAtLoginOpen = await waitCloudflareBypass(page, "login açılışı", 35000);
+    const cfAtLoginOpen = await waitCloudflareBypass(page, "login açılışı", 60000);
     if (!cfAtLoginOpen.ok) {
       return { success: false, reason: cfAtLoginOpen.reason, screenshot: cfAtLoginOpen.screenshot };
     }
