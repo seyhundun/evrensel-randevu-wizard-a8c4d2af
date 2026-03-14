@@ -28,6 +28,8 @@ export default function BotActions({
 }: BotActionsProps) {
   const [requesting, setRequesting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [changingIp, setChangingIp] = useState(false);
+  const isActive = status === "searching";
   const isActive = status === "searching";
 
   const requestScreenshot = async () => {
