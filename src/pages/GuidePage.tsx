@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Copy, Check, Terminal, Play, Square, RotateCcw, Trash2, Eye, Server, Shield, HardDrive } from "lucide-react";
+import { ArrowLeft, Copy, Check, Terminal, Play, Square, RotateCcw, Trash2, Eye, Server, Shield, HardDrive, Monitor } from "lucide-react";
 import { toast } from "sonner";
 
 function CopyBlock({ label, command, description }: { label?: string; command: string; description?: string }) {
@@ -93,10 +93,10 @@ echo "✅ Tüm servisler durduruldu"`}
 
         {/* ===== BAŞLATMA ===== */}
         <Section icon={Play} title="Tüm Servisleri Başlat" badge="Başlatma">
-          <CardDescription>Xvfb sanal ekranları, VNC/noVNC servisleri ve botları başlatır.</CardDescription>
+          <CardDescription>Xvfb sanal ekranları, VNC/noVNC servisleri ve botları ecosystem.config.cjs ile başlatır.</CardDescription>
           <CopyBlock
             label="1. Sanal ekranları başlat"
-            description="VFS → :99, iDATA → :98"
+            description="VFS → :99 (1920x1080), iDATA → :98 (1920x1080)"
             command={`Xvfb :99 -screen 0 1920x1080x24 &
 Xvfb :98 -screen 0 1920x1080x24 &
 sleep 1
@@ -104,7 +104,7 @@ echo "✅ Xvfb ekranları başlatıldı"`}
           />
           <CopyBlock
             label="2. VNC & noVNC başlat"
-            description="VFS → 6080, iDATA → 6081"
+            description="x11vnc → websockify → noVNC (VFS: 6080, iDATA: 6081)"
             command={`x11vnc -display :99 -forever -nopw -shared -rfbport 5999 -bg -o /dev/null
 x11vnc -display :98 -forever -nopw -shared -rfbport 5998 -bg -o /dev/null
 websockify --daemon --web /usr/share/novnc 6080 localhost:5999
@@ -112,17 +112,39 @@ websockify --daemon --web /usr/share/novnc 6081 localhost:5998
 echo "✅ VNC/noVNC başlatıldı"`}
           />
           <CopyBlock
-            label="3. Botları başlat"
-            command={`DISPLAY=:99 pm2 start /root/vfs-bot/bot/index.js --name vfs-bot --cwd /root/vfs-bot/bot --update-env
-DISPLAY=:98 pm2 start /root/vfs-bot/bot/idata.js --name idata-bot --cwd /root/vfs-bot/bot --update-env
+            label="3. ecosystem.config.cjs oluştur"
+            description="PM2 ecosystem dosyası — DISPLAY değişkenlerini garanti eder"
+            command={`cat > /root/vfs-bot/bot/ecosystem.config.cjs << 'EOF'
+module.exports = {
+  apps: [
+    {
+      name: "vfs-bot",
+      script: "index.js",
+      cwd: "/root/vfs-bot/bot",
+      env: { DISPLAY: ":99" }
+    },
+    {
+      name: "idata-bot",
+      script: "idata.js",
+      cwd: "/root/vfs-bot/bot",
+      env: { DISPLAY: ":98" }
+    }
+  ]
+};
+EOF
+echo "✅ ecosystem.config.cjs oluşturuldu"`}
+          />
+          <CopyBlock
+            label="4. Botları başlat (ecosystem ile)"
+            command={`cd /root/vfs-bot/bot && pm2 start ecosystem.config.cjs
 pm2 save
 echo "✅ Botlar başlatıldı"`}
           />
           <Separator />
           <CopyBlock
             label="⚡ Hepsini tek seferde (Tam Başlatma)"
-            description="Sanal ekranlar + VNC + Botlar — tek kopyala-yapıştır"
-            command={`# Xvfb
+            description="Sanal ekranlar + VNC + ecosystem + Botlar — tek kopyala-yapıştır"
+            command={`# Xvfb sanal ekranlar
 Xvfb :99 -screen 0 1920x1080x24 &
 Xvfb :98 -screen 0 1920x1080x24 &
 sleep 1
@@ -133,9 +155,28 @@ x11vnc -display :98 -forever -nopw -shared -rfbport 5998 -bg -o /dev/null
 websockify --daemon --web /usr/share/novnc 6080 localhost:5999
 websockify --daemon --web /usr/share/novnc 6081 localhost:5998
 
-# Botlar
-DISPLAY=:99 pm2 start /root/vfs-bot/bot/index.js --name vfs-bot --cwd /root/vfs-bot/bot --update-env
-DISPLAY=:98 pm2 start /root/vfs-bot/bot/idata.js --name idata-bot --cwd /root/vfs-bot/bot --update-env
+# ecosystem.config.cjs oluştur
+cat > /root/vfs-bot/bot/ecosystem.config.cjs << 'EOFCONFIG'
+module.exports = {
+  apps: [
+    {
+      name: "vfs-bot",
+      script: "index.js",
+      cwd: "/root/vfs-bot/bot",
+      env: { DISPLAY: ":99" }
+    },
+    {
+      name: "idata-bot",
+      script: "idata.js",
+      cwd: "/root/vfs-bot/bot",
+      env: { DISPLAY: ":98" }
+    }
+  ]
+};
+EOFCONFIG
+
+# Botları başlat
+cd /root/vfs-bot/bot && pm2 start ecosystem.config.cjs
 pm2 save
 echo "✅ Tüm servisler başlatıldı"`}
           />
@@ -146,13 +187,13 @@ echo "✅ Tüm servisler başlatıldı"`}
           <CopyBlock
             label="VFS Bot"
             command={`pm2 delete vfs-bot 2>/dev/null
-DISPLAY=:99 pm2 start /root/vfs-bot/bot/index.js --name vfs-bot --cwd /root/vfs-bot/bot --update-env
+cd /root/vfs-bot/bot && pm2 start ecosystem.config.cjs --only vfs-bot
 pm2 logs vfs-bot --lines 20`}
           />
           <CopyBlock
             label="iDATA Bot"
             command={`pm2 delete idata-bot 2>/dev/null
-DISPLAY=:98 pm2 start /root/vfs-bot/bot/idata.js --name idata-bot --cwd /root/vfs-bot/bot --update-env
+cd /root/vfs-bot/bot && pm2 start ecosystem.config.cjs --only idata-bot
 pm2 logs idata-bot --lines 20`}
           />
         </Section>
@@ -165,10 +206,10 @@ pm2 logs idata-bot --lines 20`}
             command={`cd /root/vfs-bot
 git checkout -- bot/index.js bot/idata.js 2>/dev/null
 git pull
+cd bot && npm install
 
 pm2 delete vfs-bot idata-bot 2>/dev/null
-DISPLAY=:99 pm2 start /root/vfs-bot/bot/index.js --name vfs-bot --cwd /root/vfs-bot/bot --update-env
-DISPLAY=:98 pm2 start /root/vfs-bot/bot/idata.js --name idata-bot --cwd /root/vfs-bot/bot --update-env
+pm2 start ecosystem.config.cjs
 pm2 save
 echo "✅ Güncelleme tamamlandı"`}
           />
@@ -184,12 +225,44 @@ echo "✅ Güncelleme tamamlandı"`}
           <Separator />
           <CopyBlock
             label="noVNC erişim adresleri"
-            description="Tarayıcıdan canlı izleme"
-            command={`# VFS Bot ekranı:
-http://SUNUCU_IP:6080/vnc.html
+            description="Dashboard üzerinden veya doğrudan tarayıcıdan canlı izleme"
+            command={`# Dashboard (HTTPS — önerilen):
+# VFS:   https://vnc.fipacomputer.online/vfs/vnc.html
+# iDATA: https://vnc.fipacomputer.online/idata/vnc.html
 
-# iDATA Bot ekranı:
-http://SUNUCU_IP:6081/vnc.html`}
+# Doğrudan HTTP (sunucu IP ile):
+# VFS:   http://187.77.161.201:6080/vnc.html
+# iDATA: http://187.77.161.201:6081/vnc.html`}
+          />
+        </Section>
+
+        {/* ===== VNC EKRAN SORUNLARI ===== */}
+        <Section icon={Monitor} title="VNC Ekran Ayarları" badge="Ekran">
+          <CardDescription>Ekranlar küçük görünüyorsa veya Chrome penceresi düzgün açılmıyorsa.</CardDescription>
+          <CopyBlock
+            label="Xvfb ekranını yeniden başlat (iDATA örneği)"
+            description="Çözünürlüğü sıfırlamak için"
+            command={`pkill -f "Xvfb :98" 2>/dev/null
+pkill -f "x11vnc.*:98" 2>/dev/null
+pkill -f "websockify.*6081" 2>/dev/null
+sleep 2
+
+Xvfb :98 -screen 0 1920x1080x24 &
+sleep 1
+x11vnc -display :98 -forever -nopw -shared -rfbport 5998 -bg -o /dev/null
+websockify --daemon --web /usr/share/novnc 6081 localhost:5998
+
+pm2 restart idata-bot
+echo "✅ iDATA ekranı yeniden başlatıldı"`}
+          />
+          <CopyBlock
+            label="Chrome'u tam ekran yap"
+            description="wmctrl gereklidir: apt install -y wmctrl"
+            command={`# VFS ekranında:
+DISPLAY=:99 wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz
+
+# iDATA ekranında:
+DISPLAY=:98 wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz`}
           />
         </Section>
 
@@ -218,6 +291,12 @@ echo "✅ PM2 logları temizlendi"`}
             command={`ps aux | grep -E "chrom" | grep -v grep | wc -l`}
           />
           <CopyBlock
+            label="DISPLAY değişkeni kontrolü (PM2)"
+            description="Botların doğru ekrana bağlı olduğunu kontrol et"
+            command={`pm2 describe vfs-bot | grep -A5 "env"
+pm2 describe idata-bot | grep -A5 "env"`}
+          />
+          <CopyBlock
             label="Port kontrolü (VNC/noVNC)"
             command={`ss -tlnp | grep -E "5999|5998|6080|6081"`}
           />
@@ -229,6 +308,12 @@ echo "✅ PM2 logları temizlendi"`}
             label="Disk kullanımı"
             command={`df -h / && echo "" && du -sh /tmp/vfs-chrome-* 2>/dev/null | tail -5`}
           />
+          <CopyBlock
+            label="Nginx VNC proxy kontrolü"
+            description="HTTPS üzerinden noVNC erişimi"
+            command={`curl -I https://vnc.fipacomputer.online/vfs/vnc.html
+curl -I https://vnc.fipacomputer.online/idata/vnc.html`}
+          />
         </Section>
 
         {/* ===== SUNUCU KURULUMU ===== */}
@@ -236,7 +321,7 @@ echo "✅ PM2 logları temizlendi"`}
           <CardDescription>Yeni bir VPS'e sıfırdan kurulum yapmak için gereken komutlar.</CardDescription>
           <CopyBlock
             label="1. Sistem bağımlılıkları"
-            command={`apt update && apt install -y curl git xvfb x11vnc novnc websockify fonts-liberation libatk-bridge2.0-0 libgtk-3-0 libasound2 libnspr4 libnss3 libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libcups2 libdrm2 libxss1`}
+            command={`apt update && apt install -y curl git xvfb x11vnc novnc websockify wmctrl fonts-liberation libatk-bridge2.0-0 libgtk-3-0 libasound2 libnspr4 libnss3 libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libcups2 libdrm2 libxss1`}
           />
           <CopyBlock
             label="2. Node.js 20 + PM2"
@@ -254,7 +339,7 @@ echo "CHROME_PATH=/usr/bin/google-chrome-stable" >> /etc/environment`}
           <CopyBlock
             label="4. Projeyi klonla ve bağımlılıkları kur"
             command={`cd /root
-git clone https://github.com/seyhundun/evrensel-randevu-wizard-44706a3b.git vfs-bot
+git clone https://github.com/seyhundun/evrensel-randevu-wizard-da53f8e7.git vfs-bot
 cd vfs-bot/bot
 npm install`}
           />
@@ -270,10 +355,11 @@ CAPTCHA_PROVIDER=auto
 EOF`}
           />
           <CopyBlock
-            label="6. Servisleri başlat (yukarıdaki Tam Başlatma komutunu kullan)"
-            command={`# PM2 startup (reboot sonrası otomatik başlatma)
-pm2 startup
-pm2 save`}
+            label="6. Tam Başlatma + PM2 Startup"
+            description="Yukarıdaki 'Hepsini tek seferde' komutunu çalıştırdıktan sonra"
+            command={`pm2 startup
+pm2 save
+echo "✅ Reboot sonrası otomatik başlatma ayarlandı"`}
           />
         </Section>
       </div>
