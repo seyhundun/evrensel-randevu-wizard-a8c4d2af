@@ -737,29 +737,36 @@ async function solveImageCaptcha(page, options = {}) {
             console.log("  [CAPTCHA] ✅ Yenileme sonrası görsel yüklendi");
           } else {
             console.log("  [CAPTCHA] ⚠ Yenileme sonrası da yüklenmedi");
-            // Henüz sayfa yenileme yapmadıysak yap
-            if (!pageReloaded && attempt < maxAttempts) {
-              console.log("  [CAPTCHA] 🔄 Sayfa yenileniyor (page reload)...");
-              await idataLog("login_captcha", "Sayfa yenileniyor: CAPTCHA görseli broken");
-              await page.reload({ waitUntil: "networkidle2", timeout: 30000 }).catch(() => {});
-              pageReloaded = true;
-              await delay(3000, 5000);
-              // CF bypass bekle
-              const { waitCloudflareBypass } = require ? {} : {};
-              // Basit CF bekleme
-              await delay(3000, 5000);
-            }
+            // Img src'yi force yenile (sayfa reload'dan kaçın, form bilgileri korunur)
+            console.log("  [CAPTCHA] 🔄 img src force yenileniyor...");
+            await page.evaluate(() => {
+              const images = Array.from(document.querySelectorAll("img"));
+              images.forEach((img) => {
+                const src = img.getAttribute("src") || "";
+                if (/(captcha|doğrulama|dogrulama|verify|code)/i.test(src + (img.alt || "") + (img.className || ""))) {
+                  const sep = src.includes("?") ? "&" : "?";
+                  img.setAttribute("src", `${src}${sep}_t=${Date.now()}`);
+                }
+              });
+            });
+            await delay(3000, 5000);
             continue;
           }
         } else {
-          // Yenileme butonu bulunamadı → sayfa reload
-          if (!pageReloaded && attempt < maxAttempts) {
-            console.log("  [CAPTCHA] 🔄 Yenileme butonu yok, sayfa yenileniyor...");
-            await idataLog("login_captcha", "Sayfa yenileniyor: CAPTCHA görseli yüklenemedi, yenileme butonu yok");
-            await page.reload({ waitUntil: "networkidle2", timeout: 30000 }).catch(() => {});
-            pageReloaded = true;
-            await delay(4000, 6000);
-          }
+          // Yenileme butonu bulunamadı → img src force yenile
+          console.log("  [CAPTCHA] 🔄 Yenileme butonu yok, img src force yenileniyor...");
+          await idataLog("login_captcha", "img src force yenileme: CAPTCHA görseli yüklenemedi");
+          await page.evaluate(() => {
+            const images = Array.from(document.querySelectorAll("img"));
+            images.forEach((img) => {
+              const src = img.getAttribute("src") || "";
+              if (/(captcha|doğrulama|dogrulama|verify|code)/i.test(src + (img.alt || "") + (img.className || ""))) {
+                const sep = src.includes("?") ? "&" : "?";
+                img.setAttribute("src", `${src}${sep}_t=${Date.now()}`);
+              }
+            });
+          });
+          await delay(3000, 5000);
           continue;
         }
       }
