@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Globe, Plus, Trash2, Save, GripVertical } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Settings, Globe, Plus, Trash2, Save, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
 interface VfsCountry {
@@ -32,6 +33,10 @@ export default function BotSettingsPanel() {
   const [newCountry, setNewCountry] = useState({ value: "", label: "", flag: "", code: "" });
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [showCaptchaKey, setShowCaptchaKey] = useState(false);
+  const [currentIp, setCurrentIp] = useState<string | null>(null);
+  const [lastIpReset, setLastIpReset] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -39,11 +44,12 @@ export default function BotSettingsPanel() {
       .channel("bot-settings-sync")
       .on("postgres_changes", { event: "*", schema: "public", table: "vfs_countries" }, () => loadCountries())
       .on("postgres_changes", { event: "*", schema: "public", table: "bot_settings" }, () => loadSettings())
+      .on("postgres_changes", { event: "*", schema: "public", table: "tracking_logs" }, () => loadCurrentIp())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
 
-  const loadData = () => { loadCountries(); loadSettings(); };
+  const loadData = () => { loadCountries(); loadSettings(); loadCurrentIp(); };
 
   const loadCountries = async () => {
     const { data } = await supabase.from("vfs_countries").select("*").order("sort_order");
@@ -55,11 +61,33 @@ export default function BotSettingsPanel() {
     if (data) setSettings(data);
   };
 
+  const loadCurrentIp = async () => {
+    const { data } = await supabase
+      .from("tracking_logs")
+      .select("message, created_at")
+      .eq("status", "ip_change")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (data && data.length > 0) {
+      const match = data[0].message?.match(/Aktif IP:\s*([^\s|]+)/);
+      if (match) {
+        setCurrentIp(match[1]);
+        setLastIpReset(data[0].created_at);
+      }
+    }
+  };
+
   const getSetting = (key: string) => settings.find(s => s.key === key)?.value || "";
 
-  const updateSetting = async (key: string, value: string) => {
-    await supabase.from("bot_settings").update({ value }).eq("key", key);
-    setSettings(prev => prev.map(s => s.key === key ? { ...s, value } : s));
+  const updateSetting = async (key: string, value: string, label?: string) => {
+    const existing = settings.find(s => s.key === key);
+    if (existing) {
+      await supabase.from("bot_settings").update({ value }).eq("key", key);
+      setSettings(prev => prev.map(s => s.key === key ? { ...s, value } : s));
+    } else {
+      const { data } = await supabase.from("bot_settings").insert({ key, value, label: label || key }).select().single();
+      if (data) setSettings(prev => [...prev, data]);
+    }
   };
 
   const addCountry = async () => {
@@ -105,11 +133,134 @@ export default function BotSettingsPanel() {
     <Card className="p-4 space-y-5">
       <div className="flex items-center gap-2">
         <Settings className="w-4 h-4 text-primary" />
-        <h3 className="text-sm font-semibold text-foreground">Bot & Ülke Ayarları</h3>
+        <h3 className="text-sm font-semibold text-foreground">Panel ve Hesap Bot Proxy Ayarları</h3>
+      </div>
+
+      {/* Current IP & Reset Date (read-only) */}
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">IP</Label>
+          <Input
+            className="h-8 text-xs font-mono bg-muted/50"
+            value={currentIp || "—"}
+            readOnly
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Reset Tarihi</Label>
+          <Input
+            className="h-8 text-xs font-mono bg-muted/50"
+            value={lastIpReset || "—"}
+            readOnly
+          />
+        </div>
+      </div>
+
+      {/* Captcha Solver */}
+      <div className="space-y-3 border-t border-border pt-4">
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Captcha Solver</Label>
+          <Select
+            value={getSetting("captcha_provider") || "capsolver"}
+            onValueChange={v => updateSetting("captcha_provider", v, "Captcha Provider")}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="capsolver">capsolver.com</SelectItem>
+              <SelectItem value="2captcha">2captcha.com</SelectItem>
+              <SelectItem value="auto">Otomatik (önce capsolver)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Captcha Solver Token</Label>
+          <div className="relative">
+            <Input
+              className="h-8 text-xs font-mono pr-8"
+              type={showCaptchaKey ? "text" : "password"}
+              value={getSetting("capsolver_api_key")}
+              onChange={e => updateSetting("capsolver_api_key", e.target.value, "Capsolver API Key")}
+              placeholder="CAP-XXXX..."
+            />
+            <button
+              type="button"
+              onClick={() => setShowCaptchaKey(!showCaptchaKey)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showCaptchaKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Proxy Settings */}
+      <div className="space-y-3 border-t border-border pt-4">
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Proxy IP (Host)</Label>
+          <Input
+            className="h-8 text-xs font-mono"
+            value={getSetting("proxy_host")}
+            onChange={e => updateSetting("proxy_host", e.target.value)}
+            placeholder="core-residential.evomi-proxy.com"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Port</Label>
+          <Input
+            className="h-8 text-xs font-mono"
+            value={getSetting("proxy_port")}
+            onChange={e => updateSetting("proxy_port", e.target.value)}
+            placeholder="1000"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Kullanıcı Adı</Label>
+          <Input
+            className="h-8 text-xs font-mono"
+            value={getSetting("proxy_user")}
+            onChange={e => updateSetting("proxy_user", e.target.value, "Proxy Kullanıcı")}
+            placeholder="kullanici_adi"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Şifre</Label>
+          <div className="relative">
+            <Input
+              className="h-8 text-xs font-mono pr-8"
+              type={showPass ? "text" : "password"}
+              value={getSetting("proxy_pass")}
+              onChange={e => updateSetting("proxy_pass", e.target.value, "Proxy Şifre")}
+              placeholder="••••••••"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass(!showPass)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Proxy Bölge (Region)</Label>
+          <Input
+            className="h-8 text-xs font-mono"
+            value={getSetting("proxy_region")}
+            onChange={e => updateSetting("proxy_region", e.target.value, "Proxy Bölge")}
+            placeholder="ankara"
+          />
+        </div>
       </div>
 
       {/* Proxy Country */}
-      <div className="space-y-2">
+      <div className="space-y-2 border-t border-border pt-4">
         <Label className="text-xs font-medium flex items-center gap-1.5">
           <Globe className="w-3 h-3 text-muted-foreground" />
           Proxy Ülkesi (Evomi IP Lokasyonu)
@@ -132,26 +283,6 @@ export default function BotSettingsPanel() {
         <p className="text-[10px] text-muted-foreground">
           Bot bu ülkeden residential IP alacak. Değişiklik anında sunucuya iletilir.
         </p>
-      </div>
-
-      {/* Proxy Host/Port */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">Proxy Host</Label>
-          <Input
-            className="h-7 text-xs font-mono"
-            value={getSetting("proxy_host")}
-            onChange={e => updateSetting("proxy_host", e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">Proxy Port</Label>
-          <Input
-            className="h-7 text-xs font-mono"
-            value={getSetting("proxy_port")}
-            onChange={e => updateSetting("proxy_port", e.target.value)}
-          />
-        </div>
       </div>
 
       {/* VFS Countries */}
