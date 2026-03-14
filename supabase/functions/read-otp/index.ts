@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { account_id } = await req.json();
+    const { account_id, account_type } = await req.json();
     
     if (!account_id) {
       return new Response(
@@ -166,9 +166,12 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Support both VFS and iDATA accounts
+    const table = account_type === "idata" ? "idata_accounts" : "vfs_accounts";
+
     // Get account IMAP credentials
     const { data: account, error } = await supabase
-      .from("vfs_accounts")
+      .from(table)
       .select("email, imap_host, imap_password")
       .eq("id", account_id)
       .single();
@@ -190,7 +193,7 @@ Deno.serve(async (req) => {
     const host = account.imap_host || "imap.gmail.com";
     const port = 993; // IMAPS
 
-    console.log(`Reading OTP for ${account.email} from ${host}...`);
+    console.log(`Reading OTP for ${account.email} from ${host} (${table})...`);
     
     const otp = await connectIMAP(host, port, account.email, account.imap_password);
 
