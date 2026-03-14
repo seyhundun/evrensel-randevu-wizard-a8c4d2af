@@ -3546,7 +3546,21 @@ async function main() {
           }
         }
 
+        // Zamanlı IP rotasyonu kontrolü
         const now = Date.now();
+        if (IP_ROTATION_INTERVAL_MS > 0 && (now - lastIpRotationTime) >= IP_ROTATION_INTERVAL_MS) {
+          console.log(`\n🔄 [IP-ROT] Zamanlı IP rotasyonu (${IP_ROTATION_INTERVAL_MS / 60000} dk doldu)`);
+          await logStep(config.id, "ip_change", `⏰ Zamanlı IP rotasyonu (${IP_ROTATION_INTERVAL_MS / 60000} dk)`);
+          if (PROXY_MODE === "residential") {
+            residentialSessionId++;
+            EVOMI_PROXY_REGION = getNextProxyRegion();
+          } else {
+            const newIp = getNextIp();
+            if (newIp) banIpImmediately(getCurrentIp(), "scheduled_rotation");
+          }
+          lastIpRotationTime = now;
+        }
+
         const availableAccounts = accounts.filter(acc => {
           const lastUsed = accountLastUsed.get(acc.id) || 0;
           return (now - lastUsed) >= CONFIG.MIN_ACCOUNT_GAP_MS;

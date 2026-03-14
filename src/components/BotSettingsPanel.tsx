@@ -258,6 +258,26 @@ export default function BotSettingsPanel() {
         </div>
       </div>
 
+      {/* IP Rotation Interval */}
+      <div className="space-y-2 border-t border-border pt-4">
+        <Label className="text-[11px] text-muted-foreground">IP Otomatik Yenileme Süresi (dakika)</Label>
+        <div className="flex items-center gap-3">
+          <Input
+            className="h-8 text-xs font-mono w-20"
+            type="number"
+            min={0}
+            value={getDraft("ip_rotation_interval") || "0"}
+            onChange={e => setDraftValue("ip_rotation_interval", e.target.value)}
+            placeholder="0"
+          />
+          <span className="text-[10px] text-muted-foreground">
+            {Number(getDraft("ip_rotation_interval") || 0) === 0
+              ? "Devre dışı — sadece hata/engel durumunda değişir"
+              : `Her ${getDraft("ip_rotation_interval")} dakikada IP otomatik yenilenir`}
+          </span>
+        </div>
+      </div>
+
       {/* Proxy Settings */}
       <div className="space-y-3 border-t border-border pt-4">
         <div className="space-y-1">
