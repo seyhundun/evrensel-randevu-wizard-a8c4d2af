@@ -69,8 +69,13 @@ const defaultStatus = { icon: <Clock className="w-4 h-4" />, label: "Log", color
 
 function extractIp(message: string | null): string | null {
   if (!message) return null;
-  const match = message.match(/IP:\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/i);
-  return match ? match[1] : null;
+  // Match IPv4: "IP: 1.2.3.4"
+  const ipv4 = message.match(/IP:\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/i);
+  if (ipv4) return ipv4[1];
+  // Match residential proxy: "IP: residential (adana)"
+  const res = message.match(/IP:\s*(residential\s*\([^)]+\))/i);
+  if (res) return res[1];
+  return null;
 }
 
 function extractAccount(message: string | null): string | null {
