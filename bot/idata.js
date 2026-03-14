@@ -312,7 +312,11 @@ async function readPageState(page) {
       title.includes("attention required");
 
     const otpFieldExists = !!document.querySelector('input[name*="otp" i], input[id*="otp" i], input[autocomplete="one-time-code"]');
-    const otpHint = body.includes("otp") || body.includes("tek kullanımlık") || body.includes("sms kod") || body.includes("email kod") || body.includes("doğrulama kod");
+    // "doğrulama kod" hariç tut: CAPTCHA alanının placeholder'ı ile karışmaması için
+    // sadece "doğrulama kodu gönderildi" veya "tek kullanımlık" gibi OTP-spesifik ifadeleri ara
+    const otpHint = body.includes("otp") || body.includes("tek kullanımlık") || body.includes("sms kod") || body.includes("email kod") || 
+                    body.includes("doğrulama kodu gönderildi") || body.includes("mailinize") && body.includes("kod gönder") ||
+                    body.includes("doğrulama kodunu giriniz");
 
     return {
       url,
@@ -1585,27 +1589,57 @@ async function loginToIdata(page, account) {
 
     await delay(5000, 8000);
 
-    // OTP popup kontrolü — "Mailinize doğrulama kodu gönderildi" mesajı
+    // Giriş sonrası sayfa durumunu logla
+    const postLoginShot = await takeScreenshotBase64(page);
+    const postLoginState = await page.evaluate(() => {
+      const body = (document.body?.innerText || "").toLowerCase();
+      const url = (window.location.href || "").toLowerCase();
+      return { body: body.slice(0, 500), url };
+    });
+    console.log(`  [LOGIN] Giriş sonrası URL: ${postLoginState.url}`);
+    await idataLog("login_post_click", `Giriş butonuna tıklandı | URL: ${postLoginState.url}`, postLoginShot);
+
+    // OTP popup kontrolü — daha geniş algılama
     const otpNeeded = await page.evaluate(() => {
       const body = (document.body?.innerText || "").toLowerCase();
       return body.includes("doğrulama kodu gönderildi") || 
+             body.includes("doğrulama kodunu giriniz") ||
+             body.includes("doğrulama kodu") && (body.includes("mail") || body.includes("e-posta") || body.includes("gönder")) ||
              body.includes("mailinize") && body.includes("kod") ||
-             body.includes("e-posta") && body.includes("doğrulama");
+             body.includes("e-posta") && body.includes("doğrulama") ||
+             body.includes("tek kullanımlık") ||
+             body.includes("otp") ||
+             body.includes("sms kod");
     });
 
-    if (otpNeeded) {
-      console.log("  [LOGIN] 📧 Mail doğrulama kodu gerekiyor!");
+    // Ayrıca: hâlâ login sayfasındaysa ama yeni bir input/modal çıktıysa OTP olabilir
+    const otpByNewInput = !otpNeeded && await page.evaluate(() => {
+      // Login formundan farklı bir modal/alert açılmış mı?
+      const modals = document.querySelectorAll('.modal.show, .swal2-container, [role="dialog"], .alert, .notification');
+      if (modals.length > 0) return true;
+      // SweetAlert2 veya benzeri popup
+      const sweetAlert = document.querySelector('.swal2-popup, .swal2-modal');
+      if (sweetAlert) return true;
+      return false;
+    });
+
+    if (otpNeeded || otpByNewInput) {
+      console.log(`  [LOGIN] 📧 Mail doğrulama kodu gerekiyor! (tespit: ${otpNeeded ? 'text' : 'modal'})`);
       
-      // "Tamam" butonuna tıkla (popup'ı kapat)
+      // "Tamam" / "OK" butonuna tıkla (popup'ı kapat — eğer varsa)
       await page.evaluate(() => {
-        const btns = Array.from(document.querySelectorAll("button, a"));
+        const btns = Array.from(document.querySelectorAll("button, a, .swal2-confirm"));
         const okBtn = btns.find(b => {
           const txt = (b.textContent || "").trim().toLowerCase();
-          return txt === "tamam" || txt === "ok" || txt === "onay";
+          return txt === "tamam" || txt === "ok" || txt === "onay" || txt === "devam";
         });
         if (okBtn) okBtn.click();
       });
-      await delay(1000, 2000);
+      await delay(1500, 3000);
+
+      // Popup kapandıktan sonra screenshot
+      const afterPopupShot = await takeScreenshotBase64(page);
+      await idataLog("login_otp_screen", `OTP ekranı açıldı — popup kapatıldı`, afterPopupShot);
 
       // Bot API'ye OTP isteği bildir
       await apiPost({ action: "idata_set_login_otp_requested", account_id: account.id }, "set_login_otp");
@@ -1617,30 +1651,58 @@ async function loginToIdata(page, account) {
       
       if (!otpCode) {
         console.log("  [LOGIN] ❌ OTP zaman aşımı");
-        await idataLog("login_fail", `OTP zaman aşımı | Hesap: ${account.email}`);
+        const timeoutShot = await takeScreenshotBase64(page);
+        await idataLog("login_fail", `OTP zaman aşımı | Hesap: ${account.email}`, timeoutShot);
         return { success: false, reason: "otp_timeout" };
       }
 
       console.log(`  [LOGIN] ✅ OTP alındı: ${otpCode}`);
       
-      // OTP kodunu gir
-      const otpInput = await page.$('input[type="text"], input[name*="otp"], input[name*="code"], input[id*="otp"], input[id*="code"]');
-      if (otpInput) {
-        await humanType(page, otpInput, otpCode);
-        await delay(500, 1000);
-      } else {
-        // Sayfadaki tek/son text input'a gir
-        await page.evaluate((code) => {
-          const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
-          const last = inputs[inputs.length - 1];
-          if (last) {
-            last.focus();
-            last.value = code;
-            last.dispatchEvent(new Event("input", { bubbles: true }));
-            last.dispatchEvent(new Event("change", { bubbles: true }));
+      // OTP kodunu gir — placeholder veya pozisyon bazlı
+      const otpTyped = await page.evaluate((code) => {
+        // Sayfadaki tüm visible text input'ları bul
+        const inputs = Array.from(document.querySelectorAll('input')).filter(inp => {
+          const t = (inp.type || 'text').toLowerCase();
+          if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'file', 'password'].includes(t)) return false;
+          if (inp.readOnly || inp.disabled) return false;
+          const rect = inp.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        
+        // Placeholder veya name/id ile OTP input'u bul
+        let target = inputs.find(inp => {
+          const ph = (inp.placeholder || '').toLowerCase();
+          const meta = ((inp.name || '') + ' ' + (inp.id || '')).toLowerCase();
+          return /otp|do[gğ]rulama|verification|kod|code/.test(ph) || /otp|verification|code/.test(meta);
+        });
+        
+        // Bulamazsa: boş olan son input
+        if (!target) target = [...inputs].reverse().find(inp => !inp.value.trim());
+        if (!target && inputs.length) target = inputs[inputs.length - 1];
+        
+        if (target) {
+          target.focus();
+          target.value = '';
+          target.dispatchEvent(new Event("input", { bubbles: true }));
+          for (const ch of code) {
+            target.value += ch;
+            target.dispatchEvent(new Event("input", { bubbles: true }));
           }
-        }, otpCode);
+          target.dispatchEvent(new Event("change", { bubbles: true }));
+          target.dispatchEvent(new Event("blur", { bubbles: true }));
+          return { success: true, placeholder: target.placeholder || '', name: target.name || '', id: target.id || '' };
+        }
+        return { success: false };
+      }, otpCode);
+
+      if (otpTyped?.success) {
+        console.log(`  [LOGIN] OTP girdi: placeholder="${otpTyped.placeholder}" name="${otpTyped.name}" id="${otpTyped.id}"`);
+        await idataLog("login_otp", `OTP girildi → placeholder="${otpTyped.placeholder}" name="${otpTyped.name}"`);
+      } else {
+        console.log("  [LOGIN] ⚠ OTP input bulunamadı!");
+        await idataLog("login_fail", `OTP input bulunamadı!`);
       }
+
       await delay(1000, 2000);
 
       // Doğrula/Giriş butonuna tıkla
@@ -1648,7 +1710,7 @@ async function loginToIdata(page, account) {
         const btns = Array.from(document.querySelectorAll("button, input[type='submit']"));
         const verifyBtn = btns.find(b => {
           const txt = (b.textContent || b.value || "").toLowerCase();
-          return txt.includes("doğrula") || txt.includes("onayla") || txt.includes("giriş") || txt.includes("verify");
+          return txt.includes("doğrula") || txt.includes("onayla") || txt.includes("giriş") || txt.includes("verify") || txt.includes("gönder");
         }) || document.querySelector('button[type="submit"]');
         if (verifyBtn) verifyBtn.click();
       });
@@ -1658,6 +1720,7 @@ async function loginToIdata(page, account) {
       await apiPost({ action: "idata_clear_login_otp", account_id: account.id }, "clear_login_otp");
     }
 
+    // Son durum kontrolü
     const state = await readPageState(page);
     const stillLogin = state.url.includes("/membership/login") || state.body.includes("giriş yap");
     const inMemberArea = state.url.includes("/membership") && !state.url.includes("/membership/login");
@@ -1671,10 +1734,46 @@ async function loginToIdata(page, account) {
       return { success: false, reason: "cloudflare_queue", screenshot: ss };
     }
 
-    if (state.otpRequired) {
-      console.log("  [LOGIN] ⚠ OTP doğrulaması bekleniyor");
+    // OTP ekranı hâlâ görünüyorsa — tekrar OTP flow'a gir (ikinci deneme)
+    if (state.otpRequired && !otpNeeded && !otpByNewInput) {
+      console.log("  [LOGIN] ⚠ OTP ekranı tespit edildi (geç algılama) — OTP bekleniyor");
+      const otpShot = await takeScreenshotBase64(page);
+      await idataLog("login_otp_screen", `OTP ekranı (geç algılama)`, otpShot);
+      
+      await apiPost({ action: "idata_set_login_otp_requested", account_id: account.id }, "set_login_otp");
+      await idataLog("login_otp", `📧 Giriş OTP bekleniyor (geç) | Hesap: ${account.email}`);
+      
+      const otpCode2 = await waitForLoginOtp(account.id, 180000);
+      if (otpCode2) {
+        console.log(`  [LOGIN] ✅ OTP alındı (geç): ${otpCode2}`);
+        await page.evaluate((code) => {
+          const inputs = Array.from(document.querySelectorAll('input')).filter(inp => {
+            const t = (inp.type || 'text').toLowerCase();
+            return !['hidden','submit','button','checkbox','radio','file','password'].includes(t) && !inp.readOnly && !inp.disabled;
+          });
+          const target = [...inputs].reverse().find(inp => !inp.value.trim()) || inputs[inputs.length - 1];
+          if (target) { target.focus(); target.value = code; target.dispatchEvent(new Event("input",{bubbles:true})); target.dispatchEvent(new Event("change",{bubbles:true})); }
+        }, otpCode2);
+        await delay(1000, 2000);
+        await page.evaluate(() => {
+          const btns = Array.from(document.querySelectorAll("button, input[type='submit']"));
+          const b = btns.find(b => /(doğrula|onayla|giriş|verify|gönder)/i.test(b.textContent||b.value||'')) || document.querySelector('button[type="submit"]');
+          if (b) b.click();
+        });
+        await delay(5000, 8000);
+        await apiPost({ action: "idata_clear_login_otp", account_id: account.id }, "clear_login_otp");
+        
+        // Final kontrol
+        const finalState = await readPageState(page);
+        const finalLoggedIn = !finalState.isCloudflare && !finalState.url.includes("/membership/login") && 
+                              (finalState.url.includes("/membership") || finalState.body.includes("çıkış"));
+        if (finalLoggedIn) {
+          console.log("  [LOGIN] ✅ Giriş başarılı (OTP ile)!");
+          return { success: true };
+        }
+      }
       const ss = await takeScreenshotBase64(page);
-      return { success: false, reason: "otp_required", screenshot: ss };
+      return { success: false, reason: "otp_failed", screenshot: ss };
     }
 
     if (loggedIn) {
