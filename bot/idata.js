@@ -1920,11 +1920,12 @@ async function loginToIdata(page, account) {
           if (target) { target.focus(); target.value = code; target.dispatchEvent(new Event("input",{bubbles:true})); target.dispatchEvent(new Event("change",{bubbles:true})); }
         }, otpCode2);
         await delay(1000, 2000);
-        await page.evaluate(() => {
-          const btns = Array.from(document.querySelectorAll("button, input[type='submit']"));
-          const b = btns.find(b => /(doğrula|onayla|giriş|verify|gönder)/i.test(b.textContent||b.value||'')) || document.querySelector('button[type="submit"]');
-          if (b) b.click();
-        });
+        const otpSubmit2 = await clickAuthSubmitButton(page, "otp_submit_gec");
+        if (!otpSubmit2?.found) {
+          const ss = await takeScreenshotBase64(page);
+          await idataLog("login_fail", `OTP(geç) sonrası submit bulunamadı`, ss);
+          return { success: false, reason: "otp_submit_not_found", screenshot: ss };
+        }
         await delay(5000, 8000);
         await apiPost({ action: "idata_clear_login_otp", account_id: account.id }, "clear_login_otp");
         
