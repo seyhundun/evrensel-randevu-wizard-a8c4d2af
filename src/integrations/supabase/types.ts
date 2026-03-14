@@ -288,6 +288,7 @@ export type Database = {
           telegram_chat_id: string | null
           updated_at: string
           visa_category: string | null
+          visa_subcategory: string | null
           webhook_url: string | null
         }
         Insert: {
@@ -306,6 +307,7 @@ export type Database = {
           telegram_chat_id?: string | null
           updated_at?: string
           visa_category?: string | null
+          visa_subcategory?: string | null
           webhook_url?: string | null
         }
         Update: {
@@ -324,6 +326,7 @@ export type Database = {
           telegram_chat_id?: string | null
           updated_at?: string
           visa_category?: string | null
+          visa_subcategory?: string | null
           webhook_url?: string | null
         }
         Relationships: []

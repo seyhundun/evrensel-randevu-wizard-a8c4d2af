@@ -1,0 +1,1 @@
+ALTER TABLE public.tracking_configs ADD COLUMN IF NOT EXISTS visa_subcategory text DEFAULT NULL;

@@ -1946,12 +1946,15 @@ async function checkAppointments(config, account) {
     await logStep(id, "login_success", `Giriş başarılı! | ${account.email}`);
     await updateAccountStatus(account.id, "active", 0);
 
-    // STEP 6: Randevu kontrol
-    console.log("  [6/6] Randevu kontrol...");
+    // STEP 6: Randevu kontrol + otomatik alma
+    console.log("  [6/6] Randevu kontrol + booking...");
     await logStep(id, "search_start", "Dashboard yüklendi, randevu aranıyor...");
     await delay(2000, 4000);
     await humanMove(page);
+
+    // 6a: "New Booking" / "Start New Booking" butonuna tıkla
     try {
+      await logStep(id, "appt_navigate", "Randevu sayfasına yönlendiriliyor...");
       const bookBtn = await page.evaluateHandle(() => {
         const links = [...document.querySelectorAll("a, button")];
         return links.find((el) => {
@@ -1962,24 +1965,381 @@ async function checkAppointments(config, account) {
       if (bookBtn && bookBtn.asElement()) {
         await delay(500, 1500);
         await bookBtn.asElement().click();
+        await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
         await delay(3000, 5000);
         await solveTurnstile(page);
         await delay(2000, 3000);
       }
-    } catch (navErr) {}
+    } catch (navErr) {
+      console.log("  [6/6] ⚠ Booking navigasyon hatası:", navErr.message);
+    }
 
+    // 6b: Kategori ve alt kategori seçimi
+    const visaCat = config.visa_category || "";
+    const visaSubCat = config.visa_subcategory || "";
+    if (visaCat) {
+      await logStep(id, "appt_category", `Kategori seçiliyor: ${visaCat} ${visaSubCat ? "/ " + visaSubCat : ""}`);
+      await delay(1000, 2000);
+      
+      // Kategori dropdown'ı bul ve seç
+      const catSelected = await page.evaluate((category) => {
+        // Angular mat-select veya standart select
+        const selects = Array.from(document.querySelectorAll('select, mat-select, [role="listbox"]'));
+        for (const sel of selects) {
+          if (sel.tagName === 'SELECT') {
+            const options = Array.from(sel.querySelectorAll('option'));
+            const match = options.find(opt => {
+              const txt = (opt.textContent || "").toLowerCase();
+              return txt.includes(category.toLowerCase());
+            });
+            if (match) {
+              sel.value = match.value;
+              sel.dispatchEvent(new Event("change", { bubbles: true }));
+              sel.dispatchEvent(new Event("input", { bubbles: true }));
+              return { ok: true, method: "select", value: match.textContent };
+            }
+          }
+        }
+        
+        // Angular mat-select: tıkla ve option seç
+        const matSelects = Array.from(document.querySelectorAll('mat-select, .mat-mdc-select, [formcontrolname]'));
+        for (const ms of matSelects) {
+          const label = ms.closest('.mat-mdc-form-field, mat-form-field, .form-group')?.querySelector('label, mat-label, .mat-mdc-floating-label');
+          const labelText = (label?.textContent || "").toLowerCase();
+          if (labelText.includes("categor") || labelText.includes("kategori") || labelText.includes("visa type") || labelText.includes("vize")) {
+            ms.click();
+            return { ok: false, method: "mat-select-clicked", detail: labelText };
+          }
+        }
+        return { ok: false, method: "not_found" };
+      }, visaCat);
+      
+      console.log(`  [6/6] Kategori seçim sonucu:`, JSON.stringify(catSelected));
+      
+      if (catSelected && !catSelected.ok && catSelected.method === "mat-select-clicked") {
+        // Angular mat-select açıldı, option'ı seç
+        await delay(800, 1500);
+        await page.evaluate((category) => {
+          const options = Array.from(document.querySelectorAll('mat-option, .mat-mdc-option, [role="option"]'));
+          const match = options.find(opt => {
+            const txt = (opt.textContent || "").toLowerCase();
+            return txt.includes(category.toLowerCase());
+          });
+          if (match) match.click();
+        }, visaCat);
+        await delay(1000, 2000);
+      }
+      
+      // Alt kategori seçimi
+      if (visaSubCat) {
+        await delay(1500, 3000);
+        const subSelected = await page.evaluate((subCategory) => {
+          const selects = Array.from(document.querySelectorAll('select'));
+          for (const sel of selects) {
+            const options = Array.from(sel.querySelectorAll('option'));
+            const match = options.find(opt => {
+              const txt = (opt.textContent || "").toLowerCase();
+              return txt.includes(subCategory.toLowerCase());
+            });
+            if (match) {
+              sel.value = match.value;
+              sel.dispatchEvent(new Event("change", { bubbles: true }));
+              sel.dispatchEvent(new Event("input", { bubbles: true }));
+              return { ok: true };
+            }
+          }
+          // Angular mat-select for subcategory
+          const matSelects = Array.from(document.querySelectorAll('mat-select, .mat-mdc-select'));
+          for (const ms of matSelects) {
+            const label = ms.closest('.mat-mdc-form-field, mat-form-field, .form-group')?.querySelector('label, mat-label');
+            const labelText = (label?.textContent || "").toLowerCase();
+            if (labelText.includes("sub") || labelText.includes("alt")) {
+              ms.click();
+              return { ok: false, method: "mat-select-clicked" };
+            }
+          }
+          return { ok: false };
+        }, visaSubCat);
+        
+        if (subSelected && !subSelected.ok && subSelected.method === "mat-select-clicked") {
+          await delay(800, 1500);
+          await page.evaluate((sub) => {
+            const options = Array.from(document.querySelectorAll('mat-option, .mat-mdc-option, [role="option"]'));
+            const match = options.find(opt => (opt.textContent || "").toLowerCase().includes(sub.toLowerCase()));
+            if (match) match.click();
+          }, visaSubCat);
+          await delay(1000, 2000);
+        }
+      }
+    }
+
+    // 6c: Merkez (şehir) seçimi
+    if (city) {
+      await logStep(id, "appt_centre", `Merkez seçiliyor: ${city}`);
+      await delay(1000, 2000);
+      await page.evaluate((cityName) => {
+        const selects = Array.from(document.querySelectorAll('select'));
+        for (const sel of selects) {
+          const options = Array.from(sel.querySelectorAll('option'));
+          const match = options.find(opt => {
+            const txt = (opt.textContent || "").toLowerCase();
+            return txt.includes(cityName.toLowerCase());
+          });
+          if (match) {
+            sel.value = match.value;
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+            sel.dispatchEvent(new Event("input", { bubbles: true }));
+            return;
+          }
+        }
+        // Angular mat-select
+        const matSelects = Array.from(document.querySelectorAll('mat-select, .mat-mdc-select'));
+        for (const ms of matSelects) {
+          const label = ms.closest('.mat-mdc-form-field, mat-form-field, .form-group')?.querySelector('label, mat-label');
+          const labelText = (label?.textContent || "").toLowerCase();
+          if (labelText.includes("centre") || labelText.includes("merkez") || labelText.includes("location") || labelText.includes("office")) {
+            ms.click();
+          }
+        }
+      }, city);
+      await delay(800, 1500);
+      // Angular option seçimi
+      await page.evaluate((cityName) => {
+        const options = Array.from(document.querySelectorAll('mat-option, .mat-mdc-option, [role="option"]'));
+        const match = options.find(opt => (opt.textContent || "").toLowerCase().includes(cityName.toLowerCase()));
+        if (match) match.click();
+      }, city);
+      await delay(1500, 3000);
+    }
+
+    // 6d: Continue / Devam butonuna tıkla
+    await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("button, a"));
+      const continueBtn = btns.find(b => {
+        const txt = (b.textContent || "").toLowerCase();
+        return txt.includes("continue") || txt.includes("devam") || txt.includes("search") || txt.includes("ara") || txt.includes("submit") || txt.includes("gönder");
+      });
+      if (continueBtn) continueBtn.click();
+    });
+    await delay(3000, 6000);
+    await solveTurnstile(page);
+    await delay(2000, 4000);
+
+    // 6e: Takvim / slot kontrol
+    await logStep(id, "appt_calendar", "Müsait tarihler kontrol ediliyor...");
     const bodyText = await page.evaluate(() => document.body.innerText);
     const lowerText = bodyText.toLowerCase();
     const noAppointmentPhrases = ["no appointment", "no available", "currently no date", "randevu bulunmamaktadır", "müsait randevu yok", "no open schedule", "fully booked", "no slot", "appointment is not available", "no dates available", "no timeslot available"];
-    const appointmentFoundPhrases = ["select date", "available slot", "tarih seçin", "available appointment", "open slot", "choose a date", "select a time", "appointment available"];
+    const appointmentFoundPhrases = ["select date", "available slot", "tarih seçin", "available appointment", "open slot", "choose a date", "select a time", "appointment available", "lütfen bir tarih seçin"];
     const noAppointment = noAppointmentPhrases.some((p) => lowerText.includes(p));
     const hasAppointment = appointmentFoundPhrases.some((p) => lowerText.includes(p));
     const ss = await takeScreenshotBase64(page);
 
     if (hasAppointment && !noAppointment) {
-      console.log("  ✅ RANDEVU BULUNDU!");
+      console.log("  ✅ RANDEVU BULUNDU! Otomatik alma başlıyor...");
       await logStep(id, "found", `🎉 RANDEVU BULUNDU! | ${account.email}`);
       await reportResult(id, "found", `Randevu müsait! Hesap: ${account.email}`, 1, ss);
+
+      // ========== OTOMATİK RANDEVU ALMA ==========
+      try {
+        // 6f: İlk müsait tarihi seç
+        await logStep(id, "appt_date", "İlk müsait tarih seçiliyor...");
+        const dateSelected = await page.evaluate(() => {
+          // Takvimde aktif/seçilebilir günleri bul
+          const availableDays = Array.from(document.querySelectorAll(
+            '.mat-calendar-body-cell:not(.mat-calendar-body-disabled), ' +
+            '.available-date, ' +
+            'td.day:not(.disabled), ' +
+            '.datepicker-day:not(.disabled), ' +
+            'button.day:not([disabled]), ' +
+            '[class*="available"]:not([class*="unavailable"]), ' +
+            '.calendar-day.active, ' +
+            '.slot-available'
+          ));
+          
+          if (availableDays.length > 0) {
+            availableDays[0].click();
+            return { ok: true, count: availableDays.length, text: (availableDays[0].textContent || "").trim() };
+          }
+          
+          // Fallback: Takvim hücrelerinde renk/class bazlı seçim
+          const allCells = Array.from(document.querySelectorAll('td, .calendar-cell, button'));
+          const greenCell = allCells.find(cell => {
+            const style = window.getComputedStyle(cell);
+            const bg = style.backgroundColor;
+            const cls = cell.className || "";
+            return (bg.includes("rgb(76, 175, 80)") || bg.includes("rgb(0, 128, 0)") || cls.includes("available") || cls.includes("open")) && !cls.includes("disabled");
+          });
+          if (greenCell) {
+            greenCell.click();
+            return { ok: true, method: "color", text: (greenCell.textContent || "").trim() };
+          }
+          
+          return { ok: false };
+        });
+        
+        console.log(`  [6/6] Tarih seçim sonucu:`, JSON.stringify(dateSelected));
+        
+        if (dateSelected.ok) {
+          await delay(2000, 4000);
+          
+          // 6g: Saat dilimi seç
+          await logStep(id, "appt_time", "Saat dilimi seçiliyor...");
+          const timeSelected = await page.evaluate(() => {
+            // Saat slotlarını bul
+            const timeSlots = Array.from(document.querySelectorAll(
+              '.time-slot:not(.disabled), ' +
+              '[class*="timeslot"]:not([class*="disabled"]), ' +
+              'input[type="radio"][name*="time"], ' +
+              'mat-radio-button, ' +
+              '.slot-time, ' +
+              'button[class*="time"]:not([disabled])'
+            ));
+            
+            if (timeSlots.length > 0) {
+              timeSlots[0].click();
+              return { ok: true, count: timeSlots.length, text: (timeSlots[0].textContent || "").trim() };
+            }
+            
+            // Fallback: Select dropdown for time
+            const selects = Array.from(document.querySelectorAll('select'));
+            for (const sel of selects) {
+              const label = sel.closest('.form-group, .mat-mdc-form-field')?.querySelector('label');
+              const labelText = (label?.textContent || "").toLowerCase();
+              if (labelText.includes("time") || labelText.includes("saat") || labelText.includes("slot")) {
+                const options = Array.from(sel.querySelectorAll('option'));
+                const available = options.find(opt => opt.value && !opt.disabled && opt.value !== "");
+                if (available) {
+                  sel.value = available.value;
+                  sel.dispatchEvent(new Event("change", { bubbles: true }));
+                  return { ok: true, method: "select", text: available.textContent };
+                }
+              }
+            }
+            
+            return { ok: false };
+          });
+          
+          console.log(`  [6/6] Saat seçim sonucu:`, JSON.stringify(timeSelected));
+          await delay(1500, 3000);
+          
+          // 6h: Başvuran bilgilerini doldur
+          const applicants = config.applicants || [];
+          if (applicants.length > 0) {
+            await logStep(id, "appt_fill", `${applicants.length} kişi bilgileri dolduruluyor...`);
+            
+            for (let i = 0; i < applicants.length; i++) {
+              const app = applicants[i];
+              await delay(500, 1000);
+              
+              // İsim alanları
+              if (app.first_name) {
+                await page.evaluate((name, index) => {
+                  const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+                  const firstNameInput = inputs.find(inp => {
+                    const n = (inp.name || inp.id || inp.placeholder || "").toLowerCase();
+                    return n.includes("first") || n.includes("name") || n.includes("ad");
+                  });
+                  if (firstNameInput) {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                    if (setter) setter.call(firstNameInput, name);
+                    else firstNameInput.value = name;
+                    firstNameInput.dispatchEvent(new Event("input", { bubbles: true }));
+                    firstNameInput.dispatchEvent(new Event("change", { bubbles: true }));
+                  }
+                }, app.first_name, i);
+              }
+              
+              if (app.last_name) {
+                await page.evaluate((name) => {
+                  const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+                  const lastNameInput = inputs.find(inp => {
+                    const n = (inp.name || inp.id || inp.placeholder || "").toLowerCase();
+                    return n.includes("last") || n.includes("surname") || n.includes("soyad");
+                  });
+                  if (lastNameInput) {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                    if (setter) setter.call(lastNameInput, name);
+                    else lastNameInput.value = name;
+                    lastNameInput.dispatchEvent(new Event("input", { bubbles: true }));
+                    lastNameInput.dispatchEvent(new Event("change", { bubbles: true }));
+                  }
+                }, app.last_name);
+              }
+            }
+            await delay(1000, 2000);
+          }
+          
+          // 6i: Continue / Submit butonuna tıkla
+          await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll("button"));
+            const submitBtn = btns.find(b => {
+              const txt = (b.textContent || "").toLowerCase();
+              return txt.includes("continue") || txt.includes("devam") || txt.includes("submit") || txt.includes("confirm") || txt.includes("onayla") || txt.includes("book") || txt.includes("reserve");
+            });
+            if (submitBtn) {
+              if (submitBtn.disabled) {
+                submitBtn.disabled = false;
+                submitBtn.removeAttribute("disabled");
+              }
+              submitBtn.click();
+            }
+          });
+          await delay(3000, 6000);
+          await solveTurnstile(page);
+          await delay(2000, 4000);
+          
+          // 6j: Onay sayfası — son onay butonu
+          const confirmResult = await page.evaluate(() => {
+            const body = (document.body?.innerText || "").toLowerCase();
+            const btns = Array.from(document.querySelectorAll("button"));
+            const confirmBtn = btns.find(b => {
+              const txt = (b.textContent || "").toLowerCase();
+              return txt.includes("confirm") || txt.includes("onayla") || txt.includes("complete") || txt.includes("tamamla") || txt.includes("pay") || txt.includes("book now");
+            });
+            if (confirmBtn) {
+              if (confirmBtn.disabled) {
+                confirmBtn.disabled = false;
+                confirmBtn.removeAttribute("disabled");
+              }
+              confirmBtn.click();
+              return { clicked: true, text: confirmBtn.textContent };
+            }
+            const isAlreadyConfirmed = body.includes("confirmed") || body.includes("onaylandı") || body.includes("booked") || body.includes("appointment has been") || body.includes("randevunuz");
+            return { clicked: false, confirmed: isAlreadyConfirmed };
+          });
+          
+          console.log(`  [6/6] Onay sonucu:`, JSON.stringify(confirmResult));
+          await delay(3000, 6000);
+          
+          // 6k: Sonuç kontrol
+          const finalSs = await takeScreenshotBase64(page);
+          const finalBody = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
+          const bookingSuccess = finalBody.includes("confirmed") || finalBody.includes("onaylandı") || 
+                                 finalBody.includes("booked") || finalBody.includes("appointment has been") ||
+                                 finalBody.includes("randevunuz alındı") || finalBody.includes("başarılı") ||
+                                 finalBody.includes("reference number") || finalBody.includes("referans numarası");
+          
+          if (bookingSuccess) {
+            console.log("  🎉✅ RANDEVU BAŞARIYLA ALINDI!");
+            await logStep(id, "appt_confirm", `✅ RANDEVU ALINDI! | ${account.email}`);
+            await reportResult(id, "found", `✅ RANDEVU ALINDI! | Hesap: ${account.email}`, 1, finalSs);
+          } else {
+            console.log("  ⚠ Randevu bulundu ama otomatik alma sonucu belirsiz");
+            await logStep(id, "appt_fail", `Randevu bulundu ama otomatik alma başarısız olabilir | ${account.email}`);
+            await reportResult(id, "found", `🎉 Randevu bulundu! Otomatik alma sonucu belirsiz | Hesap: ${account.email}`, 1, finalSs);
+          }
+        } else {
+          console.log("  ⚠ Tarih seçilemedi, sadece bildirim gönderildi");
+          await logStep(id, "appt_fail", `Tarih seçilemedi — manuel müdahale gerekebilir | ${account.email}`);
+        }
+      } catch (bookErr) {
+        console.error("  [BOOKING] Otomatik alma hatası:", bookErr.message);
+        await logStep(id, "appt_fail", `Booking hatası: ${bookErr.message} | ${account.email}`);
+        const errSs = await takeScreenshotBase64(page);
+        await reportResult(id, "found", `🎉 Randevu bulundu ama otomatik alma başarısız: ${bookErr.message} | Hesap: ${account.email}`, 1, errSs);
+      }
+
       return { found: true, accountBanned: false, hadError: false };
     } else {
       console.log("  ❌ Randevu yok.");

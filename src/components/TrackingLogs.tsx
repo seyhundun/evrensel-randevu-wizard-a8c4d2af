@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   CheckCircle2, Search, AlertCircle, Clock, Image as ImageIcon, X,
   LogIn, FormInput, ShieldCheck, KeyRound, Globe, Timer, MonitorSmartphone,
-  UserPlus, MousePointer, Wifi, Ban, RefreshCw, Network, Trash2
+  UserPlus, MousePointer, Wifi, Ban, RefreshCw, Network, Trash2, MapPin
 } from "lucide-react";
 
 interface LogEntry {
@@ -35,9 +35,12 @@ const statusConfig: Record<string, { icon: React.ReactNode; label: string; color
   login_navigate: { icon: <Globe className="w-4 h-4" />, label: "Sayfa Açılıyor", color: "text-blue-400 bg-blue-400/10" },
   login_form:     { icon: <FormInput className="w-4 h-4" />, label: "Form Dolduruluyor", color: "text-blue-500 bg-blue-500/10" },
   login_captcha:  { icon: <ShieldCheck className="w-4 h-4" />, label: "CAPTCHA Çözülüyor", color: "text-amber-500 bg-amber-500/10" },
+  login_captcha_debug: { icon: <ShieldCheck className="w-4 h-4" />, label: "CAPTCHA Debug", color: "text-amber-400 bg-amber-400/10 text-xs" },
+  login_captcha_retry: { icon: <RefreshCw className="w-4 h-4" />, label: "CAPTCHA Retry", color: "text-amber-500 bg-amber-500/10" },
   login_otp:      { icon: <KeyRound className="w-4 h-4" />, label: "OTP Bekleniyor", color: "text-orange-500 bg-orange-500/10" },
   login_success:  { icon: <CheckCircle2 className="w-4 h-4" />, label: "Giriş Başarılı", color: "text-green-500 bg-green-500/10" },
   login_fail:     { icon: <AlertCircle className="w-4 h-4" />, label: "Giriş Başarısız", color: "text-destructive bg-destructive/10" },
+  login_post_click: { icon: <LogIn className="w-4 h-4" />, label: "Giriş Tıklandı", color: "text-blue-400 bg-blue-400/10" },
 
   // --- Search/check flow ---
   search_start:   { icon: <Search className="w-4 h-4" />, label: "Arama Başladı", color: "text-primary bg-primary/10" },
@@ -47,6 +50,17 @@ const statusConfig: Record<string, { icon: React.ReactNode; label: string; color
   checking:       { icon: <Search className="w-4 h-4" />, label: "Kontrol", color: "text-primary bg-primary/10" },
   no_slots:       { icon: <Ban className="w-4 h-4" />, label: "Slot Yok", color: "text-muted-foreground bg-muted/50" },
   found:          { icon: <CheckCircle2 className="w-4 h-4" />, label: "🎉 BULUNDU!", color: "text-green-600 bg-green-500/15 font-bold" },
+
+  // --- Appointment booking flow ---
+  appt_navigate:  { icon: <Globe className="w-4 h-4" />, label: "Randevu Sayfası", color: "text-blue-400 bg-blue-400/10" },
+  appt_category:  { icon: <FormInput className="w-4 h-4" />, label: "Kategori Seçimi", color: "text-blue-500 bg-blue-500/10" },
+  appt_centre:    { icon: <MapPin className="w-4 h-4" />, label: "Merkez Seçimi", color: "text-blue-500 bg-blue-500/10" },
+  appt_calendar:  { icon: <Clock className="w-4 h-4" />, label: "Takvim Kontrol", color: "text-primary bg-primary/10" },
+  appt_date:      { icon: <CheckCircle2 className="w-4 h-4" />, label: "Tarih Seçildi", color: "text-green-500 bg-green-500/10" },
+  appt_time:      { icon: <Clock className="w-4 h-4" />, label: "Saat Seçildi", color: "text-green-500 bg-green-500/10" },
+  appt_fill:      { icon: <FormInput className="w-4 h-4" />, label: "Bilgi Dolduruluyor", color: "text-blue-500 bg-blue-500/10" },
+  appt_confirm:   { icon: <CheckCircle2 className="w-4 h-4" />, label: "✅ Randevu Alındı!", color: "text-green-600 bg-green-500/15 font-bold" },
+  appt_fail:      { icon: <AlertCircle className="w-4 h-4" />, label: "Randevu Alınamadı", color: "text-destructive bg-destructive/10" },
 
   // --- Registration flow ---
   reg_start:      { icon: <UserPlus className="w-4 h-4" />, label: "Kayıt Başladı", color: "text-violet-500 bg-violet-500/10" },
@@ -177,7 +191,7 @@ export default function TrackingLogs({ configId }: TrackingLogsProps) {
   const filteredLogs = logs.filter((log) => {
     if (filter === "all") return true;
     if (filter === "login") return log.status.startsWith("login");
-    if (filter === "search") return log.status.startsWith("search") || log.status === "checking" || log.status === "found" || log.status === "no_slots" || log.status === "queue_waiting";
+    if (filter === "search") return log.status.startsWith("search") || log.status.startsWith("appt") || log.status === "checking" || log.status === "found" || log.status === "no_slots" || log.status === "queue_waiting";
     if (filter === "reg") return log.status.startsWith("reg");
     if (filter === "ip") return log.status.startsWith("ip_") || log.status === "network_error" || log.status === "bot_start";
     if (filter === "error") return log.status === "error" || log.status.includes("fail") || log.status === "network_error" || log.status === "ip_blocked";
@@ -265,7 +279,7 @@ export default function TrackingLogs({ configId }: TrackingLogsProps) {
               <div
                 key={log.id}
                 className={`flex items-start gap-2.5 rounded-lg bg-card border border-border/50 px-3 py-2 text-xs transition-colors hover:bg-secondary/30 ${
-                  log.status === "found" ? "ring-2 ring-green-500/30 bg-green-500/5" : ""
+                  log.status === "found" || log.status === "appt_confirm" ? "ring-2 ring-green-500/30 bg-green-500/5" : ""
                 } ${log.status === "error" || log.status.includes("fail") || log.status === "ip_blocked" ? "bg-destructive/5" : ""
                 } ${log.status === "ip_change" ? "bg-cyan-500/5" : ""}`}
               >

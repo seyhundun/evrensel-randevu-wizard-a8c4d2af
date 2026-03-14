@@ -36,6 +36,15 @@ export const VISA_CATEGORIES = [
   "Kısa Süreli (Schengen)",
 ] as const;
 
+export const VISA_SUBCATEGORIES: Record<string, string[]> = {
+  "Turist Vizesi": ["Tourism", "Short Stay Tourism", "Visit Family/Friends"],
+  "İş Vizesi": ["Business", "Short Stay Business", "Conference/Seminar"],
+  "Öğrenci Vizesi": ["Student", "Long Stay Student", "Research/Study"],
+  "Aile Birleşimi": ["Family Reunification", "Spouse Visa", "Dependent Child"],
+  "Transit Vize": ["Airport Transit", "Transit"],
+  "Kısa Süreli (Schengen)": ["Short Stay", "Schengen Visa", "Multiple Entry"],
+};
+
 export type TrackingStatus = "idle" | "searching" | "found" | "error";
 
 export interface Applicant {

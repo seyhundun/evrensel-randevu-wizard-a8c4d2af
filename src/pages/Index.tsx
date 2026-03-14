@@ -117,6 +117,8 @@ const Index = () => {
                         setCity={t.setCity}
                         visaCategory={t.visaCategory}
                         setVisaCategory={t.setVisaCategory}
+                        visaSubcategory={t.visaSubcategory}
+                        setVisaSubcategory={t.setVisaSubcategory}
                         personCount={t.personCount}
                         setPersonCount={t.setPersonCount}
                         interval={t.interval}

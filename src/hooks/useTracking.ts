@@ -8,6 +8,7 @@ export function useTracking() {
   const [country, setCountry] = useState("");
   const [city, setCity] = useState("");
   const [visaCategory, setVisaCategory] = useState("");
+  const [visaSubcategory, setVisaSubcategory] = useState("");
   const [personCount, setPersonCount] = useState(1);
   const [interval, setIntervalValue] = useState(120);
   const [applicants, setApplicants] = useState<Applicant[]>([
@@ -41,6 +42,7 @@ export function useTracking() {
         setCountry(cfg.country);
         setCity(cfg.city);
         setVisaCategory(cfg.visa_category ?? "");
+        setVisaSubcategory(cfg.visa_subcategory ?? "");
         setPersonCount(cfg.person_count);
         setIntervalValue(cfg.check_interval);
         setKeepAlive(cfg.keep_alive);
@@ -115,6 +117,7 @@ export function useTracking() {
       country,
       city,
       visa_category: visaCategory || null,
+      visa_subcategory: visaSubcategory || null,
       person_count: personCount,
       check_interval: interval,
       keep_alive: keepAlive,
@@ -210,7 +213,7 @@ export function useTracking() {
     }, 1000);
 
     startPolling(id);
-  }, [country, city, interval, visaCategory, personCount, keepAlive, applicants, configId]);
+  }, [country, city, interval, visaCategory, visaSubcategory, personCount, keepAlive, applicants, configId]);
 
   const stopTracking = useCallback(async () => {
     setStatus("idle");
@@ -276,6 +279,8 @@ export function useTracking() {
     setCity,
     visaCategory,
     setVisaCategory,
+    visaSubcategory,
+    setVisaSubcategory,
     personCount,
     setPersonCount,
     interval,
