@@ -579,17 +579,13 @@ function getResidentialProxyUrl() {
 async function launchBrowser(ip = null) {
   const { connect } = require("puppeteer-real-browser");
 
+  // VFS botuyla aynı minimal args — CF parmak izi tespitini azaltır
   const args = [
     "--no-sandbox",
     "--disable-setuid-sandbox",
-    "--disable-blink-features=AutomationControlled",
-    "--disable-web-security",
-    "--lang=tr-TR",
-    "--use-gl=swiftshader",
-    "--enable-unsafe-swiftshader",
-    "--enable-webgl",
-    "--start-maximized",
+    "--disable-dev-shm-usage",
     "--window-size=1920,1080",
+    "--start-maximized",
   ];
 
   let proxyConfig = undefined;
