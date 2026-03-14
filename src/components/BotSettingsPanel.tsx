@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Globe, Plus, Trash2, Save, Eye, EyeOff } from "lucide-react";
+import { Settings, Globe, Plus, Trash2, Save, Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface VfsCountry {
@@ -33,10 +33,15 @@ export default function BotSettingsPanel() {
   const [newCountry, setNewCountry] = useState({ value: "", label: "", flag: "", code: "" });
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [showCaptchaKey, setShowCaptchaKey] = useState(false);
   const [currentIp, setCurrentIp] = useState<string | null>(null);
   const [lastIpReset, setLastIpReset] = useState<string | null>(null);
+
+  // Local draft state for editable fields
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -58,7 +63,16 @@ export default function BotSettingsPanel() {
 
   const loadSettings = async () => {
     const { data } = await supabase.from("bot_settings").select("*");
-    if (data) setSettings(data);
+    if (data) {
+      setSettings(data);
+      // Initialize draft from DB values (only if not dirty)
+      setDraft(prev => {
+        const dbMap = Object.fromEntries(data.map(s => [s.key, s.value]));
+        // Keep user edits if dirty, otherwise use DB values
+        if (Object.keys(prev).length === 0) return dbMap;
+        return prev;
+      });
+    }
   };
 
   const loadCurrentIp = async () => {
@@ -69,7 +83,7 @@ export default function BotSettingsPanel() {
       .order("created_at", { ascending: false })
       .limit(1);
     if (data && data.length > 0) {
-      const match = data[0].message?.match(/Aktif IP:\s*([^\s|]+)/);
+      const match = data[0].message?.match(/Aktif IP:\\s*([^\s|]+)/);
       if (match) {
         setCurrentIp(match[1]);
         setLastIpReset(data[0].created_at);
@@ -77,17 +91,47 @@ export default function BotSettingsPanel() {
     }
   };
 
-  const getSetting = (key: string) => settings.find(s => s.key === key)?.value || "";
+  const getDraft = (key: string) => draft[key] ?? settings.find(s => s.key === key)?.value ?? "";
 
-  const updateSetting = async (key: string, value: string, label?: string) => {
-    const existing = settings.find(s => s.key === key);
-    if (existing) {
-      await supabase.from("bot_settings").update({ value }).eq("key", key);
-      setSettings(prev => prev.map(s => s.key === key ? { ...s, value } : s));
-    } else {
-      const { data } = await supabase.from("bot_settings").insert({ key, value, label: label || key }).select().single();
-      if (data) setSettings(prev => [...prev, data]);
+  const setDraftValue = (key: string, value: string) => {
+    setDraft(prev => ({ ...prev, [key]: value }));
+    setDirty(true);
+  };
+
+  const saveAllSettings = async () => {
+    setSavingSettings(true);
+    const keys = [
+      { key: "proxy_host", label: "Proxy Host" },
+      { key: "proxy_port", label: "Proxy Port" },
+      { key: "proxy_user", label: "Proxy Kullanıcı" },
+      { key: "proxy_pass", label: "Proxy Şifre" },
+      { key: "proxy_region", label: "Proxy Bölge" },
+      { key: "proxy_country", label: "Proxy Ülke" },
+      { key: "captcha_provider", label: "Captcha Provider" },
+      { key: "capsolver_api_key", label: "Capsolver API Key" },
+    ];
+
+    for (const { key, label } of keys) {
+      const value = draft[key];
+      if (value === undefined) continue;
+      const existing = settings.find(s => s.key === key);
+      if (existing) {
+        if (existing.value !== value) {
+          await supabase.from("bot_settings").update({ value }).eq("key", key);
+        }
+      } else if (value) {
+        await supabase.from("bot_settings").insert({ key, value, label });
+      }
     }
+
+    toast.success("Ayarlar kaydedildi");
+    setDirty(false);
+    setSavingSettings(false);
+    loadSettings();
+  };
+
+  const updateProxyCountry = (code: string) => {
+    setDraftValue("proxy_country", code);
   };
 
   const addCountry = async () => {
@@ -140,17 +184,13 @@ export default function BotSettingsPanel() {
       <div className="space-y-3">
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">IP</Label>
-          <Input
-            className="h-8 text-xs font-mono bg-muted/50"
-            value={currentIp || "—"}
-            readOnly
-          />
+          <Input className="h-8 text-xs font-mono bg-muted/50" value={currentIp || "—"} readOnly />
         </div>
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">Reset Tarihi</Label>
           <Input
             className="h-8 text-xs font-mono bg-muted/50"
-            value={lastIpReset || "—"}
+            value={lastIpReset ? new Date(lastIpReset).toLocaleString("tr-TR") : "—"}
             readOnly
           />
         </div>
@@ -161,8 +201,8 @@ export default function BotSettingsPanel() {
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">Captcha Solver</Label>
           <Select
-            value={getSetting("captcha_provider") || "capsolver"}
-            onValueChange={v => updateSetting("captcha_provider", v, "Captcha Provider")}
+            value={getDraft("captcha_provider") || "capsolver"}
+            onValueChange={v => setDraftValue("captcha_provider", v)}
           >
             <SelectTrigger className="h-8 text-xs">
               <SelectValue />
@@ -181,8 +221,8 @@ export default function BotSettingsPanel() {
             <Input
               className="h-8 text-xs font-mono pr-8"
               type={showCaptchaKey ? "text" : "password"}
-              value={getSetting("capsolver_api_key")}
-              onChange={e => updateSetting("capsolver_api_key", e.target.value, "Capsolver API Key")}
+              value={getDraft("capsolver_api_key")}
+              onChange={e => setDraftValue("capsolver_api_key", e.target.value)}
               placeholder="CAP-XXXX..."
             />
             <button
@@ -202,8 +242,8 @@ export default function BotSettingsPanel() {
           <Label className="text-[11px] text-muted-foreground">Proxy IP (Host)</Label>
           <Input
             className="h-8 text-xs font-mono"
-            value={getSetting("proxy_host")}
-            onChange={e => updateSetting("proxy_host", e.target.value)}
+            value={getDraft("proxy_host")}
+            onChange={e => setDraftValue("proxy_host", e.target.value)}
             placeholder="core-residential.evomi-proxy.com"
           />
         </div>
@@ -212,8 +252,8 @@ export default function BotSettingsPanel() {
           <Label className="text-[11px] text-muted-foreground">Port</Label>
           <Input
             className="h-8 text-xs font-mono"
-            value={getSetting("proxy_port")}
-            onChange={e => updateSetting("proxy_port", e.target.value)}
+            value={getDraft("proxy_port")}
+            onChange={e => setDraftValue("proxy_port", e.target.value)}
             placeholder="1000"
           />
         </div>
@@ -222,8 +262,8 @@ export default function BotSettingsPanel() {
           <Label className="text-[11px] text-muted-foreground">Kullanıcı Adı</Label>
           <Input
             className="h-8 text-xs font-mono"
-            value={getSetting("proxy_user")}
-            onChange={e => updateSetting("proxy_user", e.target.value, "Proxy Kullanıcı")}
+            value={getDraft("proxy_user")}
+            onChange={e => setDraftValue("proxy_user", e.target.value)}
             placeholder="kullanici_adi"
           />
         </div>
@@ -234,8 +274,8 @@ export default function BotSettingsPanel() {
             <Input
               className="h-8 text-xs font-mono pr-8"
               type={showPass ? "text" : "password"}
-              value={getSetting("proxy_pass")}
-              onChange={e => updateSetting("proxy_pass", e.target.value, "Proxy Şifre")}
+              value={getDraft("proxy_pass")}
+              onChange={e => setDraftValue("proxy_pass", e.target.value)}
               placeholder="••••••••"
             />
             <button
@@ -252,8 +292,8 @@ export default function BotSettingsPanel() {
           <Label className="text-[11px] text-muted-foreground">Proxy Bölge (Region)</Label>
           <Input
             className="h-8 text-xs font-mono"
-            value={getSetting("proxy_region")}
-            onChange={e => updateSetting("proxy_region", e.target.value, "Proxy Bölge")}
+            value={getDraft("proxy_region")}
+            onChange={e => setDraftValue("proxy_region", e.target.value)}
             placeholder="ankara"
           />
         </div>
@@ -269,9 +309,9 @@ export default function BotSettingsPanel() {
           {proxyCountries.map(pc => (
             <button
               key={pc.code}
-              onClick={() => updateSetting("proxy_country", pc.code)}
+              onClick={() => updateProxyCountry(pc.code)}
               className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
-                getSetting("proxy_country") === pc.code
+                getDraft("proxy_country") === pc.code
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "bg-secondary text-foreground hover:bg-secondary/80"
               }`}
@@ -280,10 +320,18 @@ export default function BotSettingsPanel() {
             </button>
           ))}
         </div>
-        <p className="text-[10px] text-muted-foreground">
-          Bot bu ülkeden residential IP alacak. Değişiklik anında sunucuya iletilir.
-        </p>
       </div>
+
+      {/* Save Button */}
+      <Button
+        onClick={saveAllSettings}
+        disabled={!dirty || savingSettings}
+        className="w-full gap-2"
+        size="sm"
+      >
+        {savingSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+        {savingSettings ? "Kaydediliyor..." : "Ayarları Kaydet"}
+      </Button>
 
       {/* VFS Countries */}
       <div className="space-y-2 border-t border-border pt-4">
@@ -302,23 +350,14 @@ export default function BotSettingsPanel() {
 
         <div className="space-y-1.5">
           {countries.map(c => (
-            <div
-              key={c.id}
-              className="flex items-center justify-between gap-2 p-2 rounded-md bg-secondary/50"
-            >
+            <div key={c.id} className="flex items-center justify-between gap-2 p-2 rounded-md bg-secondary/50">
               <div className="flex items-center gap-2">
                 <span className="text-sm">{c.flag}</span>
                 <span className="text-xs font-medium">{c.label}</span>
-                <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-mono">
-                  {c.code}
-                </Badge>
+                <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-mono">{c.code}</Badge>
               </div>
               <div className="flex items-center gap-2">
-                <Switch
-                  checked={c.is_active}
-                  onCheckedChange={v => toggleCountry(c.id, v)}
-                  className="scale-75"
-                />
+                <Switch checked={c.is_active} onCheckedChange={v => toggleCountry(c.id, v)} className="scale-75" />
                 <Button
                   variant="ghost"
                   size="sm"
@@ -337,39 +376,19 @@ export default function BotSettingsPanel() {
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground">Değer (ör: germany)</Label>
-                <Input
-                  className="h-7 text-xs"
-                  value={newCountry.value}
-                  onChange={e => setNewCountry(p => ({ ...p, value: e.target.value }))}
-                  placeholder="germany"
-                />
+                <Input className="h-7 text-xs" value={newCountry.value} onChange={e => setNewCountry(p => ({ ...p, value: e.target.value }))} placeholder="germany" />
               </div>
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground">İsim (ör: Almanya)</Label>
-                <Input
-                  className="h-7 text-xs"
-                  value={newCountry.label}
-                  onChange={e => setNewCountry(p => ({ ...p, label: e.target.value }))}
-                  placeholder="Almanya"
-                />
+                <Input className="h-7 text-xs" value={newCountry.label} onChange={e => setNewCountry(p => ({ ...p, label: e.target.value }))} placeholder="Almanya" />
               </div>
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground">VFS Kodu (ör: deu)</Label>
-                <Input
-                  className="h-7 text-xs font-mono"
-                  value={newCountry.code}
-                  onChange={e => setNewCountry(p => ({ ...p, code: e.target.value }))}
-                  placeholder="deu"
-                />
+                <Input className="h-7 text-xs font-mono" value={newCountry.code} onChange={e => setNewCountry(p => ({ ...p, code: e.target.value }))} placeholder="deu" />
               </div>
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground">Bayrak Emoji</Label>
-                <Input
-                  className="h-7 text-xs"
-                  value={newCountry.flag}
-                  onChange={e => setNewCountry(p => ({ ...p, flag: e.target.value }))}
-                  placeholder="🇩🇪"
-                />
+                <Input className="h-7 text-xs" value={newCountry.flag} onChange={e => setNewCountry(p => ({ ...p, flag: e.target.value }))} placeholder="🇩🇪" />
               </div>
             </div>
             <Button size="sm" className="h-7 text-xs gap-1 w-full" onClick={addCountry} disabled={saving}>
