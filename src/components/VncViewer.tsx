@@ -9,13 +9,12 @@ import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 interface VncViewerProps {
   title: string;
   defaultHost?: string;
-  defaultPort?: number;
+  pathPrefix?: string;
   className?: string;
 }
 
-const VncViewer = ({ title, defaultHost = "vnc.fipacomputer.online", defaultPort = 6080, className }: VncViewerProps) => {
+const VncViewer = ({ title, defaultHost = "vnc.fipacomputer.online", pathPrefix = "/vfs", className }: VncViewerProps) => {
   const [host, setHost] = useState(defaultHost);
-  const [port, setPort] = useState(defaultPort);
   const [scheme, setScheme] = useState<"http" | "https">("https");
   const [isConnected, setIsConnected] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -26,8 +25,8 @@ const VncViewer = ({ title, defaultHost = "vnc.fipacomputer.online", defaultPort
   const isHttpsApp = useMemo(() => window.location.protocol === "https:", []);
   const mixedContentBlocked = isHttpsApp && scheme === "http";
 
-  const pathPrefix = port === 6080 ? "/vfs" : port === 6081 ? "/idata" : "";
-  const vncUrl = `${scheme}://${host}${pathPrefix}/vnc.html?autoconnect=1&resize=scale&path=${pathPrefix.slice(1)}/websockify&reconnect=true&reconnect_delay=3000`;
+  const wsPath = `${pathPrefix.slice(1)}/websockify`;
+  const vncUrl = `${scheme}://${host}${pathPrefix}/vnc.html?autoconnect=1&resize=scale&path=${wsPath}&reconnect=true&reconnect_delay=3000`;
 
   const handleConnect = useCallback(() => {
     setIsConnected(true);
@@ -108,21 +107,12 @@ const VncViewer = ({ title, defaultHost = "vnc.fipacomputer.online", defaultPort
       <Collapsible open={showSettings} onOpenChange={setShowSettings}>
         <CollapsibleContent>
           <div className="px-3 pb-2 space-y-2">
-            <div className="flex items-center gap-2">
-              <Input
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder="IP Adresi"
-                className="h-7 text-xs flex-1"
-              />
-              <Input
-                value={port}
-                onChange={(e) => setPort(Number(e.target.value))}
-                placeholder="Port"
-                className="h-7 text-xs w-20"
-                type="number"
-              />
-            </div>
+            <Input
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              placeholder="Host"
+              className="h-7 text-xs"
+            />
             <div className="flex gap-1">
               <Button
                 size="sm"
@@ -150,7 +140,7 @@ const VncViewer = ({ title, defaultHost = "vnc.fipacomputer.online", defaultPort
           <div className="flex flex-col items-center justify-center py-10 gap-3 bg-muted/30">
             <Monitor className="w-10 h-10 text-muted-foreground/40" />
             <p className="text-xs text-muted-foreground">Tarayıcı ekranını izlemek için bağlanın</p>
-            <p className="text-[10px] text-muted-foreground/60 font-mono">{scheme}://{host}:{port}</p>
+            <p className="text-[10px] text-muted-foreground/60 font-mono">{scheme}://{host}{pathPrefix}</p>
             <Button size="sm" onClick={handleConnect} className="gap-1.5">
               <Wifi className="w-3.5 h-3.5" />
               Bağlan
