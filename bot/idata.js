@@ -1474,49 +1474,69 @@ async function loginToIdata(page, account) {
       return { success: false, reason: "captcha_failed", screenshot: failShot };
     }
 
-    // CAPTCHA input — captcha image yakınındaki veya son text input
+    // CAPTCHA input — "Doğrulama Kodu" placeholder'lı input (iDATA'ya özel)
     let captchaInput = null;
     let captchaTyped = false;
 
-    // Önce captcha image'ın yanındaki input'u bul (en güvenilir)
     captchaInput = await page.evaluateHandle(() => {
-      // 1) Captcha resmi bul
-      const imgs = Array.from(document.querySelectorAll('img'));
-      const captchaImg = imgs.find(img => {
-        const src = (img.src || '').toLowerCase();
-        const alt = (img.alt || '').toLowerCase();
-        return src.includes('captcha') || alt.includes('captcha') || src.includes('securimage') || src.includes('verify');
+      // 1) Placeholder ile bul (en güvenilir — iDATA "Doğrulama Kodu" kullanıyor)
+      const byPlaceholder = document.querySelector(
+        'input[placeholder*="oğrulama" i], input[placeholder*="Dogrulama" i], input[placeholder*="verification" i], input[placeholder*="captcha" i]'
+      );
+      if (byPlaceholder) return byPlaceholder;
+
+      // 2) Name/id ile bul
+      const byAttr = document.querySelector(
+        'input[name*="captcha" i], input[id*="captcha" i], input[name*="dogrulama" i], input[id*="dogrulama" i], input[name*="verification" i]'
+      );
+      if (byAttr) return byAttr;
+
+      // 3) Captcha resmi/canvas yakınındaki input
+      const captchaImg = Array.from(document.querySelectorAll('img, canvas')).find(el => {
+        const meta = [
+          el.getAttribute('src') || '', el.getAttribute('alt') || '',
+          el.className || '', el.id || '',
+          (el.closest('div, fieldset, section, form')?.textContent || '')
+        ].join(' ').toLowerCase();
+        return /(captcha|doğrulama|dogrulama|verification|security)/i.test(meta);
       });
       if (captchaImg) {
-        // Resmin parent container'ında input ara
         let parent = captchaImg.parentElement;
-        for (let i = 0; i < 5 && parent; i++) {
-          const inp = parent.querySelector('input[type="text"]:not([type="hidden"])');
+        for (let i = 0; i < 6 && parent; i++) {
+          const inp = parent.querySelector('input[type="text"]:not([type="hidden"]):not([readonly])');
           if (inp) return inp;
           parent = parent.parentElement;
         }
       }
-      // 2) Fallback: placeholder/name ile bul
-      const byAttr = document.querySelector('input[name*="captcha"], input[placeholder*="captcha" i], input[id*="captcha" i], input[name*="Captcha"], input[id*="Captcha"]');
-      if (byAttr) return byAttr;
-      // 3) Son fallback: sayfadaki son text input
-      const allInputs = Array.from(document.querySelectorAll('input[type="text"]'));
-      return allInputs[allInputs.length - 1] || null;
+
+      // 4) Son fallback: formdaki son boş text input (dolu olanları atla)
+      const allInputs = Array.from(document.querySelectorAll('input[type="text"]:not([type="hidden"]):not([readonly])'));
+      const emptyInput = allInputs.reverse().find(inp => !inp.value.trim());
+      return emptyInput || allInputs[0] || null;
     });
 
     if (captchaInput && captchaInput.asElement()) {
       captchaInput = captchaInput.asElement();
-      console.log(`  [LOGIN] CAPTCHA kodu giriliyor: ${captchaCode}`);
+      const inputInfo = await page.evaluate(el => ({
+        placeholder: el.placeholder || '',
+        name: el.name || '',
+        id: el.id || '',
+        value: el.value || ''
+      }), captchaInput);
+      console.log(`  [LOGIN] CAPTCHA kodu giriliyor: ${captchaCode} → input(placeholder="${inputInfo.placeholder}" name="${inputInfo.name}" id="${inputInfo.id}")`);
+      await idataLog("login_captcha", `CAPTCHA input hedef: placeholder="${inputInfo.placeholder}" name="${inputInfo.name}" id="${inputInfo.id}"`);
       captchaTyped = await humanType(page, captchaInput, captchaCode, { minDelay: 140, maxDelay: 300, retries: 2 });
     }
 
     if (!captchaTyped) {
       console.log(`  [LOGIN] ⚠ CAPTCHA input fallback (evaluate) kullanılıyor`);
       await page.evaluate((code) => {
-        // Captcha input bul ve doldur
-        const byAttr = document.querySelector('input[name*="captcha" i], input[id*="captcha" i], input[placeholder*="captcha" i]');
-        const allInputs = Array.from(document.querySelectorAll('input[type="text"]'));
-        const target = byAttr || allInputs[allInputs.length - 1];
+        // Placeholder "Doğrulama" ile bul
+        const byPlaceholder = document.querySelector('input[placeholder*="oğrulama" i], input[placeholder*="Dogrulama" i], input[placeholder*="captcha" i]');
+        const byAttr = document.querySelector('input[name*="captcha" i], input[id*="captcha" i]');
+        const allInputs = Array.from(document.querySelectorAll('input[type="text"]:not([readonly])'));
+        const emptyInput = allInputs.reverse().find(inp => !inp.value.trim());
+        const target = byPlaceholder || byAttr || emptyInput || allInputs[0];
         if (target) {
           target.focus();
           target.value = '';
