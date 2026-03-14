@@ -64,7 +64,9 @@ async function loadProxySettingsFromDB() {
       if (map.proxy_country) EVOMI_PROXY_COUNTRY = map.proxy_country;
       if (map.proxy_host) EVOMI_PROXY_HOST = map.proxy_host;
       if (map.proxy_port) EVOMI_PROXY_PORT = Number(map.proxy_port);
-      if (map.proxy_region !== undefined) { EVOMI_PROXY_REGION = map.proxy_region; DB_PROXY_REGION = map.proxy_region; }
+      // iDATA uses its own country/region settings, fallback to shared ones
+      if (map.idata_proxy_country) { EVOMI_PROXY_COUNTRY = map.idata_proxy_country; } else if (map.proxy_country) { EVOMI_PROXY_COUNTRY = map.proxy_country; }
+      if (map.idata_proxy_region !== undefined) { EVOMI_PROXY_REGION = map.idata_proxy_region; DB_PROXY_REGION = map.idata_proxy_region; } else if (map.proxy_region !== undefined) { EVOMI_PROXY_REGION = map.proxy_region; DB_PROXY_REGION = map.proxy_region; }
       if (map.proxy_user) EVOMI_PROXY_USER = map.proxy_user;
       if (map.proxy_pass) EVOMI_PROXY_PASS = map.proxy_pass;
       if (map.captcha_provider) CAPTCHA_PROVIDER = map.captcha_provider.toLowerCase();
