@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   Play, Zap, OctagonX, Camera, TestTube, RotateCcw, ShieldAlert,
-  Loader2
+  Loader2, RefreshCw
 } from "lucide-react";
 import type { TrackingStatus } from "@/lib/constants";
 
