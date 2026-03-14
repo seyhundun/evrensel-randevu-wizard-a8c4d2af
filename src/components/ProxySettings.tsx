@@ -45,22 +45,20 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
 
   const loadData = async () => {
     if (!configId) return;
-    const { data: logs } = await supabase
+    // ip_change loglarından aktif IP'yi bul
+    const { data: ipLogs } = await supabase
       .from("tracking_logs")
       .select("message, created_at")
       .eq("config_id", configId)
+      .eq("status", "ip_change")
       .order("created_at", { ascending: false })
-      .limit(20);
-    if (logs) {
-      for (const log of logs) {
-        if (log.message?.includes("Aktif IP:")) {
-          const match = log.message.match(/Aktif IP:\s*([^\s|]+)/);
-          if (match && match[1]) {
-            setCurrentIp(match[1]);
-            setLastReset(log.created_at);
-            break;
-          }
-        }
+      .limit(1);
+    if (ipLogs && ipLogs.length > 0) {
+      const msg = ipLogs[0].message || "";
+      const match = msg.match(/Aktif IP:\s*([^\s|]+)/);
+      if (match && match[1]) {
+        setCurrentIp(match[1]);
+        setLastReset(ipLogs[0].created_at);
       }
     }
     loadCfStatus();
