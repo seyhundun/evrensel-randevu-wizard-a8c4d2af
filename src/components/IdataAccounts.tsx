@@ -199,15 +199,17 @@ export default function IdataAccounts() {
         setLoading(false);
         return;
       }
+      // Üyelik numarası varsa zaten kayıtlı — kayıt adımını atla, direkt aktif yap
+      const hasMembership = !!form.membership_number?.trim();
       const { error } = await supabase.from("idata_accounts" as any).insert({
         ...form,
-        registration_status: "pending",
+        registration_status: hasMembership ? "completed" : "pending",
         status: "active",
       } as any);
       if (error) {
         toast.error("Hesap eklenemedi: " + error.message);
       } else {
-        toast.success("iDATA kayıt talebi oluşturuldu!");
+        toast.success(hasMembership ? "Hesap eklendi — bot direkt giriş yapacak!" : "iDATA kayıt talebi oluşturuldu!");
         resetForm();
       }
     }
