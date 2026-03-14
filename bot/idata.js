@@ -112,6 +112,13 @@ function getNextIp() {
   return earliest;
 }
 
+function getProxyLabel(ip) {
+  if (PROXY_MODE === "residential" && EVOMI_PROXY_USER) {
+    return `residential (${EVOMI_PROXY_REGION || EVOMI_PROXY_COUNTRY})`;
+  }
+  return ip || "doğrudan";
+}
+
 function markIpBanned(ip) {
   if (!ip) return;
   ipBannedUntil.set(ip, Date.now() + IP_BAN_DURATION_MS);
@@ -1552,8 +1559,9 @@ async function mainLoop() {
           const ip = getNextIp();
           let browser, page;
           try {
-            console.log(`\n🔄 IP Rotasyonu: ${ip || "doğrudan"} (deneme ${attempt}/3)`);
-            await idataLog("login_start", `Giriş: ${account.email} | IP: ${ip || "doğrudan"} | Deneme: ${attempt}/3`);
+            const proxyLabel = getProxyLabel(ip);
+            console.log(`\n🔄 IP Rotasyonu: ${proxyLabel} (deneme ${attempt}/3)`);
+            await idataLog("login_start", `Giriş: ${account.email} | IP: ${proxyLabel} | Deneme: ${attempt}/3`);
             ({ browser, page } = await launchBrowser(ip));
             
             const loginResult = await loginToIdata(page, account);
@@ -1610,7 +1618,7 @@ async function mainLoop() {
               success = true; // CF dışı hata
             }
           } catch (err) {
-            await idataLog("error", `Hata: ${err.message} | IP: ${ip || "doğrudan"} | Deneme: ${attempt}`);
+            await idataLog("error", `Hata: ${err.message} | IP: ${getProxyLabel(ip)} | Deneme: ${attempt}`);
             if (ip) markIpBanned(ip);
           } finally {
             try { if (browser) await browser.close(); } catch {}
