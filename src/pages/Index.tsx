@@ -131,6 +131,7 @@ const Index = () => {
                   setPersonCount={t.setPersonCount}
                 />
                 <VfsAccounts />
+                <BotSettingsPanel />
                 <TrackingLogs configId={t.configId} />
               </div>
             </div>

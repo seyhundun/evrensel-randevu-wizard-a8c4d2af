@@ -97,7 +97,7 @@ export default function ControlPanel({
             <SelectValue placeholder="Ülke seçin" />
           </SelectTrigger>
           <SelectContent>
-            {COUNTRIES.map((c) => (
+            {dynCountries.map((c) => (
               <SelectItem key={c.value} value={c.value}>
                 <span className="flex items-center gap-2">
                   <span>{c.flag}</span>
