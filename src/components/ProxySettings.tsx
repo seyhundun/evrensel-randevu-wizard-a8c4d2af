@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Network, Shield, Clock, Globe } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Network, Shield, Clock, Globe, Zap, Loader2, CheckCircle2, XCircle, Copy } from "lucide-react";
+import { toast } from "sonner";
 
 interface ProxySettingsProps {
   configId: string | null;
@@ -16,6 +18,8 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
   const [cfStatus, setCfStatus] = useState<{ blocked: boolean; ip: string | null; since: string | null }>({
     blocked: false, ip: null, since: null,
   });
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; ip?: string | null; message?: string; curl_test?: string; config?: any } | null>(null);
 
   useEffect(() => {
     loadBotSettings();
@@ -77,6 +81,34 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
     }
   };
 
+  const testProxy = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("proxy-test");
+      if (error) throw error;
+      setTestResult(data);
+      if (data?.ip) {
+        toast.success(`Proxy çalışıyor! IP: ${data.ip}`);
+      } else if (data?.ok) {
+        toast.info("Yapılandırma doğru, sunucudan test edin");
+      } else {
+        toast.error(data?.error || "Test başarısız");
+      }
+    } catch (err: any) {
+      setTestResult({ ok: false, message: err.message });
+      toast.error("Proxy test hatası: " + err.message);
+    }
+    setTesting(false);
+  };
+
+  const copyCurl = () => {
+    if (testResult?.curl_test) {
+      navigator.clipboard.writeText(testResult.curl_test);
+      toast.success("Curl komutu kopyalandı");
+    }
+  };
+
   const rows = [
     { label: "Aktif IP", value: currentIp || "—", icon: <Network className="w-3.5 h-3.5" /> },
     {
@@ -94,11 +126,23 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Proxy & Bot Ayarları</h3>
-        {cfStatus.blocked && (
-          <Badge className="bg-destructive/10 text-destructive border-destructive/30 text-[10px] hover:bg-destructive/10">
-            CF Engeli
-          </Badge>
-        )}
+        <div className="flex items-center gap-1.5">
+          {cfStatus.blocked && (
+            <Badge className="bg-destructive/10 text-destructive border-destructive/30 text-[10px] hover:bg-destructive/10">
+              CF Engeli
+            </Badge>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 text-[10px] gap-1 px-2"
+            onClick={testProxy}
+            disabled={testing}
+          >
+            {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+            {testing ? "Test..." : "Proxy Test"}
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-2.5">
@@ -114,6 +158,57 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
           </div>
         ))}
       </div>
+
+      {/* Proxy Test Result */}
+      {testResult && (
+        <div className={`rounded-md border p-2.5 space-y-1.5 ${
+          testResult.ok 
+            ? testResult.ip 
+              ? "bg-emerald-500/5 border-emerald-500/20" 
+              : "bg-amber-500/5 border-amber-500/20"
+            : "bg-destructive/5 border-destructive/20"
+        }`}>
+          <div className="flex items-center gap-1.5">
+            {testResult.ok ? (
+              testResult.ip ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              ) : (
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+              )
+            ) : (
+              <XCircle className="w-3.5 h-3.5 text-destructive" />
+            )}
+            <span className={`text-[11px] font-medium ${
+              testResult.ok 
+                ? testResult.ip ? "text-emerald-600" : "text-amber-600"
+                : "text-destructive"
+            }`}>
+              {testResult.ip 
+                ? `Proxy aktif — IP: ${testResult.ip}` 
+                : testResult.ok 
+                  ? "Yapılandırma doğru" 
+                  : testResult.message || "Test başarısız"}
+            </span>
+          </div>
+
+          {testResult.config && (
+            <div className="text-[10px] text-muted-foreground space-y-0.5">
+              <p>Host: {testResult.config.host}:{testResult.config.port}</p>
+              <p>Ülke: {testResult.config.country} | User: {testResult.config.user}</p>
+            </div>
+          )}
+
+          {testResult.curl_test && (
+            <button
+              onClick={copyCurl}
+              className="flex items-center gap-1 text-[10px] text-primary hover:underline mt-1"
+            >
+              <Copy className="w-3 h-3" />
+              Sunucu curl komutunu kopyala
+            </button>
+          )}
+        </div>
+      )}
 
       {cfStatus.blocked && cfStatus.ip && (
         <div className="rounded-md bg-destructive/5 border border-destructive/20 p-2.5">
