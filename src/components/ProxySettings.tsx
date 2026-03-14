@@ -18,6 +18,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
   const [cfStatus, setCfStatus] = useState<{ blocked: boolean; ip: string | null; since: string | null }>({
     blocked: false, ip: null, since: null,
   });
+  const [proxyEnabled, setProxyEnabled] = useState(true);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; ip?: string | null; message?: string; curl_test?: string; config?: any } | null>(null);
 
