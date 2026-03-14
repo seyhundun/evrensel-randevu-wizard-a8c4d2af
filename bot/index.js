@@ -11,8 +11,8 @@ require("dotenv").config();
 const PROXY_MODE = (process.env.PROXY_MODE || "residential").toLowerCase();
 let EVOMI_PROXY_HOST = process.env.EVOMI_PROXY_HOST || "core-residential.evomi-proxy.com";
 let EVOMI_PROXY_PORT = Number(process.env.EVOMI_PROXY_PORT || 1000);
-const EVOMI_PROXY_USER = process.env.EVOMI_PROXY_USER || "";
-const EVOMI_PROXY_PASS = process.env.EVOMI_PROXY_PASS || "";
+let EVOMI_PROXY_USER = process.env.EVOMI_PROXY_USER || "";
+let EVOMI_PROXY_PASS = process.env.EVOMI_PROXY_PASS || "";
 let EVOMI_PROXY_COUNTRY = process.env.EVOMI_PROXY_COUNTRY || "TR";
 let EVOMI_PROXY_REGION = process.env.EVOMI_PROXY_REGION || "";
 
