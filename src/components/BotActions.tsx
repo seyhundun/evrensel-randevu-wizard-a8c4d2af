@@ -87,6 +87,13 @@ export default function BotActions({
       className: "bg-amber-500 text-white hover:bg-amber-600",
     },
     {
+      label: "IP Değiştir",
+      icon: changingIp ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />,
+      onClick: changeIp,
+      disabled: !isActive || changingIp,
+      className: "bg-cyan-600 text-white hover:bg-cyan-700",
+    },
+    {
       label: "Screenshot Al",
       icon: requesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />,
       onClick: requestScreenshot,
