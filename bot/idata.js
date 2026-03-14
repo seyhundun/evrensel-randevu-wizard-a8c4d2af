@@ -1574,11 +1574,16 @@ async function mainLoop() {
         
         for (let attempt = 1; attempt <= 3 && !success; attempt++) {
           const ip = getNextIp();
+          // Residential modda her denemede bölge rotasyonu yap
+          if (PROXY_MODE === "residential") {
+            residentialSessionId++;
+            EVOMI_PROXY_REGION = getNextProxyRegion();
+          }
           let browser, page;
           try {
             const proxyLabel = getProxyLabel(ip);
-            console.log(`\n🔄 IP Rotasyonu: ${proxyLabel} (deneme ${attempt}/3)`);
-            await idataLog("login_start", `Giriş: ${account.email} | IP: ${proxyLabel} | Deneme: ${attempt}/3`);
+            console.log(`\n🔄 IP Rotasyonu: ${proxyLabel} | Bölge: ${EVOMI_PROXY_REGION || 'yok'} (deneme ${attempt}/3)`);
+            await idataLog("login_start", `Giriş: ${account.email} | IP: ${proxyLabel} | Bölge: ${EVOMI_PROXY_REGION || 'yok'} | Deneme: ${attempt}/3`);
             ({ browser, page } = await launchBrowser(ip));
             
             const loginResult = await loginToIdata(page, account);
