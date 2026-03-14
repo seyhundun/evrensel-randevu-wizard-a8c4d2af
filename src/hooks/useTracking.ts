@@ -42,6 +42,7 @@ export function useTracking() {
         setCountry(cfg.country);
         setCity(cfg.city);
         setVisaCategory(cfg.visa_category ?? "");
+        setVisaSubcategory(cfg.visa_subcategory ?? "");
         setPersonCount(cfg.person_count);
         setIntervalValue(cfg.check_interval);
         setKeepAlive(cfg.keep_alive);
