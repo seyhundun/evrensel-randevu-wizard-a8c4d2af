@@ -28,6 +28,8 @@ console.log(`🔐 CAPTCHA Provider: ${CAPTCHA_PROVIDER}`);
 console.log(`🔐 2captcha API key: ${CONFIG.CAPTCHA_API_KEY ? `var (${CONFIG.CAPTCHA_API_KEY.length} karakter)` : "yok"}`);
 if (CAPSOLVER_API_KEY) console.log(`🔐 Capsolver API key: var (${CAPSOLVER_API_KEY.length} karakter)`);
 
+// Proxy açık/kapalı (dashboard'dan kontrol edilir)
+let PROXY_ENABLED = true;
 // ==================== PROXY CONFIG ====================
 const PROXY_MODE = (process.env.PROXY_MODE || "residential").toLowerCase();
 let EVOMI_PROXY_HOST = process.env.EVOMI_PROXY_HOST || "core-residential.evomi-proxy.com";

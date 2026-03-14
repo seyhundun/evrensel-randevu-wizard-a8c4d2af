@@ -7,6 +7,8 @@
 require("dotenv").config();
 
 // ==================== PROXY CONFIG ====================
+// Proxy açık/kapalı (dashboard'dan kontrol edilir)
+let PROXY_ENABLED = true;
 // Proxy modu: "datacenter" (varsayılan, microsocks SOCKS5) veya "residential" (Evomi HTTP)
 const PROXY_MODE = (process.env.PROXY_MODE || "residential").toLowerCase();
 let EVOMI_PROXY_HOST = process.env.EVOMI_PROXY_HOST || "core-residential.evomi-proxy.com";
