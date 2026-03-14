@@ -1501,8 +1501,6 @@ async function mainLoop() {
   console.log("\n🔄 iDATA Ana döngü başlıyor...");
   await idataLog("bot_start", "iDATA botu başlatıldı");
 
-  let scrapeCounter = 0;
-  let cityOfficesScraped = false;
 
   while (true) {
     try {
@@ -1517,26 +1515,8 @@ async function mainLoop() {
         continue;
       }
 
-      // Şehir-ofis eşleşmelerini çek (sadece DB'de hiç veri yoksa)
-      if (!cityOfficesScraped) {
-        try {
-          const checkRes = await fetch(
-            "https://ocrpzwrsyiprfuzsyivf.supabase.co/rest/v1/idata_city_offices?select=id&limit=1",
-            { headers: { apikey: CONFIG.API_KEY, "Content-Type": "application/json" } }
-          );
-          const existing = await checkRes.json();
-          if (Array.isArray(existing) && existing.length > 0) {
-            console.log("  [SCRAPE] ✅ Şehir-ofis verileri DB'de mevcut, scrape atlanıyor");
-            cityOfficesScraped = true;
-          } else {
-            await idataLog("info", "Şehir-ofis eşleşmeleri çekiliyor...");
-            cityOfficesScraped = await scrapeCityOffices();
-          }
-        } catch (e) {
-          console.log("  [SCRAPE] ⚠ DB kontrol hatası, scrape atlanıyor:", e.message);
-          cityOfficesScraped = true; // Hata durumunda scrape'i atla, login'e geç
-        }
-      }
+      // Otomatik şehir-ofis scrape kapatıldı:
+      // Register sayfasına SADECE kayıt talebi (pending) varsa girilecek.
 
       // 1. Bekleyen kayıtları işle
       const pendingData = await apiPost({ action: "get_idata_pending_registrations" }, "check_pending");
@@ -1663,12 +1643,6 @@ async function mainLoop() {
         await idataLog("info", "Aktif hesap yok, bekleniyor");
       }
 
-      // 3. Her 50 döngüde bir şehir-ofis eşleşmelerini güncelle
-      scrapeCounter++;
-      if (scrapeCounter >= 50) {
-        await scrapeCityOffices();
-        scrapeCounter = 0;
-      }
 
       const waitSec = CONFIG.CHECK_INTERVAL_MS / 1000;
       await idataLog("bot_idle", `${waitSec}s bekleniyor...`);
