@@ -56,7 +56,11 @@ async function loadProxySettingsFromDB() {
     const settings = await res.json();
     if (Array.isArray(settings)) {
       const map = Object.fromEntries(settings.map(s => [s.key, s.value]));
-      if (map.proxy_enabled !== undefined) PROXY_ENABLED = map.proxy_enabled !== "false";
+      if (map.proxy_enabled !== undefined) {
+        const rawProxyEnabled = map.proxy_enabled;
+        const normalized = String(rawProxyEnabled).trim().toLowerCase();
+        PROXY_ENABLED = !(rawProxyEnabled === false || normalized === "false" || normalized === "0");
+      }
       if (map.proxy_country) EVOMI_PROXY_COUNTRY = map.proxy_country;
       if (map.proxy_host) EVOMI_PROXY_HOST = map.proxy_host;
       if (map.proxy_port) EVOMI_PROXY_PORT = Number(map.proxy_port);
