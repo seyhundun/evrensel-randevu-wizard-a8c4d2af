@@ -505,8 +505,22 @@ async function isWaitingRoomPage(page) {
   return await page.evaluate(() => {
     const title = (document.title || "").toLowerCase();
     const body = (document.body?.innerText || "").toLowerCase();
-    return title.includes("waiting room") || body.includes("şu anda sıradasınız") ||
-      body.includes("tahmini bekleme süreniz") || body.includes("this page will auto refresh") ||
+    const url = (window.location.href || "").toLowerCase();
+
+    const isNotFoundLike =
+      url.includes("page-not-found") ||
+      url.includes("/404") ||
+      title.includes("bir şeyler ters gitti") ||
+      title.includes("üzgünüm") ||
+      body.includes("bir şeyler ters gitti") ||
+      body.includes("sorry, something went wrong");
+
+    if (isNotFoundLike) return false;
+
+    return title.includes("waiting room") ||
+      body.includes("şu anda sıradasınız") ||
+      body.includes("tahmini bekleme süreniz") ||
+      body.includes("this page will auto refresh") ||
       body.includes("bu sayfa otomatik olarak yenilenecektir");
   });
 }
