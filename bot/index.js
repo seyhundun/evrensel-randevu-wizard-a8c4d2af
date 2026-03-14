@@ -1520,13 +1520,13 @@ async function launchBrowser(proxyIp = null) {
 async function checkAppointments(config, account) {
   const { id, country, city } = config;
   const ts = new Date().toLocaleTimeString("tr-TR");
-  // Her kontrolde sıradaki IP'yi kullan (round-robin)
-  const activeIp = IP_LIST.length > 0 ? getNextIp() : null;
+  // Her kontrolde sıradaki IP'yi kullan (datacenter) veya residential proxy
+  const activeIp = (PROXY_MODE !== "residential" && IP_LIST.length > 0) ? getNextIp() : null;
   const countryLabels = { france: "Fransa", netherlands: "Hollanda", denmark: "Danimarka" };
   const countryLabel = countryLabels[country] || country;
-  console.log(`\n[${ts}] Kontrol: ${countryLabel} ${city} | Hesap: ${account.email} | IP: ${activeIp || "doğrudan"}`);
-  await logStep(id, "bot_start", `Kontrol başlıyor | ${account.email} | Ülke: ${countryLabel} | IP: ${activeIp || "doğrudan"}`);
-  await logStep(id, "ip_change", `Aktif IP: ${activeIp || "doğrudan"} | Hesap: ${account.email} | Ülke: ${countryLabel}`);
+  const proxyLabel = PROXY_MODE === "residential" ? "residential proxy" : (activeIp || "doğrudan");
+  console.log(`\n[${ts}] Kontrol: ${countryLabel} ${city} | Hesap: ${account.email} | ${proxyLabel}`);
+  await logStep(id, "bot_start", `Kontrol başlıyor | ${account.email} | Ülke: ${countryLabel} | ${proxyLabel}`);
 
   let browser;
   try {
@@ -1535,6 +1535,17 @@ async function checkAppointments(config, account) {
     browser = br;
     await applyFingerprint(page, fp);
     await humanMove(page);
+
+    // Gerçek IP'yi kontrol et ve logla
+    let realIp = "bilinmiyor";
+    try {
+      const ipPage = await browser.newPage();
+      await ipPage.goto("https://ip.evomi.com/s", { waitUntil: "networkidle2", timeout: 10000 });
+      realIp = (await ipPage.evaluate(() => document.body.innerText)).trim();
+      await ipPage.close();
+    } catch (e) { console.warn("  [IP] IP kontrolü başarısız:", e.message); }
+    console.log(`  [IP] 🌐 Gerçek IP: ${realIp}`);
+    await logStep(id, "ip_change", `Aktif IP: ${realIp} | Hesap: ${account.email} | Ülke: ${countryLabel}`);
 
     // STEP 1: Giriş sayfası
     console.log("  [1/6] Giriş sayfası...");
