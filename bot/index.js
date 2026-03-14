@@ -11,7 +11,7 @@ require("dotenv").config();
 let PROXY_ENABLED = true;
 // Proxy modu: "datacenter" (varsayılan, microsocks SOCKS5) veya "residential" (Evomi HTTP)
 const PROXY_MODE = (process.env.PROXY_MODE || "residential").toLowerCase();
-let EVOMI_PROXY_HOST = process.env.EVOMI_PROXY_HOST || "core-residential.evomi-proxy.com";
+let EVOMI_PROXY_HOST = process.env.EVOMI_PROXY_HOST || "rp.evomi.com";
 let EVOMI_PROXY_PORT = Number(process.env.EVOMI_PROXY_PORT || 1000);
 let EVOMI_PROXY_USER = process.env.EVOMI_PROXY_USER || "";
 let EVOMI_PROXY_PASS = process.env.EVOMI_PROXY_PASS || "";
