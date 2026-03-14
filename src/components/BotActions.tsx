@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   Play, Zap, OctagonX, Camera, TestTube, RotateCcw, ShieldAlert,
-  Loader2
+  Loader2, RefreshCw
 } from "lucide-react";
 import type { TrackingStatus } from "@/lib/constants";
 
@@ -28,6 +28,7 @@ export default function BotActions({
 }: BotActionsProps) {
   const [requesting, setRequesting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [changingIp, setChangingIp] = useState(false);
   const isActive = status === "searching";
 
   const requestScreenshot = async () => {
@@ -52,6 +53,17 @@ export default function BotActions({
     setTimeout(() => setRetrying(false), 3000);
   };
 
+  const changeIp = async () => {
+    if (!configId) { toast.error("Aktif görev yok"); return; }
+    setChangingIp(true);
+    await supabase
+      .from("tracking_configs")
+      .update({ cf_retry_requested: true, cf_blocked_since: null, cf_blocked_ip: null } as any)
+      .eq("id", configId);
+    toast.success("🔄 IP değiştirme talebi gönderildi, bot yeni IP ile devam edecek");
+    setTimeout(() => setChangingIp(false), 3000);
+  };
+
   const actions = [
     {
       label: "Başlat",
@@ -73,6 +85,13 @@ export default function BotActions({
       onClick: retryCf,
       disabled: !isActive || retrying,
       className: "bg-amber-500 text-white hover:bg-amber-600",
+    },
+    {
+      label: "IP Değiştir",
+      icon: changingIp ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />,
+      onClick: changeIp,
+      disabled: !isActive || changingIp,
+      className: "bg-cyan-600 text-white hover:bg-cyan-700",
     },
     {
       label: "Screenshot Al",
