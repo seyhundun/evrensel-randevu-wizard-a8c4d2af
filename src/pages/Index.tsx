@@ -129,6 +129,10 @@ const Index = () => {
                       />
                     </SidebarSection>
 
+                    <SidebarSection icon={<Monitor className="w-3.5 h-3.5" />} title="Canlı Ekran (VNC)" defaultOpen={false}>
+                      <VncViewer title="VFS Bot Ekranı" defaultPort={6080} />
+                    </SidebarSection>
+
                     <SidebarSection icon={<Settings className="w-3.5 h-3.5" />} title="Bot & Ülke Ayarları">
                       <BotSettingsPanel />
                     </SidebarSection>
