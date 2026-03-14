@@ -1517,10 +1517,25 @@ async function mainLoop() {
         continue;
       }
 
-      // İlk başta şehir-ofis eşleşmelerini çek
+      // Şehir-ofis eşleşmelerini çek (sadece DB'de hiç veri yoksa)
       if (!cityOfficesScraped) {
-        await idataLog("info", "Şehir-ofis eşleşmeleri çekiliyor...");
-        cityOfficesScraped = await scrapeCityOffices();
+        try {
+          const checkRes = await fetch(
+            "https://ocrpzwrsyiprfuzsyivf.supabase.co/rest/v1/idata_city_offices?select=id&limit=1",
+            { headers: { apikey: CONFIG.API_KEY, "Content-Type": "application/json" } }
+          );
+          const existing = await checkRes.json();
+          if (Array.isArray(existing) && existing.length > 0) {
+            console.log("  [SCRAPE] ✅ Şehir-ofis verileri DB'de mevcut, scrape atlanıyor");
+            cityOfficesScraped = true;
+          } else {
+            await idataLog("info", "Şehir-ofis eşleşmeleri çekiliyor...");
+            cityOfficesScraped = await scrapeCityOffices();
+          }
+        } catch (e) {
+          console.log("  [SCRAPE] ⚠ DB kontrol hatası, scrape atlanıyor:", e.message);
+          cityOfficesScraped = true; // Hata durumunda scrape'i atla, login'e geç
+        }
       }
 
       // 1. Bekleyen kayıtları işle
