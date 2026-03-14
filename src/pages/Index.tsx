@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { LogOut, Clock, PanelLeftClose, PanelLeft, Network, Globe, Settings } from "lucide-react";
+import { LogOut, Clock, PanelLeftClose, PanelLeft, Network, Globe, Settings, BookOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import ControlPanel from "@/components/ControlPanel";
@@ -52,6 +53,7 @@ function SidebarSection({ icon, title, defaultOpen = false, children }: { icon: 
 const Index = () => {
   const t = useTracking();
   const { signOut } = useAuth();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
@@ -70,10 +72,16 @@ const Index = () => {
           <h1 className="text-base font-bold tracking-tight">🛂 Randevu Takip Sistemi</h1>
           <LiveClock />
         </div>
-        <Button variant="ghost" size="sm" onClick={signOut} className="gap-1.5 text-muted-foreground text-xs">
-          <LogOut className="w-3.5 h-3.5" />
-          Çıkış
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/guide")} className="gap-1.5 text-muted-foreground text-xs">
+            <BookOpen className="w-3.5 h-3.5" />
+            Kılavuz
+          </Button>
+          <Button variant="ghost" size="sm" onClick={signOut} className="gap-1.5 text-muted-foreground text-xs">
+            <LogOut className="w-3.5 h-3.5" />
+            Çıkış
+          </Button>
+        </div>
       </header>
 
       <Tabs defaultValue="vfs" className="flex-1 flex flex-col min-h-0">
