@@ -171,7 +171,7 @@ const VncViewer = ({ title, defaultHost = "vnc.fipacomputer.online", pathPrefix 
               key={iframeKey}
               src={vncUrl}
               className="w-full border-0"
-              style={{ height: isFullscreen ? "100vh" : "400px" }}
+              style={{ height: isFullscreen ? "100vh" : "600px" }}
               allow="clipboard-read; clipboard-write"
               sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
               onError={() => setIsConnected(false)}
