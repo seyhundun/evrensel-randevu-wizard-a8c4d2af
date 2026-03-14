@@ -1738,7 +1738,8 @@ async function loginToIdata(page, account) {
     const otpByNewInput = !otpNeeded && otpDetection.byModal;
 
     if (otpNeeded || otpByNewInput) {
-      console.log(`  [LOGIN] 📧 Mail doğrulama kodu gerekiyor! (tespit: ${otpNeeded ? 'text' : 'modal'})`);
+      const detectMethod = otpDetection.byInput ? `input(${otpDetection.inputPlaceholder})` : otpDetection.byText ? 'text' : 'modal';
+      console.log(`  [LOGIN] 📧 Mail doğrulama kodu gerekiyor! (tespit: ${detectMethod})`);
       
       // "Tamam" / "OK" butonuna tıkla (popup'ı kapat — eğer varsa)
       await page.evaluate(() => {
