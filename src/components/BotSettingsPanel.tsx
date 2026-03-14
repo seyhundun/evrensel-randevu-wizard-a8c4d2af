@@ -110,6 +110,7 @@ export default function BotSettingsPanel() {
       { key: "captcha_provider", label: "Captcha Provider" },
       { key: "capsolver_api_key", label: "Capsolver API Key" },
       { key: "captcha_api_key", label: "2Captcha API Key" },
+      { key: "ip_rotation_interval", label: "IP Rotasyon Süresi (dk)" },
     ];
 
     for (const { key, label } of keys) {
