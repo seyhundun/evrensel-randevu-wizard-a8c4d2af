@@ -353,7 +353,8 @@ async function clearCfBlocked() {
 
 
 async function solveImageCaptcha(page) {
-  if (!CONFIG.CAPTCHA_API_KEY) {
+  const hasAnyCaptchaKey = CONFIG.CAPTCHA_API_KEY || CAPSOLVER_API_KEY;
+  if (!hasAnyCaptchaKey) {
     console.log("  [CAPTCHA] ⚠ API key yok, CAPTCHA çözülemez!");
     return null;
   }
