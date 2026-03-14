@@ -176,14 +176,32 @@ const Index = () => {
 
         {/* ========== iDATA TAB ========== */}
         <TabsContent value="idata" className="mt-0 flex-1 min-h-0">
-          <div className="h-[calc(100vh-105px)]">
-            <ScrollArea className="h-full">
-              <main className="p-4 md:p-6 lg:p-8 space-y-6 max-w-6xl mx-auto">
-                <IdataControlPanel />
-                <IdataAccounts />
-                <IdataTrackingLogs />
-              </main>
-            </ScrollArea>
+          <div className="flex h-[calc(100vh-105px)]">
+            {/* LEFT SIDEBAR */}
+            {sidebarOpen && (
+              <aside className="w-[320px] shrink-0 border-r border-border bg-card/50">
+                <ScrollArea className="h-full">
+                  <div className="p-3 space-y-1">
+                    <SidebarSection icon={<Settings className="w-3.5 h-3.5" />} title="iDATA Kontrol Paneli" defaultOpen>
+                      <IdataControlPanel />
+                    </SidebarSection>
+                    <SidebarSection icon={<Globe className="w-3.5 h-3.5" />} title="Bot & Ülke Ayarları">
+                      <BotSettingsPanel />
+                    </SidebarSection>
+                  </div>
+                </ScrollArea>
+              </aside>
+            )}
+
+            {/* MAIN CONTENT */}
+            <main className="flex-1 min-w-0">
+              <ScrollArea className="h-full">
+                <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-6xl">
+                  <IdataAccounts />
+                  <IdataTrackingLogs />
+                </div>
+              </ScrollArea>
+            </main>
           </div>
         </TabsContent>
       </Tabs>
