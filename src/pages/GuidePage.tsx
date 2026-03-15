@@ -298,7 +298,7 @@ pm2 describe idata-bot | grep -A5 "env"`}
           />
           <CopyBlock
             label="Port kontrolü (VNC/noVNC)"
-            command={`ss -tlnp | grep -E "5999|5998|6080|6081"`}
+            command={`ss -tlnp | grep -E "5900|5901|6080|6081"`}
           />
           <CopyBlock
             label="Sunucu IP kontrolü"
