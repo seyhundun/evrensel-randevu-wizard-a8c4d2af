@@ -3411,211 +3411,91 @@ async function bookEarliestAppointment(page, account) {
     console.log(`  [BOOK] Step 5 İLERİ: ${JSON.stringify(step5Ileri)}`);
     
     if (step5Ileri.clicked) {
-      await delay(3000, 5000);
-      
-      // "Bir Randevu Tarihi ve Saati Seçiniz" veya "Başka bir tarih seçin" uyarısını döngüyle kontrol et
-      const MAX_DATE_RETRIES = 10;
-      const triedDays = new Set();
-      if (dateSelected?.day) triedDays.add(dateSelected.day);
-      
-      for (let dateRetry = 0; dateRetry < MAX_DATE_RETRIES; dateRetry++) {
-        // Uyarı popup'ı var mı kontrol et
-        const warningPopup = await page.evaluate(() => {
+      await delay(700, 1400);
+
+      // Uyarı her çıktığında: HEMEN TAMAM -> HEMEN İLERİ
+      const MAX_WARNING_RETRIES = 12;
+      for (let warningRetry = 0; warningRetry < MAX_WARNING_RETRIES; warningRetry++) {
+        const warningState = await page.evaluate(() => {
           const body = (document.body?.innerText || "").toLowerCase();
-          const hasWarning = body.includes("bir randevu tarihi ve saati seçiniz") || 
-                            body.includes("randevu tarihi ve saati") ||
-                            body.includes("tarih ve saat seçiniz") ||
-                            body.includes("lütfen başka bir tarih seçin") ||
-                            body.includes("başka bir tarih") ||
-                            body.includes("lütfen başka bir tarih");
-          return { hasWarning };
-        });
-        
-        if (!warningPopup.hasWarning) {
-          console.log(`  [BOOK] ✅ Tarih/saat uyarısı yok, devam ediliyor (retry ${dateRetry})`);
-          break;
-        }
-        
-        console.log(`  [BOOK] ⚠️ Tarih/Saat uyarısı tespit edildi! Retry ${dateRetry + 1}/${MAX_DATE_RETRIES}`);
-        const ssWarn = await takeScreenshotBase64(page);
-        await idataLog("appt_warning_retry", `⚠️ Tarih/Saat uyarısı! Retry ${dateRetry + 1}/${MAX_DATE_RETRIES} | Denenmiş: [${[...triedDays].join(",")}] | Hesap: ${account.email}`, ssWarn);
-        
-        // 1) TAMAM/OK/KAPAT butonuna bas — uyarıyı kapat
-        await page.evaluate(() => {
-          const closeButtons = document.querySelectorAll('.swal2-confirm, .swal2-close, .modal .btn, button');
-          for (const btn of closeButtons) {
-            const txt = (btn.innerText || "").trim().toUpperCase();
-            if (txt === "TAMAM" || txt === "OK" || txt === "KAPAT") { btn.click(); break; }
-          }
-        });
-        console.log(`  [BOOK] 🔘 TAMAM'a basıldı`);
-        
-        // İnsan gibi bekle — popup kapanması + düşünme süresi
-        await delay(2000, 3500);
-        
-        // 2) Takvim ikonuna tekrar tıkla
-        await page.evaluate(() => {
-          const inputs = Array.from(document.querySelectorAll("input"));
-          let targetInput = inputs.find(inp => {
-            const ph = (inp.placeholder || "").toLowerCase();
-            return (ph.includes("randevu tarih") || ph.includes("randevu tarihinizi")) && !ph.includes("seyahat");
-          });
-          if (!targetInput) {
-            targetInput = inputs.find(inp => {
-              const ph = (inp.placeholder || "").toLowerCase();
-              return ph.includes("tarih") && !ph.includes("seyahat");
-            });
-          }
-          if (targetInput) {
-            const parent = targetInput.closest(".input-group, .form-group, div");
-            if (parent) {
-              const icons = parent.querySelectorAll(
-                ".input-group-addon, .input-group-append, .input-group-text, " +
-                "span[class*='calendar'], i[class*='calendar'], .datepickerbutton"
-              );
-              for (const icon of icons) { icon.click(); return; }
-              const addon = parent.querySelector(".input-group-addon, .input-group-btn");
-              if (addon) { addon.click(); return; }
-            }
-            targetInput.click();
-            targetInput.focus();
-          }
-        });
-        
-        await delay(2000, 3000);
-        
-        // 3) Denenmiş günleri atlayarak bir sonraki yeşil günü seç (mouse ile insan gibi)
-        const skipDaysArr = [...triedDays];
-        const retryDateInfo = await page.evaluate((skipDays) => {
-          const calContainers = document.querySelectorAll(
-            ".datepicker, .datepicker-dropdown, .bootstrap-datetimepicker-widget, " +
-            ".datepicker-days, .flatpickr-calendar, .ui-datepicker, " +
-            "[class*='datepicker'], [class*='calendar'], table.table-condensed"
-          );
-          let allDays = [];
-          for (const cal of calContainers) {
-            const style = window.getComputedStyle(cal);
-            if (style.display === "none" || style.visibility === "hidden") continue;
-            const tds = cal.querySelectorAll("td");
-            for (const d of tds) {
-              const text = (d.innerText || d.textContent || "").trim();
-              if (!/^\d{1,2}$/.test(text)) continue;
-              if (d.classList.contains("disabled") || d.classList.contains("off") || d.classList.contains("old")) continue;
-              const dayNum = parseInt(text);
-              const bgColor = window.getComputedStyle(d).backgroundColor;
-              const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-              let isGreen = false;
-              if (rgbMatch) {
-                const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
-                isGreen = g > 100 && g > r * 1.3 && g > b * 1.3;
-              }
-              if (d.classList.contains("bg-success") || d.classList.contains("success")) isGreen = true;
-              const rect = d.getBoundingClientRect();
-              allDays.push({ day: dayNum, isGreen, bgColor, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
-            }
-          }
-          const greenDays = allDays.filter(d => d.isGreen && !skipDays.includes(d.day)).sort((a, b) => a.day - b.day);
-          const pool = greenDays.length > 0 ? greenDays : allDays.filter(d => !skipDays.includes(d.day)).sort((a, b) => a.day - b.day);
-          if (pool.length > 0) {
-            const pick = pool.length > 1 ? pool[1] : pool[0];
-            return { found: true, day: pick.day, isGreen: pick.isGreen, x: pick.x, y: pick.y, remaining: pool.length - 1 };
-          }
-          return { found: false, remaining: 0 };
-        }, skipDaysArr);
-        
-        if (!retryDateInfo.found) {
-          console.log("  [BOOK] ❌ Tüm günler denendi, başka müsait gün kalmadı!");
-          await idataLog("appt_no_more_days", `❌ Tüm yeşil günler denendi, müsait gün kalmadı | Hesap: ${account.email}`, ssWarn);
-          break;
-        }
-        
-        // İnsan taklidi: takvimde rastgele mouse hareketi sonra güne tıkla
-        const rmCount = 3 + Math.floor(Math.random() * 3);
-        for (let rm = 0; rm < rmCount; rm++) {
-          await page.mouse.move(
-            retryDateInfo.x + (Math.random() - 0.5) * 200,
-            retryDateInfo.y + (Math.random() - 0.5) * 150
-          );
-          await delay(200, 800);
-        }
-        await page.mouse.move(retryDateInfo.x, retryDateInfo.y, { steps: 10 + Math.floor(Math.random() * 15) });
-        await delay(300, 700);
-        await page.mouse.click(retryDateInfo.x, retryDateInfo.y);
-        
-        console.log(`  [BOOK] 📅 Retry tarih seçildi: Gün ${retryDateInfo.day} (kalan: ${retryDateInfo.remaining})`);
-        triedDays.add(retryDateInfo.day);
-        
-        await delay(2000, 3000);
-        
-        // 4) Yeni saat seç (mouse ile insan gibi)
-        const retryTimeInfo = await page.evaluate(() => {
-          const candidates = Array.from(document.querySelectorAll("a, button, span, div, li, label"));
-          const timeButtons = [];
-          for (const el of candidates) {
-            const text = (el.innerText || el.textContent || "").trim();
-            const timeMatch = text.match(/^(\d{2}:\d{2})$/);
-            if (!timeMatch) continue;
-            const style = window.getComputedStyle(el);
-            if (style.display === "none" || style.visibility === "hidden" || !el.offsetParent) continue;
-            if (el.offsetHeight < 10) continue;
-            const bgColor = style.backgroundColor;
-            const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-            let isOrange = false;
-            if (rgbMatch) {
-              const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
-              isOrange = r > 180 && g > 80 && b < 100;
-            }
-            const cls = (el.className || "").toLowerCase();
-            if (cls.includes("btn-warning") || cls.includes("btn-orange") || cls.includes("active")) isOrange = true;
-            const rect = el.getBoundingClientRect();
-            timeButtons.push({ time: timeMatch[1], isOrange, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
-          }
-          const orangeButtons = timeButtons.filter(t => t.isOrange);
-          const target = orangeButtons.length > 0 ? orangeButtons[0] : (timeButtons.length > 0 ? timeButtons[0] : null);
-          return target ? { found: true, ...target } : { found: false };
-        });
-        
-        if (retryTimeInfo.found) {
-          // İnsan taklidi: saat butonunda rastgele mouse hareketi
-          const rmCount2 = 3 + Math.floor(Math.random() * 3);
-          for (let rm = 0; rm < rmCount2; rm++) {
-            await page.mouse.move(
-              retryTimeInfo.x + (Math.random() - 0.5) * 200,
-              retryTimeInfo.y + (Math.random() - 0.5) * 120
+          const popup = document.querySelector(".swal2-popup, .swal2-container, .modal.show, [role='dialog']");
+          const popupText = (popup?.textContent || "").toLowerCase();
+          const allText = `${body}\n${popupText}`;
+
+          const isDateWarning =
+            allText.includes("bir randevu tarihi ve saati seçiniz") ||
+            allText.includes("randevu tarihi ve saati") ||
+            allText.includes("tarih ve saat seçiniz") ||
+            allText.includes("lütfen başka bir tarih seçin") ||
+            allText.includes("başka bir tarih seçin");
+
+          let clickedOk = false;
+          if (isDateWarning) {
+            const btns = Array.from(
+              document.querySelectorAll("button, a, .swal2-confirm, [role='button'], input[type='button'], input[type='submit']")
             );
-            await delay(200, 800);
+            const okBtn = btns.find((b) => {
+              const txt = (b.innerText || b.value || b.textContent || "").trim().toUpperCase();
+              return txt === "TAMAM" || txt === "OK" || txt === "KAPAT" || txt === "ANLADIM";
+            });
+            if (okBtn) {
+              okBtn.click();
+              clickedOk = true;
+            }
           }
-          await page.mouse.move(retryTimeInfo.x, retryTimeInfo.y, { steps: 10 + Math.floor(Math.random() * 16) });
-          await delay(300, 700);
-          await page.mouse.click(retryTimeInfo.x, retryTimeInfo.y);
-          console.log(`  [BOOK] ⏰ Retry saat seçildi: ${retryTimeInfo.time}`);
-        } else {
-          console.log("  [BOOK] ⚠ Retry saat bulunamadı");
-        }
-        
-        await delay(2000, 3500);
-        
-        const ssRetry = await takeScreenshotBase64(page);
-        await idataLog("appt_retry_date_time", `🔄 Retry ${dateRetry + 1} | Gün ${retryDateInfo.day} | Saat: ${retryTimeInfo.found ? retryTimeInfo.time : "yok"} | Kalan: ${retryDateInfo.remaining} | Hesap: ${account.email}`, ssRetry);
-        
-        // 5) İLERİ'ye tekrar tıkla
-        await page.evaluate(() => {
-          const candidates = Array.from(document.querySelectorAll('a, button, input[type="submit"], input[type="button"]'));
-          const ileriBtn = candidates.find(el => {
-            const txt = (el.innerText || el.value || el.textContent || "").trim().toUpperCase();
-            return txt === "İLERİ" || txt === "ILERI";
-          });
-          if (ileriBtn) ileriBtn.click();
-          else {
-            const greenBtn = document.querySelector('.btn-success, a.btn-success');
-            if (greenBtn) greenBtn.click();
-          }
+
+          return { isDateWarning, clickedOk };
         });
-        console.log(`  [BOOK] ▶️ İLERİ'ye tekrar basıldı`);
-        
-        await delay(3000, 5000);
+
+        if (!warningState.isDateWarning) {
+          console.log(`  [BOOK] ✅ Tarih/saat uyarısı yok, devam ediliyor (deneme ${warningRetry})`);
+          break;
+        }
+
+        console.log(`  [BOOK] ⚠️ Tarih/Saat uyarısı tespit edildi! Hızlı retry ${warningRetry + 1}/${MAX_WARNING_RETRIES}`);
+        const ssWarn = await takeScreenshotBase64(page);
+        await idataLog(
+          "appt_warning_retry",
+          `⚠️ Tarih/Saat uyarısı! Hızlı retry ${warningRetry + 1}/${MAX_WARNING_RETRIES} | Aksiyon: TAMAM→İLERİ | Hesap: ${account.email}`,
+          ssWarn
+        );
+
+        await delay(150, 450);
+
+        const ileriRetry = await page.evaluate(() => {
+          const candidates = Array.from(
+            document.querySelectorAll("a, button, input[type='submit'], input[type='button'], [role='button']")
+          );
+          const ileriBtn = candidates.find((el) => {
+            const txt = (el.innerText || el.value || el.textContent || "").trim().toUpperCase();
+            return txt === "İLERİ" || txt === "ILERI" || txt === "DEVAM" || txt === "NEXT";
+          });
+
+          if (ileriBtn) {
+            ileriBtn.click();
+            return {
+              clicked: true,
+              text: (ileriBtn.innerText || ileriBtn.value || ileriBtn.textContent || "").trim(),
+            };
+          }
+
+          const greenBtn = document.querySelector(".btn-success, a.btn-success, button.btn-success");
+          if (greenBtn) {
+            greenBtn.click();
+            return {
+              clicked: true,
+              text: (greenBtn.innerText || greenBtn.value || greenBtn.textContent || "").trim(),
+              method: "green",
+            };
+          }
+
+          return { clicked: false };
+        });
+
+        console.log(`  [BOOK] ▶️ Hızlı İLERİ sonucu: ${JSON.stringify(ileriRetry)}`);
+        await delay(350, 900);
       }
-      
+
       // Normal popup kontrolü (diğer uyarılar)
       await page.evaluate(() => {
         const closeButtons = document.querySelectorAll('.swal2-confirm, .swal2-close, .modal .btn, button');
@@ -3624,7 +3504,7 @@ async function bookEarliestAppointment(page, account) {
           if (txt === "TAMAM" || txt === "OK" || txt === "KAPAT" || txt === "EVET") { btn.click(); break; }
         }
       });
-      await delay(2000, 3000);
+      await delay(700, 1200);
     }
 
     // ===== STEP 6+: Sonraki sayfaları döngüyle işle =====
