@@ -553,10 +553,12 @@ async function postQueueScreenshot(page, context, waitedSec, note = "Sıra bekle
   }
 }
 
-async function waitForLoginFormAfterQueue(page) {
+async function waitForLoginFormAfterQueue(page, loginUrl) {
   const startedAt = Date.now();
   let attempt = 0;
   let lastScreenshotAt = 0;
+  let notFoundRecoveries = 0;
+
   while (Date.now() - startedAt < CONFIG.QUEUE_MAX_WAIT_MS) {
     attempt++;
     const emailInput = await page.$('input[type="email"], input[name="email"], #email');
@@ -564,8 +566,53 @@ async function waitForLoginFormAfterQueue(page) {
       console.log(`  [QUEUE] ✅ Login formu hazır (${attempt}. deneme).`);
       return { ok: true };
     }
-    const waitingRoom = await isWaitingRoomPage(page);
+
+    const pageState = await page.evaluate(() => {
+      const title = (document.title || "").toLowerCase();
+      const body = (document.body?.innerText || "").toLowerCase();
+      const url = (window.location.href || "").toLowerCase();
+      return { title, body, url };
+    }).catch(() => ({ title: "", body: "", url: "" }));
+
     const waitedSec = Math.round((Date.now() - startedAt) / 1000);
+
+    const notFoundLike =
+      pageState.url.includes("page-not-found") ||
+      pageState.url.includes("/404") ||
+      pageState.title.includes("bir şeyler ters gitti") ||
+      pageState.title.includes("üzgünüm") ||
+      pageState.body.includes("bir şeyler ters gitti") ||
+      pageState.body.includes("sorry, something went wrong");
+
+    const sessionExpiredLike =
+      pageState.body.includes("oturum süresi doldu") ||
+      pageState.body.includes("oturum süresi dolmuş") ||
+      pageState.body.includes("session expired") ||
+      pageState.body.includes("oturumunuzun süresi") ||
+      (pageState.body.includes("oturum") && pageState.body.includes("geçersiz"));
+
+    if (notFoundLike || sessionExpiredLike) {
+      notFoundRecoveries += 1;
+      console.log(`  [QUEUE] ⚠ Not-found/session sayfasına düştü (${notFoundRecoveries}/3), login sayfasına dönülüyor...`);
+
+      if (Date.now() - lastScreenshotAt > 15000) {
+        await postQueueScreenshot(page, "QUEUE", waitedSec, "Not-found/session algılandı, login sayfasına dönülüyor");
+        lastScreenshotAt = Date.now();
+      }
+
+      if (notFoundRecoveries > 3) {
+        return { ok: false, reason: "Login sayfası yerine sürekli not-found/session sayfası açılıyor" };
+      }
+
+      if (loginUrl) {
+        await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
+        await delay(2500, 4500);
+        await solveTurnstile(page);
+        continue;
+      }
+    }
+
+    const waitingRoom = await isWaitingRoomPage(page);
     if (waitingRoom) {
       console.log(`  [QUEUE] Sırada bekleniyor... ${waitedSec}s`);
       if (Date.now() - lastScreenshotAt > 30000) {
@@ -1722,7 +1769,7 @@ async function checkAppointments(config, account) {
     await humanMove(page);
     await solveTurnstile(page);
     await delay(1000, 2000);
-    const queueResult = await waitForLoginFormAfterQueue(page);
+    const queueResult = await waitForLoginFormAfterQueue(page, vfsLoginUrl);
     if (!queueResult.ok) {
       banIpImmediately(activeIp, "queue_or_login_form_timeout");
       const ss = await takeScreenshotBase64(page);
