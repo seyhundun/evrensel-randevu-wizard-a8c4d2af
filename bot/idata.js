@@ -3505,16 +3505,112 @@ async function bookEarliestAppointment(page, account) {
           break;
         }
 
-        console.log(`  [BOOK] ⚠️ Tarih/Saat uyarısı tespit edildi! Hızlı retry ${warningRetry + 1}/${MAX_WARNING_RETRIES}`);
+        console.log(`  [BOOK] ⚠️ Tarih/Saat uyarısı tespit edildi! Retry ${warningRetry + 1}/${MAX_WARNING_RETRIES} — TAMAM→TARİH→SAAT→İLERİ`);
         const ssWarn = await takeScreenshotBase64(page);
         await idataLog(
           "appt_warning_retry",
-          `⚠️ Tarih/Saat uyarısı! Hızlı retry ${warningRetry + 1}/${MAX_WARNING_RETRIES} | Aksiyon: TAMAM→İLERİ | Hesap: ${account.email}`,
+          `⚠️ Tarih/Saat uyarısı! Retry ${warningRetry + 1}/${MAX_WARNING_RETRIES} | TAMAM→TARİH→SAAT→İLERİ | Hesap: ${account.email}`,
           ssWarn
         );
 
-        await delay(150, 450);
+        await delay(500, 1000);
 
+        // ===== TAMAM'dan sonra yeniden tarih seç (yeşil günün ortasından) =====
+        const retryDateInfo = await page.evaluate(() => {
+          const calContainers = document.querySelectorAll(
+            ".datepicker, .datepicker-dropdown, .bootstrap-datetimepicker-widget, " +
+            ".datepicker-days, .flatpickr-calendar, .ui-datepicker, " +
+            "[class*='datepicker'], [class*='calendar'], .picker-open, table.table-condensed"
+          );
+          let allDays = [];
+          for (const cal of calContainers) {
+            const style = window.getComputedStyle(cal);
+            if (style.display === "none" || style.visibility === "hidden") continue;
+            const tds = cal.querySelectorAll("td");
+            for (const d of tds) {
+              const text = (d.innerText || d.textContent || "").trim();
+              if (!/^\d{1,2}$/.test(text)) continue;
+              if (d.classList.contains("disabled") || d.classList.contains("off") || d.classList.contains("old")) continue;
+              const dayNum = parseInt(text);
+              const bgColor = window.getComputedStyle(d).backgroundColor;
+              const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+              let isGreen = false;
+              if (rgbMatch) {
+                const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
+                isGreen = g > 100 && g > r * 1.3 && g > b * 1.3;
+              }
+              if (d.classList.contains("bg-success") || d.classList.contains("success")) isGreen = true;
+              const rect = d.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                allDays.push({ day: dayNum, isGreen, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+              }
+            }
+          }
+          const greenDays = allDays.filter(d => d.isGreen).sort((a, b) => a.day - b.day);
+          const pool = greenDays.length > 0 ? greenDays : allDays;
+          // Rastgele yeşil gün seç (her seferinde farklı denemek için)
+          if (pool.length > 0) {
+            const idx = Math.floor(Math.random() * pool.length);
+            const target = pool[idx];
+            return { found: true, day: target.day, x: target.x, y: target.y, greenCount: greenDays.length };
+          }
+          return { found: false };
+        });
+
+        if (retryDateInfo.found) {
+          console.log(`  [BOOK] 📅 Retry tarih seçimi: Gün ${retryDateInfo.day} (${retryDateInfo.greenCount} yeşil)`);
+          await humanClick(page, retryDateInfo.x, retryDateInfo.y, { preMovesNear: true });
+          await delay(1500, 2500);
+        } else {
+          console.log(`  [BOOK] ⚠️ Retry'da takvimde gün bulunamadı`);
+        }
+
+        // ===== Yeniden saat seç =====
+        await delay(1000, 2000);
+        const retryTimeInfo = await page.evaluate(() => {
+          const candidates = Array.from(document.querySelectorAll("a, button, span, div, li, label, td"));
+          const timeButtons = [];
+          for (const el of candidates) {
+            const text = (el.innerText || el.textContent || "").trim();
+            const timeMatch = text.match(/^(\d{2}:\d{2})$/);
+            if (!timeMatch) continue;
+            const style = window.getComputedStyle(el);
+            const isVisible = style.display !== "none" && style.visibility !== "hidden" && el.offsetParent !== null;
+            if (!isVisible || el.offsetHeight < 10) continue;
+            const bgColor = style.backgroundColor;
+            const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            let isOrange = false;
+            if (rgbMatch) {
+              const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
+              isOrange = r > 180 && g > 80 && b < 100;
+            }
+            const cls = (el.className || "").toLowerCase();
+            if (cls.includes("btn-warning") || cls.includes("btn-orange") || cls.includes("active")) isOrange = true;
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              timeButtons.push({ time: timeMatch[1], isOrange, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+            }
+          }
+          const orangeButtons = timeButtons.filter(t => t.isOrange);
+          // Rastgele saat seç
+          const pool = orangeButtons.length > 0 ? orangeButtons : timeButtons;
+          if (pool.length > 0) {
+            const idx = Math.floor(Math.random() * pool.length);
+            return { found: true, ...pool[idx], totalSlots: timeButtons.length };
+          }
+          return { found: false };
+        });
+
+        if (retryTimeInfo.found) {
+          console.log(`  [BOOK] ⏰ Retry saat seçimi: ${retryTimeInfo.time}`);
+          await humanClick(page, retryTimeInfo.x, retryTimeInfo.y, { preMovesNear: true });
+          await delay(1500, 2500);
+        } else {
+          console.log(`  [BOOK] ⚠️ Retry'da saat butonu bulunamadı`);
+        }
+
+        // ===== Şimdi İLERİ'ye bas =====
+        await delay(500, 1000);
         const ileriRetry = await page.evaluate(() => {
           const candidates = Array.from(
             document.querySelectorAll("a, button, input[type='submit'], input[type='button'], [role='button']")
@@ -3523,30 +3619,20 @@ async function bookEarliestAppointment(page, account) {
             const txt = (el.innerText || el.value || el.textContent || "").trim().toUpperCase();
             return txt === "İLERİ" || txt === "ILERI" || txt === "DEVAM" || txt === "NEXT";
           });
-
           if (ileriBtn) {
             ileriBtn.click();
-            return {
-              clicked: true,
-              text: (ileriBtn.innerText || ileriBtn.value || ileriBtn.textContent || "").trim(),
-            };
+            return { clicked: true, text: (ileriBtn.innerText || ileriBtn.value || ileriBtn.textContent || "").trim() };
           }
-
           const greenBtn = document.querySelector(".btn-success, a.btn-success, button.btn-success");
           if (greenBtn) {
             greenBtn.click();
-            return {
-              clicked: true,
-              text: (greenBtn.innerText || greenBtn.value || greenBtn.textContent || "").trim(),
-              method: "green",
-            };
+            return { clicked: true, text: (greenBtn.innerText || greenBtn.value || greenBtn.textContent || "").trim(), method: "green" };
           }
-
           return { clicked: false };
         });
 
-        console.log(`  [BOOK] ▶️ Hızlı İLERİ sonucu: ${JSON.stringify(ileriRetry)}`);
-        await delay(350, 900);
+        console.log(`  [BOOK] ▶️ Retry İLERİ sonucu: ${JSON.stringify(ileriRetry)}`);
+        await delay(800, 1500);
       }
 
       // Normal popup kontrolü (diğer uyarılar)
