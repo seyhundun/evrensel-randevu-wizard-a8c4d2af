@@ -2775,7 +2775,7 @@ async function mainLoop() {
           // Residential modda her denemede bölge rotasyonu yap
           if (PROXY_MODE === "residential") {
             residentialSessionId++;
-            EVOMI_PROXY_REGION = getNextProxyRegion();
+            EVOMI_PROXY_REGION = await getNextProxyRegion();
           }
           let browser, page;
           try {
