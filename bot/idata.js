@@ -4061,24 +4061,29 @@ async function bookEarliestAppointment(page, account) {
             for (const d of tds) {
               const text = (d.innerText || d.textContent || "").trim();
               if (!/^\d{1,2}$/.test(text)) continue;
-              if (d.classList.contains("disabled") || d.classList.contains("off") || d.classList.contains("old")) continue;
+              const childFlagEl = d.querySelector("a, span, div");
+              const classBlob = `${d.className || ""} ${childFlagEl?.className || ""}`.toLowerCase();
+              if (d.classList.contains("disabled") || d.classList.contains("off") || d.classList.contains("old") || classBlob.includes("disabled-day")) continue;
+
               const dayNum = parseInt(text);
-              const bgColor = window.getComputedStyle(d).backgroundColor;
+              const tdBg = window.getComputedStyle(d).backgroundColor;
+              const childBg = childFlagEl ? window.getComputedStyle(childFlagEl).backgroundColor : "";
+              const bgColor = childBg && childBg !== "rgba(0, 0, 0, 0)" ? childBg : tdBg;
               const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
               let isGreen = false;
               if (rgbMatch) {
                 const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
-                isGreen = g > 100 && g > r * 1.3 && g > b * 1.3;
+                isGreen = g > 100 && g > r * 1.2 && g > b * 1.2;
               }
-              if (d.classList.contains("bg-success") || d.classList.contains("success")) isGreen = true;
-              
+              if (d.classList.contains("bg-success") || d.classList.contains("success") || classBlob.includes("enabled-day") || classBlob.includes("bg-success")) isGreen = true;
+
               // ASP.NET postback bilgisi
               const innerLink = d.querySelector("a[href*='doPostBack'], a[href*='javascript'], a");
               const postbackHref = innerLink ? (innerLink.getAttribute("href") || "") : "";
               let postbackTarget = null, postbackArg = null;
               const pbMatch = postbackHref.match(/__doPostBack\(['"](.*?)['"],\s*['"](.*?)['"]\)/);
               if (pbMatch) { postbackTarget = pbMatch[1]; postbackArg = pbMatch[2]; }
-              
+
               const clickableEl = innerLink || d;
               const rect = clickableEl.getBoundingClientRect();
               if (rect.width > 0 && rect.height > 0) {
@@ -4087,7 +4092,8 @@ async function bookEarliestAppointment(page, account) {
             }
           }
           const greenDays = allDays.filter(d => d.isGreen).sort((a, b) => a.day - b.day);
-          const pool = greenDays.length > 0 ? greenDays : allDays;
+          const clickableDays = allDays.filter(d => d.hasLink || d.isGreen).sort((a, b) => a.day - b.day);
+          const pool = greenDays.length > 0 ? greenDays : clickableDays;
           // İlk yeşili değil, bir sonrakini (2. uygun gün) seç
           if (pool.length > 0) {
             const target = pool.length > 1 ? pool[1] : pool[0];
