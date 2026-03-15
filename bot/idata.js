@@ -2677,6 +2677,198 @@ async function bookEarliestAppointment(page, account) {
     });
     await delay(1500, 2500);
 
+    // ===== STEP 1.5: Seyahat Başlangıç Tarihi alanını doldur =====
+    console.log("  [BOOK] Step 1.5: Seyahat Başlangıç Tarihi alanı aranıyor...");
+    
+    // Hesaptaki travel_date'i kullan
+    let travelDateStr = "";
+    if (account.travel_date) {
+      const ymd = account.travel_date.match(/(\d{4})-(\d{2})-(\d{2})/);
+      const dmy = account.travel_date.match(/(\d{2})[.\/-](\d{2})[.\/-](\d{4})/);
+      if (ymd) travelDateStr = `${ymd[3]}.${ymd[2]}.${ymd[1]}`; // DD.MM.YYYY
+      else if (dmy) travelDateStr = `${dmy[1]}.${dmy[2]}.${dmy[3]}`;
+      else travelDateStr = account.travel_date;
+    } else {
+      // Fallback: 30 gün sonra
+      const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      travelDateStr = `${String(future.getDate()).padStart(2, "0")}.${String(future.getMonth() + 1).padStart(2, "0")}.${future.getFullYear()}`;
+    }
+    
+    // "Seyahat Başlangıç Tarihi" veya "Gidiş Tarihi" alanını bul ve takvim ikonuna tıkla
+    const travelDateIconClicked = await page.evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll("input"));
+      
+      // Seyahat/Gidiş tarihi alanını bul
+      let targetInput = inputs.find(inp => {
+        const ph = (inp.placeholder || "").toLowerCase();
+        const name = (inp.name || inp.id || "").toLowerCase();
+        return ph.includes("seyahat") || ph.includes("gidiş") || ph.includes("travel") ||
+               name.includes("seyahat") || name.includes("travel") || name.includes("gidis");
+      });
+      
+      // Fallback: label ile ara
+      if (!targetInput) {
+        const labels = Array.from(document.querySelectorAll("label"));
+        for (const lbl of labels) {
+          const txt = (lbl.innerText || "").toLowerCase();
+          if (txt.includes("seyahat") || txt.includes("gidiş")) {
+            const forId = lbl.getAttribute("for");
+            if (forId) targetInput = document.getElementById(forId);
+            if (!targetInput) targetInput = lbl.closest(".form-group, div")?.querySelector("input");
+            if (targetInput) break;
+          }
+        }
+      }
+      
+      if (targetInput) {
+        // Input-group içindeki takvim ikonunu bul
+        const parent = targetInput.closest(".input-group, .form-group, div");
+        if (parent) {
+          const icons = parent.querySelectorAll(
+            ".input-group-addon, .input-group-append, .input-group-text, " +
+            "span.glyphicon-calendar, span.fa-calendar, i.fa-calendar, " +
+            "i.glyphicon-calendar, span[class*='calendar'], i[class*='calendar'], " +
+            "button[class*='calendar'], .datepickerbutton, img[src*='calendar']"
+          );
+          for (const icon of icons) {
+            icon.click();
+            return { clicked: true, method: "icon", tag: icon.tagName };
+          }
+          const addon = parent.querySelector(".input-group-addon, .input-group-btn, .input-group-append");
+          if (addon) {
+            addon.click();
+            return { clicked: true, method: "addon" };
+          }
+        }
+        targetInput.click();
+        targetInput.focus();
+        return { clicked: true, method: "input_click" };
+      }
+      
+      return { clicked: false };
+    });
+    
+    console.log(`  [BOOK] Seyahat tarihi ikonu: ${JSON.stringify(travelDateIconClicked)}`);
+    
+    if (travelDateIconClicked.clicked) {
+      await delay(1500, 2500);
+      
+      // Takvim açıldıysa — hedef ay/yıla git ve günü seç
+      let travelDay = null, travelMonth = null, travelYear = null;
+      const tymd = travelDateStr.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+      if (tymd) { travelDay = parseInt(tymd[1]); travelMonth = parseInt(tymd[2]); travelYear = parseInt(tymd[3]); }
+      
+      if (travelMonth && travelYear) {
+        // Takvimi hedef aya navigate et
+        for (let navAttempt = 0; navAttempt < 12; navAttempt++) {
+          const calInfo = await page.evaluate(() => {
+            const headers = document.querySelectorAll(
+              ".datepicker-switch, .picker-switch, .datepicker th.switch, " +
+              ".ui-datepicker-title, [class*='datepicker'] th, [class*='calendar'] th, " +
+              ".month-year, caption, .datepicker-days .datepicker-switch"
+            );
+            for (const h of headers) {
+              const text = (h.innerText || h.textContent || "").trim();
+              if (text.length > 3 && /\d{4}/.test(text)) return { headerText: text };
+            }
+            return { headerText: "" };
+          });
+          
+          if (!calInfo.headerText) break;
+          
+          const monthNames = {
+            "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+            "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+            "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4, "mayıs": 5, "haziran": 6,
+            "temmuz": 7, "ağustos": 8, "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12
+          };
+          
+          const headerLower = calInfo.headerText.toLowerCase();
+          let currentMonth = 0, currentYear = 0;
+          const yearMatch = calInfo.headerText.match(/(\d{4})/);
+          if (yearMatch) currentYear = parseInt(yearMatch[1]);
+          for (const [name, num] of Object.entries(monthNames)) {
+            if (headerLower.includes(name)) { currentMonth = num; break; }
+          }
+          
+          if (currentMonth === travelMonth && currentYear === travelYear) break;
+          
+          const nextClicked = await page.evaluate(() => {
+            const nextBtns = document.querySelectorAll(".datepicker .next, .next, th.next, button[aria-label='Next'], a.next");
+            for (const btn of nextBtns) {
+              const text = (btn.innerText || btn.textContent || btn.title || "").trim();
+              if (text === "»" || text === "›" || text === ">" || text === "→" || btn.classList.contains("next")) {
+                btn.click();
+                return true;
+              }
+            }
+            return false;
+          });
+          if (!nextClicked) break;
+          await delay(500, 1000);
+        }
+      }
+      
+      // Hedef günü seç
+      const travelDaySelected = await page.evaluate((dayNum) => {
+        const tds = document.querySelectorAll("td.day, td");
+        for (const td of tds) {
+          const text = (td.innerText || td.textContent || "").trim();
+          if (text === String(dayNum) && !td.classList.contains("disabled") && !td.classList.contains("old") && !td.classList.contains("new")) {
+            td.click();
+            return { selected: true, day: dayNum };
+          }
+        }
+        return { selected: false };
+      }, travelDay);
+      
+      console.log(`  [BOOK] Seyahat günü seçimi: ${JSON.stringify(travelDaySelected)}`);
+      
+      if (!travelDaySelected.selected) {
+        // Manuel giriş fallback
+        await page.evaluate((val) => {
+          const inputs = Array.from(document.querySelectorAll("input"));
+          const inp = inputs.find(i => {
+            const ph = (i.placeholder || "").toLowerCase();
+            const name = (i.name || i.id || "").toLowerCase();
+            return ph.includes("seyahat") || ph.includes("gidiş") || name.includes("seyahat") || name.includes("travel");
+          });
+          if (inp) {
+            inp.value = "";
+            inp.focus();
+            inp.value = val;
+            inp.dispatchEvent(new Event("input", { bubbles: true }));
+            inp.dispatchEvent(new Event("change", { bubbles: true }));
+            inp.dispatchEvent(new Event("blur", { bubbles: true }));
+          }
+        }, travelDateStr);
+        console.log(`  [BOOK] Seyahat tarihi manuel girildi: ${travelDateStr}`);
+      }
+    } else {
+      // İkon bulunamadıysa doğrudan input'a yaz
+      await page.evaluate((val) => {
+        const inputs = Array.from(document.querySelectorAll("input"));
+        const inp = inputs.find(i => {
+          const ph = (i.placeholder || "").toLowerCase();
+          const name = (i.name || i.id || "").toLowerCase();
+          return ph.includes("seyahat") || ph.includes("gidiş") || name.includes("seyahat") || name.includes("travel");
+        });
+        if (inp) {
+          inp.value = "";
+          inp.focus();
+          inp.value = val;
+          inp.dispatchEvent(new Event("input", { bubbles: true }));
+          inp.dispatchEvent(new Event("change", { bubbles: true }));
+          inp.dispatchEvent(new Event("blur", { bubbles: true }));
+        }
+      }, travelDateStr);
+      console.log(`  [BOOK] Seyahat tarihi doğrudan girildi: ${travelDateStr}`);
+    }
+    
+    await delay(2000, 3000);
+    const ssTravelDate = await takeScreenshotBase64(page);
+    await idataLog("appt_travel_date", `🗓️ Seyahat Başlangıç Tarihi: ${travelDateStr} | Hesap: ${account.email}`, ssTravelDate);
+
     // ===== STEP 2: TARİH sayfası — "Randevu Tarihinizi Seçiniz" takvim ikonuna tıkla =====
     console.log("  [BOOK] Step 2: TARİH sayfası — 'Randevu Tarihinizi Seçiniz' takvim ikonu aranıyor...");
     
