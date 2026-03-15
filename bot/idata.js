@@ -1942,8 +1942,25 @@ async function loginToIdata(page, account) {
     const primaryAuthInput = membershipInput || emailInput || nonCaptchaTextInputs[0]?.el || null;
     const secondaryAuthInput = nonCaptchaTextInputs.find((item) => item.el !== primaryAuthInput)?.el || null;
 
+    // Detaylı input debug logu
+    for (let i = 0; i < textCandidates.length; i++) {
+      const m = textCandidates[i].meta;
+      console.log(`  [LOGIN] Input[${i}]: name="${m.name}" id="${m.id}" ph="${m.placeholder}" meta="${m.metaText}" captcha=${m.isCaptcha} member=${m.isMembership} email=${m.isEmail}`);
+    }
+    for (let i = 0; i < passwordCandidates.length; i++) {
+      const m = passwordCandidates[i].meta;
+      console.log(`  [LOGIN] Pass[${i}]: name="${m.name}" id="${m.id}" ph="${m.placeholder}"`);
+    }
+    
     console.log(`  [LOGIN] Görünür input: text=${textCandidates.length}, auth=${nonCaptchaTextInputs.length}, password=${passwordCandidates.length}`);
-    await idataLog("login_form", `Input eşleştirme: auth=${nonCaptchaTextInputs.length}, pass=${passwordCandidates.length}, captcha=${preDetectedCaptchaInput ? "var" : "yok"}`);
+    console.log(`  [LOGIN] Eşleşme: membership=${membershipInput ? "✅" : "❌"} email=${emailInput ? "✅" : "❌"} primary=${primaryAuthInput ? "✅" : "❌"} secondary=${secondaryAuthInput ? "✅" : "❌"} captcha=${preDetectedCaptchaInput ? "✅" : "❌"}`);
+    await idataLog("login_form", `Input: text=${textCandidates.length} auth=${nonCaptchaTextInputs.length} pass=${passwordCandidates.length} | member=${membershipInput ? "var" : "yok"} email=${emailInput ? "var" : "yok"} captcha=${preDetectedCaptchaInput ? "var" : "yok"} | meta: ${textCandidates.map(t => `[${t.meta.name||t.meta.id||t.meta.placeholder||"?"}]`).join(",")}`);
+
+    // Pozisyonel fallback: eğer hiçbir alan regex ile eşleşmediyse, sırayla doldur
+    if (!membershipInput && !emailInput && nonCaptchaTextInputs.length >= 1) {
+      console.log("  [LOGIN] ⚠ Regex eşleşmesi bulunamadı — pozisyonel fallback kullanılacak");
+      await idataLog("login_form", "⚠ Regex eşleşmesi yok, pozisyonel fallback aktif");
+    }
 
     // 1) Üyelik/kimlik alanı
     if (account.membership_number && primaryAuthInput) {
