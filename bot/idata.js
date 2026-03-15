@@ -1963,29 +1963,50 @@ async function loginToIdata(page, account) {
     }
 
     // 1) Üyelik/kimlik alanı
-    if (account.membership_number && primaryAuthInput) {
-      console.log(`  [LOGIN] Üyelik no giriliyor: ${account.membership_number}`);
-      const typed = await humanType(page, primaryAuthInput, account.membership_number, { minDelay: 140, maxDelay: 300, retries: 3 });
-      if (!typed) console.log("  [LOGIN] ⚠ Üyelik no tam yazılamadı");
-      await delay(700, 1200);
+    if (account.membership_number) {
+      const target = membershipInput || nonCaptchaTextInputs[0]?.el || null;
+      if (target) {
+        console.log(`  [LOGIN] Üyelik no giriliyor: ${account.membership_number}`);
+        const typed = await humanType(page, target, account.membership_number, { minDelay: 140, maxDelay: 300, retries: 3 });
+        const val = await page.evaluate(el => el?.value || '', target).catch(() => '');
+        console.log(`  [LOGIN] Üyelik no yazıldı mı: ${typed}, alandaki değer: "${val}"`);
+        if (!typed || !val) {
+          console.log("  [LOGIN] ⚠ Üyelik no yazılamadı — click + triple-clear + tekrar dene");
+          await target.click({ clickCount: 3 }).catch(() => {});
+          await page.keyboard.press('Backspace').catch(() => {});
+          await delay(500, 800);
+          await humanType(page, target, account.membership_number, { minDelay: 140, maxDelay: 300, retries: 2 });
+        }
+        await delay(700, 1200);
+      } else {
+        console.log("  [LOGIN] ❌ Üyelik no alanı bulunamadı!");
+        await idataLog("login_form", "❌ Üyelik no input bulunamadı");
+      }
     }
 
-    // 2) E-posta alanı (ayrı input varsa oraya, yoksa gerektiğinde secondary'e)
-    if (emailInput) {
-      console.log(`  [LOGIN] E-Posta giriliyor: ${account.email}`);
-      const typed = await humanType(page, emailInput, account.email, { minDelay: 130, maxDelay: 280, retries: 3 });
-      if (!typed) console.log("  [LOGIN] ⚠ E-posta tam yazılamadı");
-      await delay(700, 1200);
-    } else if (!account.membership_number && primaryAuthInput) {
-      console.log(`  [LOGIN] E-Posta (fallback) giriliyor: ${account.email}`);
-      const typed = await humanType(page, primaryAuthInput, account.email, { minDelay: 130, maxDelay: 280, retries: 3 });
-      if (!typed) console.log("  [LOGIN] ⚠ E-posta fallback tam yazılamadı");
-      await delay(700, 1200);
-    } else if (account.membership_number && secondaryAuthInput) {
-      console.log(`  [LOGIN] E-Posta (secondary) giriliyor: ${account.email}`);
-      const typed = await humanType(page, secondaryAuthInput, account.email, { minDelay: 130, maxDelay: 280, retries: 3 });
-      if (!typed) console.log("  [LOGIN] ⚠ E-posta secondary tam yazılamadı");
-      await delay(700, 1200);
+    // 2) E-posta alanı
+    {
+      // Eğer üyelik no varsa e-posta ikinci alandır, yoksa birinci alan
+      const target = emailInput 
+        || (account.membership_number ? (secondaryAuthInput || nonCaptchaTextInputs[1]?.el) : (primaryAuthInput || nonCaptchaTextInputs[0]?.el))
+        || null;
+      if (target) {
+        console.log(`  [LOGIN] E-Posta giriliyor: ${account.email}`);
+        const typed = await humanType(page, target, account.email, { minDelay: 130, maxDelay: 280, retries: 3 });
+        const val = await page.evaluate(el => el?.value || '', target).catch(() => '');
+        console.log(`  [LOGIN] E-Posta yazıldı mı: ${typed}, alandaki değer: "${val}"`);
+        if (!typed || !val) {
+          console.log("  [LOGIN] ⚠ E-posta yazılamadı — click + triple-clear + tekrar dene");
+          await target.click({ clickCount: 3 }).catch(() => {});
+          await page.keyboard.press('Backspace').catch(() => {});
+          await delay(500, 800);
+          await humanType(page, target, account.email, { minDelay: 130, maxDelay: 280, retries: 2 });
+        }
+        await delay(700, 1200);
+      } else {
+        console.log("  [LOGIN] ❌ E-Posta alanı bulunamadı!");
+        await idataLog("login_form", "❌ E-Posta input bulunamadı");
+      }
     }
 
     // 3) Şifre
