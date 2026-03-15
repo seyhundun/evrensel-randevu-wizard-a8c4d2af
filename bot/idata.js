@@ -2364,55 +2364,8 @@ async function checkAppointments(page, account) {
 
     console.log(`  [CHECK] Sayfa: ${pageState.url} | ${pageState.hasSelects} select, ${pageState.hasTextInputs} input`);
 
-    // 1) Üyelik numarasını gir ve Ekle butonuna tıkla
-    if (account.membership_number) {
-      console.log(`  [CHECK] Üyelik no giriliyor: ${account.membership_number}`);
-      
-      const memberInput = await page.$('input[type="text"]');
-      if (memberInput) {
-        await humanType(page, memberInput, account.membership_number);
-        await delay(500, 1000);
-
-        // "Ekle" butonuna tıkla
-        await page.evaluate(() => {
-          const btns = Array.from(document.querySelectorAll("button, input[type='button'], input[type='submit'], a"));
-          const addBtn = btns.find(b => {
-            const txt = (b.textContent || b.value || "").trim().toLowerCase();
-            return txt === "ekle" || txt.includes("ekle");
-          });
-          if (addBtn) addBtn.click();
-        });
-        await delay(3000, 5000);
-
-        // Uyarı popup'ı varsa kapat ("Tamam" butonuna tıkla)
-        for (let popupTry = 0; popupTry < 3; popupTry++) {
-          const dismissed = await page.evaluate(() => {
-            // Modal/popup içindeki "Tamam", "OK", "Kapat" butonlarını ara
-            const allBtns = Array.from(document.querySelectorAll("button, a, input[type='button']"));
-            for (const btn of allBtns) {
-              const txt = (btn.textContent || btn.value || "").trim().toLowerCase();
-              if (txt === "tamam" || txt === "ok" || txt === "kapat") {
-                // Görünür mü kontrol et
-                const rect = btn.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                  btn.click();
-                  return true;
-                }
-              }
-            }
-            return false;
-          });
-          if (dismissed) {
-            console.log("  [CHECK] ⚠ Uyarı popup'ı kapatıldı (Tamam)");
-            await delay(1500, 2500);
-          } else {
-            break;
-          }
-        }
-      } else {
-        console.log("  [CHECK] ⚠ Üyelik numarası input'u bulunamadı");
-      }
-    }
+    // 1) Üyelik numarası girişi atlandı — direkt form doldurulacak
+    console.log("  [CHECK] Üyelik no atlanıyor, direkt randevu sorgulanıyor...");
 
     // 2) Şehir seçimi
     if (account.residence_city) {
