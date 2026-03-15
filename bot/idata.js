@@ -938,6 +938,16 @@ async function solveImageCaptcha(page, options = {}) {
         console.log(`  [CAPTCHA] ⚠ Görsel hazır görünmüyor (${loadStatus.reason}) - API için ham yakalama denenecek`);
         await idataLog("login_captcha", `CAPTCHA görsel hazır değil: ${loadStatus.reason} (deneme ${attempt}/${maxAttempts})`);
 
+        // 3. denemede hâlâ yüklenmediyse sayfayı tamamen reload et
+        if (attempt >= 3 && !pageReloaded) {
+          console.log("  [CAPTCHA] 🔃 Görsel 2 denemedir yüklenmiyor, sayfa reload ediliyor...");
+          await idataLog("login_captcha", "CAPTCHA broken — sayfa reload ediliyor");
+          pageReloaded = true;
+          await page.reload({ waitUntil: "networkidle2", timeout: 30000 }).catch(() => {});
+          await delay(3000, 5000);
+          continue; // Reload sonrası giriş sayfası yeniden yüklenecek, CAPTCHA da yenilenecek
+        }
+
         const refreshed = await refreshCaptchaImage(page);
         if (refreshed) {
           console.log("  [CAPTCHA] 🔄 Resim yenileme tetiklendi");
@@ -954,6 +964,13 @@ async function solveImageCaptcha(page, options = {}) {
             });
           });
           await delay(1400, 2400);
+        }
+
+        // Refresh sonrası tekrar kontrol et, hâlâ yüklenmiyorsa bu denemeyi atla
+        const recheck = await waitForCaptchaImageLoad(page, 3000);
+        if (!recheck.loaded) {
+          console.log("  [CAPTCHA] ⚠ Refresh sonrası hâlâ yüklenmedi, sonraki denemeye geçiliyor");
+          continue;
         }
       }
 
