@@ -3017,15 +3017,36 @@ async function bookEarliestAppointment(page, account) {
         return r.width > 0 && r.height > 0 && s.display !== "none" && s.visibility !== "hidden";
       };
 
-      // 0) En güçlü sinyal: datepicker class'lı ve dolu değerli input (ekrandaki ikinci alan)
-      let targetInput = inputs.find(inp => {
+      // 0) "Randevu Tarihinizi Seçiniz" placeholder'lı VEYA değeri BOŞ olan date input'u
+      //    (Değeri dolu olan seyahat tarihi inputunu ATLIYORUZ)
+      let targetInput = null;
+
+      // Tüm date input'larını topla
+      const dateInputs = inputs.filter(inp => {
         if (!isVisible(inp)) return false;
         const cls = (inp.className || "").toLowerCase();
-        const val = (inp.value || "").trim();
-        const isDateClass = cls.includes("calendarinput") || cls.includes("flightdate") || cls.includes("datepicker");
-        const hasDateValue = /\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}/.test(val);
-        return isDateClass && hasDateValue;
+        return cls.includes("calendarinput") || cls.includes("flightdate") || cls.includes("datepicker");
       });
+
+      // Seyahat ile ilgili olanları filtrele, kalanlardan randevu inputunu seç
+      const nonTravelDateInputs = dateInputs.filter(inp => {
+        const ph = (inp.placeholder || "").toLowerCase();
+        const name = (inp.name || "").toLowerCase();
+        const id = (inp.id || "").toLowerCase();
+        // Seyahat/gidiş/travel ile ilgili olanları dışla
+        const isTravelField = ph.includes("seyahat") || ph.includes("gidiş") || ph.includes("travel") ||
+                              name.includes("seyahat") || name.includes("travel") || name.includes("flight") ||
+                              id.includes("seyahat") || id.includes("travel") || id.includes("flight");
+        return !isTravelField;
+      });
+
+      // Seyahat dışı date input varsa onu kullan (randevu inputu), yoksa boş değerli olanı seç
+      if (nonTravelDateInputs.length > 0) {
+        targetInput = nonTravelDateInputs[0];
+      } else {
+        // Fallback: değeri boş olan date input
+        targetInput = dateInputs.find(inp => !(inp.value || "").trim());
+      }
 
       // 1) "Randevu Tarihinizi Seçiniz" placeholder'lı input
       if (!targetInput) {
