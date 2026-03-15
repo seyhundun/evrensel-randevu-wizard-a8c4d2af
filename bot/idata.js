@@ -3350,26 +3350,13 @@ async function bookEarliestAppointment(page, account) {
       const t = timeButtonInfo.target;
       
       // İnsan taklidi: saat alanında rastgele mouse hareketleri
-      const randMoves = 3 + Math.floor(Math.random() * 3); // 3-5 hareket
-      for (let m = 0; m < randMoves; m++) {
-        const rx = t.x + (Math.random() - 0.5) * 200;
-        const ry = t.y + (Math.random() - 0.5) * 120;
-        await page.mouse.move(rx, ry);
-        await delay(200, 800);
-      }
-      
-      // Hedefe yavaş yaklaşma
-      const steps = 10 + Math.floor(Math.random() * 16);
-      await page.mouse.move(t.x, t.y, { steps });
-      await delay(300, 700);
-      
-      // 1) Puppeteer gerçek mouse tıklaması (DOM click yerine fiziksel)
+      // İnsan benzeri tıklama: bezier curve + pre-moves + mousedown/up
       try {
-        await page.mouse.click(t.x, t.y);
-        console.log(`  [BOOK] ✅ Mouse.click saat: ${t.time} (x:${Math.round(t.x)}, y:${Math.round(t.y)})`);
-        timeButtonResult = { clicked: true, time: t.time, isOrange: t.isOrange, method: "mouse_click" };
+        await humanClick(page, t.x, t.y, { preMovesNear: true });
+        console.log(`  [BOOK] ✅ HumanClick saat: ${t.time} (x:${Math.round(t.x)}, y:${Math.round(t.y)})`);
+        timeButtonResult = { clicked: true, time: t.time, isOrange: t.isOrange, method: "human_click" };
       } catch (mouseErr) {
-        console.log(`  [BOOK] Mouse.click hata: ${mouseErr.message}`);
+        console.log(`  [BOOK] HumanClick saat hata: ${mouseErr.message}`);
       }
       
       await delay(1500, 2500);
