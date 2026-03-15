@@ -3609,8 +3609,6 @@ async function bookEarliestAppointment(page, account) {
 
       for (const el of candidates) {
         const rawText = (el.innerText || el.textContent || el.value || "").trim();
-        const timeMatch = rawText.match(/(\d{2}:\d{2})/);
-        if (!timeMatch) continue;
 
         const style = window.getComputedStyle(el);
         const isVisible = style.display !== "none" && style.visibility !== "hidden" && el.offsetParent !== null;
@@ -3632,10 +3630,12 @@ async function bookEarliestAppointment(page, account) {
 
         // Saat metnini daha esnek yakala: 9:30, 09:30, 09.30
         const normalizedRawText = rawText.replace(/\s+/g, " ");
-        const timeMatch = normalizedRawText.match(/(\d{1,2}[:.]\d{2})/);
-        if (!timeMatch && !cls.includes("getdatebtnhour")) continue;
+        const parsedTime = normalizedRawText.match(/(\d{1,2}[:.]\d{2})/);
+        if (!parsedTime && !cls.includes("getdatebtnhour")) continue;
 
-        const matchedTime = timeMatch ? timeMatch[1].replace(".", ":") : (el.getAttribute("data-time") || "").replace(".", ":");
+        const matchedTime = parsedTime
+          ? parsedTime[1].replace(".", ":")
+          : (el.getAttribute("data-time") || "").replace(".", ":");
         if (!matchedTime) continue;
 
         const bgColor = style.backgroundColor;
@@ -3654,7 +3654,7 @@ async function bookEarliestAppointment(page, account) {
 
         const rect = el.getBoundingClientRect();
         timeButtons.push({
-          time: timeMatch[1],
+          time: matchedTime,
           isOrange,
           bgColor,
           tag,
