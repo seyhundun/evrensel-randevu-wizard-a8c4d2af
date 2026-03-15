@@ -224,6 +224,12 @@ echo "✅ Güncelleme tamamlandı"`}
           <CopyBlock label="Hata logları" command="cat /root/.pm2/logs/vfs-bot-error.log | tail -50" />
           <Separator />
           <CopyBlock
+            label="📧 IMAP OTP Test Logları"
+            description="iDATA botunun IMAP ile otomatik OTP okumasını kontrol et"
+            command="pm2 logs idata-bot --lines 50 | grep -i imap"
+          />
+          <Separator />
+          <CopyBlock
             label="noVNC erişim adresleri"
             description="Dashboard üzerinden veya doğrudan tarayıcıdan canlı izleme"
             command={`# Dashboard (HTTPS — önerilen):
@@ -233,6 +239,7 @@ echo "✅ Güncelleme tamamlandı"`}
 # Doğrudan HTTP (sunucu IP ile):
 # VFS:   http://187.77.161.201:6080/vnc.html
 # iDATA: http://187.77.161.201:6081/vnc.html`}
+          />
           />
         </Section>
 
