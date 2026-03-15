@@ -411,7 +411,7 @@ export default function IdataAccounts() {
                 <Input placeholder="İstanbul" value={form.idata_office} onChange={e => updateForm("idata_office", e.target.value)} />
               )}
             </div>
-            <div>
+             <div>
               <Label className="text-xs">Gidiş Amacı</Label>
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -424,6 +424,14 @@ export default function IdataAccounts() {
                 <option value="Lojistik">Lojistik</option>
                 <option value="Diğer">Diğer</option>
               </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <Label className="text-xs">Seyahat Başlangıç Tarihi</Label>
+              <Input type="date" value={form.travel_date} onChange={e => updateForm("travel_date", e.target.value)} />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Bot takvimden bu tarihi seçer (gg.aa.yyyy)</p>
             </div>
           </div>
 
