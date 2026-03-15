@@ -84,6 +84,9 @@ IP_BAN_DURATION_MS=1800000      # IP ban süresi (ms)
 CAPTCHA_PROVIDER=auto           # auto, capsolver, 2captcha
 CAPSOLVER_API_KEY=CAP-xxx       # Capsolver API anahtarı
 CAPTCHA_API_KEY=xxx             # 2captcha API anahtarı
+
+# === iDATA IMAP OTP ===
+IDATA_OTP_FROM=no-reply@idata.com.tr  # OTP gönderen adres(ler)i, çoklu için virgül
 ```
 
 > **CAPTCHA_PROVIDER** seçenekleri:
