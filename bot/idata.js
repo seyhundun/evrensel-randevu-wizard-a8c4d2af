@@ -2677,34 +2677,31 @@ async function bookEarliestAppointment(page, account) {
     });
     await delay(1500, 2500);
 
-    // ===== STEP 2: TARİH sayfası — Takvim ikonuna tıkla =====
-    console.log("  [BOOK] Step 2: TARİH sayfası — Takvim ikonu aranıyor...");
+    // ===== STEP 2: TARİH sayfası — "Randevu Tarihinizi Seçiniz" takvim ikonuna tıkla =====
+    console.log("  [BOOK] Step 2: TARİH sayfası — 'Randevu Tarihinizi Seçiniz' takvim ikonu aranıyor...");
     
-    const step2Analysis = await page.evaluate(() => {
-      const body = (document.body?.innerText || "").toLowerCase();
-      return {
-        hasTarihHeader: body.includes("tarih"),
-        hasSeyahatInput: body.includes("seyahat başlangıç"),
-        hasKalanSure: body.includes("kalan süre"),
-        url: window.location.href,
-      };
-    });
-    console.log(`  [BOOK] Step 2 analiz: ${JSON.stringify(step2Analysis)}`);
-
-    // Takvim ikonuna tıkla (input'un sağındaki ikon)
+    // Sayfadaki tüm input-group'ları tara, "Randevu Tarihinizi Seçiniz" placeholder'lı olanın takvim ikonuna tıkla
     const calIconClicked = await page.evaluate(() => {
-      // Önce "Seyahat Başlangıç Tarihinizi Seçiniz" input'unu bul
       const inputs = Array.from(document.querySelectorAll("input"));
-      const dateInput = inputs.find(inp => {
+      
+      // 1) "Randevu Tarihinizi Seçiniz" placeholder'lı input
+      let targetInput = inputs.find(inp => {
         const ph = (inp.placeholder || "").toLowerCase();
-        return ph.includes("seyahat") || ph.includes("tarih");
+        return ph.includes("randevu tarih") || ph.includes("randevu tarihinizi");
       });
       
-      if (dateInput) {
-        // Input'un yanındaki/parent'ındaki takvim ikonunu bul
-        const parent = dateInput.closest(".input-group, .form-group, div");
+      // 2) Fallback: "tarih" içeren herhangi bir input
+      if (!targetInput) {
+        targetInput = inputs.find(inp => {
+          const ph = (inp.placeholder || "").toLowerCase();
+          return ph.includes("tarih") && !ph.includes("seyahat");
+        });
+      }
+      
+      if (targetInput) {
+        // Input-group içindeki takvim ikonunu bul
+        const parent = targetInput.closest(".input-group, .form-group, div");
         if (parent) {
-          // Takvim ikonu genelde input-group-addon veya span içinde
           const icons = parent.querySelectorAll(
             ".input-group-addon, .input-group-append, .input-group-text, " +
             "span.glyphicon-calendar, span.fa-calendar, i.fa-calendar, " +
@@ -2715,67 +2712,53 @@ async function bookEarliestAppointment(page, account) {
             icon.click();
             return { clicked: true, method: "icon_in_parent", tag: icon.tagName, cls: (icon.className || "").substring(0, 80) };
           }
-          
-          // Addon span/button olabilir
           const addon = parent.querySelector(".input-group-addon, .input-group-btn, .input-group-append");
           if (addon) {
             addon.click();
             return { clicked: true, method: "addon_click", tag: addon.tagName };
           }
         }
-        
-        // Input'un hemen sağındaki elementi tıkla
-        const nextSib = dateInput.nextElementSibling;
-        if (nextSib) {
-          nextSib.click();
-          return { clicked: true, method: "next_sibling", tag: nextSib.tagName, cls: (nextSib.className || "").substring(0, 80) };
-        }
-        
-        // Son çare: input'a tıkla (bazı datepicker'lar böyle açılıyor)
-        dateInput.click();
-        dateInput.focus();
+        targetInput.click();
+        targetInput.focus();
         return { clicked: true, method: "input_click" };
       }
       
-      // Sayfadaki tüm takvim ikonlarını dene
+      // 3) Tüm takvim ikonlarını dene (ilki = Randevu Tarihi olmalı)
       const allIcons = Array.from(document.querySelectorAll(
-        ".glyphicon-calendar, .fa-calendar, [class*='calendar'], .datepickerbutton, " +
+        ".glyphicon-calendar, .fa-calendar, [class*='calendar'], " +
         ".input-group-addon, img[src*='calendar']"
       ));
       if (allIcons.length > 0) {
         allIcons[0].click();
-        return { clicked: true, method: "global_icon", tag: allIcons[0].tagName, cls: (allIcons[0].className || "").substring(0, 80) };
+        return { clicked: true, method: "first_icon", tag: allIcons[0].tagName, totalIcons: allIcons.length };
       }
       
       return { clicked: false };
     });
 
     console.log(`  [BOOK] Takvim ikonu: ${JSON.stringify(calIconClicked)}`);
-    await delay(1500, 2500);
+    await delay(2000, 3000);
 
-    // ===== STEP 3: Takvimden tarih seç =====
-    // account.travel_date varsa onu kullan (YYYY-MM-DD format), yoksa bugünden sonraki ilk günü seç
+    // ===== STEP 3: Takvimden en erken YEŞİL günü seç =====
+    // Yeşil = müsait, kırmızı = dolu, sarı/turuncu = bugün
     const targetTravelDate = account.travel_date || null;
     let targetDay = null;
     let targetMonth = null;
     let targetYear = null;
     
     if (targetTravelDate) {
-      // "2026-03-20" veya "20.03.2026" formatı
       const ymd = targetTravelDate.match(/(\d{4})-(\d{2})-(\d{2})/);
       const dmy = targetTravelDate.match(/(\d{2})[.\/-](\d{2})[.\/-](\d{4})/);
       if (ymd) { targetYear = parseInt(ymd[1]); targetMonth = parseInt(ymd[2]); targetDay = parseInt(ymd[3]); }
       else if (dmy) { targetDay = parseInt(dmy[1]); targetMonth = parseInt(dmy[2]); targetYear = parseInt(dmy[3]); }
     }
     
-    console.log(`  [BOOK] Step 3: Takvimden tarih seçiliyor... hedef: ${targetDay ? `${targetDay}/${targetMonth}/${targetYear}` : "ilk müsait gün"}`);
+    console.log(`  [BOOK] Step 3: Takvimden en erken yeşil gün seçiliyor... hedef: ${targetDay ? `${targetDay}/${targetMonth}/${targetYear}` : "ilk yeşil gün"}`);
     
-    // Takvimde doğru ay/yıla navigate et
+    // Takvimi hedef aya navigate et (gerekirse)
     if (targetMonth && targetYear) {
-      // Takvimi hedef aya getir (ileri butonuna tıklayarak)
       for (let navAttempt = 0; navAttempt < 12; navAttempt++) {
         const calInfo = await page.evaluate(() => {
-          // Takvim başlığındaki ay/yıl bilgisini oku
           const headers = document.querySelectorAll(
             ".datepicker-switch, .picker-switch, .datepicker th.switch, " +
             ".ui-datepicker-title, [class*='datepicker'] th, [class*='calendar'] th, " +
@@ -2783,17 +2766,13 @@ async function bookEarliestAppointment(page, account) {
           );
           for (const h of headers) {
             const text = (h.innerText || h.textContent || "").trim();
-            // "March 2026" veya "Mart 2026" formatı
-            if (text.length > 3 && /\d{4}/.test(text)) {
-              return { headerText: text };
-            }
+            if (text.length > 3 && /\d{4}/.test(text)) return { headerText: text };
           }
           return { headerText: "" };
         });
         
-        if (!calInfo.headerText) break; // Takvim header bulunamadı
+        if (!calInfo.headerText) break;
         
-        // Ay isimlerini Türkçe/İngilizce eşle
         const monthNames = {
           "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
           "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
@@ -2809,94 +2788,104 @@ async function bookEarliestAppointment(page, account) {
           if (headerLower.includes(name)) { currentMonth = num; break; }
         }
         
-        console.log(`  [BOOK] Takvim: ${calInfo.headerText} (ay=${currentMonth}, yıl=${currentYear}) → hedef ay=${targetMonth}, yıl=${targetYear}`);
+        if (currentMonth === targetMonth && currentYear === targetYear) break;
         
-        if (currentMonth === targetMonth && currentYear === targetYear) break; // Doğru aydayız
-        
-        // İleri butonuna tıkla
         const nextClicked = await page.evaluate(() => {
-          const nextBtns = document.querySelectorAll(
-            ".datepicker .next, .datepicker-days .next, .next, " +
-            ".ui-datepicker-next, [class*='next'], th.next, " +
-            "button[aria-label='Next'], a.next"
-          );
+          const nextBtns = document.querySelectorAll(".datepicker .next, .next, th.next, button[aria-label='Next'], a.next");
           for (const btn of nextBtns) {
             const text = (btn.innerText || btn.textContent || btn.title || "").trim();
-            // "»" veya "›" veya ">" sembolleri
-            if (text === "»" || text === "›" || text === ">" || text === "→" || 
-                btn.classList.contains("next") || btn.getAttribute("data-action") === "next") {
+            if (text === "»" || text === "›" || text === ">" || text === "→" || btn.classList.contains("next")) {
               btn.click();
               return true;
             }
           }
           return false;
         });
-        
         if (!nextClicked) break;
         await delay(500, 1000);
       }
     }
     
+    // Yeşil günleri tespit et ve en erken olanı seç
     const dateSelected = await page.evaluate((tDay) => {
-      // Açık takvimi bul
       const calContainers = document.querySelectorAll(
         ".datepicker, .datepicker-dropdown, .bootstrap-datetimepicker-widget, " +
         ".datepicker-days, .flatpickr-calendar, .ui-datepicker, " +
         "[class*='datepicker'], [class*='calendar'], .picker-open, table.table-condensed"
       );
       
-      let clickableDays = [];
+      let allDays = [];
       
       for (const cal of calContainers) {
         const style = window.getComputedStyle(cal);
         if (style.display === "none" || style.visibility === "hidden") continue;
         
-        const days = cal.querySelectorAll(
-          "td.day:not(.disabled):not(.old):not(.new):not(.off), " +
-          "td:not(.disabled):not(.old):not(.off) .day, " +
-          "td.active, td[data-date], " +
-          ".flatpickr-day:not(.flatpickr-disabled)"
-        );
-        
-        for (const d of days) {
+        const tds = cal.querySelectorAll("td");
+        for (const d of tds) {
           const text = (d.innerText || d.textContent || "").trim();
-          if (/^\d{1,2}$/.test(text) && !d.classList.contains("disabled") && !d.classList.contains("off") && !d.classList.contains("old")) {
-            clickableDays.push(d);
+          if (!/^\d{1,2}$/.test(text)) continue;
+          if (d.classList.contains("disabled") || d.classList.contains("off") || d.classList.contains("old")) continue;
+          
+          const dayNum = parseInt(text);
+          const bgColor = window.getComputedStyle(d).backgroundColor;
+          
+          // Renk tespiti: rgb değerlerini parse et
+          const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+          let isGreen = false;
+          let isRed = false;
+          let isYellow = false;
+          
+          if (rgbMatch) {
+            const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
+            // Yeşil: g > r ve g > b (müsait günler)
+            isGreen = g > 100 && g > r * 1.3 && g > b * 1.3;
+            // Kırmızı: r > g ve r > b (dolu günler) 
+            isRed = r > 150 && r > g * 1.5 && r > b * 1.5;
+            // Sarı/turuncu: r > 200 ve g > 150 ve b < 100
+            isYellow = r > 200 && g > 150 && b < 100;
           }
+          
+          // CSS class kontrolü
+          if (d.classList.contains("bg-success") || d.classList.contains("success")) isGreen = true;
+          if (d.classList.contains("bg-danger") || d.classList.contains("danger")) isRed = true;
+          if (d.classList.contains("bg-warning") || d.classList.contains("warning") || d.classList.contains("today") || d.classList.contains("active")) isYellow = true;
+          
+          allDays.push({ el: d, day: dayNum, isGreen, isRed, isYellow, bgColor });
         }
       }
       
-      if (clickableDays.length > 0) {
+      // Yeşil günleri filtrele (en erken önce)
+      const greenDays = allDays.filter(d => d.isGreen).sort((a, b) => a.day - b.day);
+      const nonRedDays = allDays.filter(d => !d.isRed && !d.isYellow).sort((a, b) => a.day - b.day);
+      
+      // Öncelik: yeşil günler > kırmızı/sarı olmayan günler > tüm günler
+      const pool = greenDays.length > 0 ? greenDays : (nonRedDays.length > 0 ? nonRedDays : allDays);
+      
+      if (pool.length > 0) {
         let target = null;
-        
         // Hedef gün belirtilmişse onu bul
-        if (tDay) {
-          target = clickableDays.find(d => (d.innerText || "").trim() === String(tDay));
-        }
+        if (tDay) target = pool.find(d => d.day === tDay);
+        // Yoksa en erken günü seç
+        if (!target) target = pool[0];
         
-        // Hedef gün bulunamazsa bugünden sonraki ilk günü seç
-        if (!target) {
-          for (const d of clickableDays) {
-            if (!d.classList.contains("today") && !d.classList.contains("active")) {
-              target = d;
-              break;
-            }
-          }
-        }
-        
-        if (!target) target = clickableDays[0];
-        
-        target.click();
-        return { selected: true, day: (target.innerText || "").trim(), totalDays: clickableDays.length };
+        target.el.click();
+        return { 
+          selected: true, 
+          day: target.day, 
+          isGreen: target.isGreen,
+          totalDays: allDays.length, 
+          greenCount: greenDays.length,
+          bgColor: target.bgColor
+        };
       }
       
-      return { selected: false, calCount: calContainers.length };
+      return { selected: false, calCount: calContainers.length, totalDays: allDays.length };
     }, targetDay);
 
     console.log(`  [BOOK] Tarih seçimi: ${JSON.stringify(dateSelected)}`);
 
     if (!dateSelected.selected) {
-      // Takvim açılmamış olabilir, input'a tarih yaz
+      // Takvim açılmamış olabilir — input'a tarih yaz
       let dateStr;
       if (targetDay && targetMonth && targetYear) {
         dateStr = `${String(targetDay).padStart(2, "0")}.${String(targetMonth).padStart(2, "0")}.${targetYear}`;
@@ -2904,12 +2893,11 @@ async function bookEarliestAppointment(page, account) {
         const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         dateStr = `${String(futureDate.getDate()).padStart(2, "0")}.${String(futureDate.getMonth() + 1).padStart(2, "0")}.${futureDate.getFullYear()}`;
       }
-      
       await page.evaluate((val) => {
         const inputs = Array.from(document.querySelectorAll("input"));
         const dateInput = inputs.find(inp => {
           const ph = (inp.placeholder || "").toLowerCase();
-          return ph.includes("seyahat") || ph.includes("tarih");
+          return ph.includes("randevu") || ph.includes("tarih");
         });
         if (dateInput) {
           dateInput.value = "";
@@ -2923,111 +2911,49 @@ async function bookEarliestAppointment(page, account) {
       console.log(`  [BOOK] Manuel tarih girildi: ${dateStr}`);
     }
 
-    await delay(1500, 2500);
+    await delay(2000, 3000);
     const ss2 = await takeScreenshotBase64(page);
-    await idataLog("appt_date_picked", `📅 Takvimden tarih seçildi: ${dateSelected.selected ? `Gün ${dateSelected.day}` : "Manuel"} | Hesap: ${account.email}`, ss2);
+    await idataLog("appt_date_picked", `📅 Tarih seçildi: ${dateSelected.selected ? `Gün ${dateSelected.day} (${dateSelected.greenCount} yeşil gün, bg: ${dateSelected.bgColor})` : "Manuel"} | Hesap: ${account.email}`, ss2);
 
-    // ===== STEP 4: Randevu Tarihi & Saat seçimi =====
-    // Ekran: İki input (Randevu Tarihinizi Seçiniz + Seyahat Başlangıç Tarihi) + alt kısımda Tarih: Seçiniz / Saat: Seçiniz
-    // Tarih seçilince altında saat butonları (ör: "⏰ 08:00") belirir
-    console.log("  [BOOK] Step 4: Randevu tarihi input'una tıklanarak tarih seçiliyor...");
-    await delay(1000, 2000);
-
-    // 4a: "Randevu Tarihinizi Seçiniz" input alanına tıklayıp takvim aç
-    const randevuInputClicked = await page.evaluate(() => {
-      const inputs = Array.from(document.querySelectorAll("input"));
-      const randevuInput = inputs.find(inp => {
-        const ph = (inp.placeholder || "").toLowerCase();
-        return ph.includes("randevu tarih") || ph.includes("randevu tarihinizi");
-      });
-      if (randevuInput) {
-        // Input'un yanındaki takvim ikonunu bul
-        const parent = randevuInput.closest(".input-group, .form-group, div");
-        if (parent) {
-          const icon = parent.querySelector(".input-group-addon, .input-group-append, .input-group-text, span[class*='calendar'], i[class*='calendar'], .glyphicon-calendar, .fa-calendar");
-          if (icon) { icon.click(); return { clicked: true, method: "icon" }; }
-        }
-        randevuInput.click();
-        randevuInput.focus();
-        return { clicked: true, method: "input_click" };
-      }
-      // Fallback: ilk takvim ikonunu tıkla
-      const icon = document.querySelector(".input-group-addon, .glyphicon-calendar, .fa-calendar, [class*='calendar']");
-      if (icon) { icon.click(); return { clicked: true, method: "fallback_icon" }; }
-      return { clicked: false };
-    });
-    console.log(`  [BOOK] Randevu input: ${JSON.stringify(randevuInputClicked)}`);
+    // ===== STEP 4: Turuncu saat butonuna tıkla =====
+    // Tarih seçildikten sonra altında turuncu/kırmızı saat butonları belirir (ör: "⏰ 08:00")
+    console.log("  [BOOK] Step 4: Turuncu saat butonu aranıyor...");
     await delay(2000, 3000);
-
-    // 4b: Takvimden ilk müsait yeşil günü seç (yeşil = müsait, kırmızı = dolu)
-    const calDatePick = await page.evaluate((tDay) => {
-      const calContainers = document.querySelectorAll(
-        ".datepicker, .datepicker-dropdown, .bootstrap-datetimepicker-widget, " +
-        ".datepicker-days, .flatpickr-calendar, .ui-datepicker, " +
-        "[class*='datepicker'], [class*='calendar'], .picker-open, table.table-condensed"
-      );
-      let clickableDays = [];
-      for (const cal of calContainers) {
-        const style = window.getComputedStyle(cal);
-        if (style.display === "none" || style.visibility === "hidden") continue;
-        const days = cal.querySelectorAll("td:not(.disabled):not(.off)");
-        for (const d of days) {
-          const text = (d.innerText || d.textContent || "").trim();
-          if (/^\d{1,2}$/.test(text) && !d.classList.contains("disabled") && !d.classList.contains("old")) {
-            // Yeşil arka planlı günleri tercih et (müsait olanlar)
-            const bgColor = window.getComputedStyle(d).backgroundColor;
-            const isGreen = bgColor && (bgColor.includes("0, 128") || bgColor.includes("40, 167") || bgColor.includes("76, 175") || bgColor.includes("success") || d.classList.contains("bg-success") || d.style.backgroundColor?.includes("green"));
-            clickableDays.push({ el: d, day: parseInt(text), isGreen });
-          }
-        }
-      }
-      // Yeşil günleri öncelikle seç
-      const greenDays = clickableDays.filter(d => d.isGreen);
-      const pool = greenDays.length > 0 ? greenDays : clickableDays;
-      
-      if (pool.length > 0) {
-        let target = null;
-        if (tDay) target = pool.find(d => d.day === tDay);
-        if (!target) target = pool[0]; // En erken günü seç
-        target.el.click();
-        return { selected: true, day: target.day, totalDays: clickableDays.length, greenCount: greenDays.length };
-      }
-      return { selected: false, calCount: calContainers.length };
-    }, targetDay);
-    console.log(`  [BOOK] Takvim tarih seçimi: ${JSON.stringify(calDatePick)}`);
-    await delay(2000, 3000);
-
-    const ss_date = await takeScreenshotBase64(page);
-    await idataLog("appt_date_picked", `📅 Takvimden tarih seçildi: ${calDatePick.selected ? `Gün ${calDatePick.day} (${calDatePick.greenCount} yeşil gün)` : "Seçilemedi"} | Hesap: ${account.email}`, ss_date);
-
-    // 4c: Saat butonuna tıkla (ör: "⏰ 08:00" gibi butonlar beliriyor)
-    console.log("  [BOOK] Step 4c: Saat butonu aranıyor...");
-    await delay(1500, 2500);
 
     const timeButtonResult = await page.evaluate(() => {
-      // Saat butonları genelde "08:00", "09:00" gibi metinlerle kırmızı/turuncu buton olarak çıkıyor
-      const candidates = Array.from(document.querySelectorAll("a, button, span, div, li"));
+      // Saat butonları: turuncu/kırmızı arka planlı, "08:00" veya "⏰ 08:00" metinli
+      const candidates = Array.from(document.querySelectorAll("a, button, span, div, li, label"));
       const timeButtons = [];
       for (const el of candidates) {
         const text = (el.innerText || el.textContent || "").trim();
-        // "08:00" veya "⏰ 08:00" veya "09:30" formatı
         const timeMatch = text.match(/(\d{2}:\d{2})/);
         if (timeMatch) {
           const style = window.getComputedStyle(el);
           const isVisible = style.display !== "none" && style.visibility !== "hidden" && el.offsetParent !== null;
           if (isVisible && el.offsetHeight > 10) {
-            timeButtons.push({ el, time: timeMatch[1], text });
+            // Turuncu/kırmızı renk kontrolü
+            const bgColor = style.backgroundColor;
+            const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            let isOrange = false;
+            if (rgbMatch) {
+              const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
+              // Turuncu: r yüksek, g orta, b düşük
+              isOrange = r > 180 && g > 80 && b < 100;
+            }
+            timeButtons.push({ el, time: timeMatch[1], text, isOrange, bgColor });
           }
         }
       }
       
       if (timeButtons.length > 0) {
-        // İlk (en erken) saati seç
-        timeButtons[0].el.click();
-        return { clicked: true, time: timeButtons[0].time, totalSlots: timeButtons.length };
+        // Turuncu olanları tercih et, yoksa ilkini seç
+        const orangeButtons = timeButtons.filter(t => t.isOrange);
+        const target = orangeButtons.length > 0 ? orangeButtons[0] : timeButtons[0];
+        target.el.click();
+        return { clicked: true, time: target.time, isOrange: target.isOrange, totalSlots: timeButtons.length, bgColor: target.bgColor };
       }
       
-      // Fallback: select dropdown ile saat seçimi
+      // Fallback: select dropdown
       const selects = Array.from(document.querySelectorAll("select"));
       for (const sel of selects) {
         const labelText = (sel.closest("div, label")?.innerText || sel.name || sel.id || "").toLowerCase();
@@ -3038,13 +2964,13 @@ async function bookEarliestAppointment(page, account) {
         }
       }
       
-      return { clicked: false, timeBtnCount: timeButtons.length };
+      return { clicked: false };
     });
     console.log(`  [BOOK] Saat seçimi: ${JSON.stringify(timeButtonResult)}`);
     await delay(2000, 3000);
 
     const ss3 = await takeScreenshotBase64(page);
-    await idataLog("appt_time_selection", `⏰ Saat seçimi: ${timeButtonResult.clicked ? timeButtonResult.time : "seçilemedi"} (${timeButtonResult.totalSlots || 0} slot) | Hesap: ${account.email}`, ss3);
+    await idataLog("appt_time_selection", `⏰ Saat: ${timeButtonResult.clicked ? `${timeButtonResult.time} (turuncu: ${timeButtonResult.isOrange})` : "seçilemedi"} | Hesap: ${account.email}`, ss3);
 
     // ===== STEP 5: İLERİ butonuna tıkla (TARİH sayfasından çık) =====
     console.log("  [BOOK] Step 5: İLERİ butonuna tıklanıyor (tarih sayfası)...");
