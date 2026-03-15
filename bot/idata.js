@@ -3446,11 +3446,8 @@ async function bookEarliestAppointment(page, account) {
     
     // Yeşil günleri tespit et — sadece whitelist içindeki açık tarihlerden seç
     const dateInfo = await page.evaluate((targetNormalized, allowedDates, anchorX, anchorY) => {
-      const calContainers = Array.from(document.querySelectorAll(
-        ".datepicker, .datepicker-dropdown, .bootstrap-datetimepicker-widget, " +
-        ".datepicker-days, .flatpickr-calendar, .ui-datepicker, " +
-        "[class*='datepicker'], [class*='calendar'], .picker-open, table.table-condensed"
-      ));
+      const calendarSelector = ".datepicker, .datepicker-dropdown, .bootstrap-datetimepicker-widget, .datepicker-days, .flatpickr-calendar, .ui-datepicker, [class*='datepicker'], [class*='calendar'], .picker-open, table.table-condensed";
+      const calContainers = Array.from(document.querySelectorAll(calendarSelector));
 
       const allowedSet = new Set((allowedDates || []).filter(Boolean));
       const monthMap = {
@@ -3458,13 +3455,32 @@ async function bookEarliestAppointment(page, account) {
         ocak: 1, şubat: 2, subat: 2, mart: 3, nisan: 4, mayıs: 5, mayis: 5, haziran: 6, temmuz: 7, ağustos: 8, agustos: 8, eylül: 9, eylul: 9, ekim: 10, kasım: 11, kasim: 11, aralık: 12, aralik: 12,
       };
 
+      const isVisible = (el) => {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      };
+
+      const normalizeText = (value) => String(value || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/ı/g, "i")
+        .replace(/ğ/g, "g")
+        .replace(/ş/g, "s")
+        .replace(/ü/g, "u")
+        .replace(/ö/g, "o")
+        .replace(/ç/g, "c");
+
       const parseMonthYear = (text) => {
-        const raw = String(text || "").trim().toLowerCase();
+        const raw = normalizeText(text);
         if (!raw) return { month: null, year: null, headerText: "" };
         const yearMatch = raw.match(/(20\d{2})/);
         let month = null;
         for (const [name, num] of Object.entries(monthMap)) {
-          if (raw.includes(name)) {
+          if (raw.includes(normalizeText(name))) {
             month = num;
             break;
           }
@@ -3476,6 +3492,24 @@ async function bookEarliestAppointment(page, account) {
         };
       };
 
+      const findCalendarRoot = (startNode) => {
+        let node = startNode;
+        let best = null;
+        let depth = 0;
+        while (node && node !== document.body && depth < 8) {
+          if (node.matches?.(calendarSelector) && isVisible(node)) {
+            const rect = node.getBoundingClientRect();
+            const dayCount = node.querySelectorAll?.("td").length || 0;
+            if (rect.width >= 140 && rect.height >= 120 && dayCount >= 20) {
+              best = node;
+            }
+          }
+          node = node.parentElement;
+          depth += 1;
+        }
+        return best;
+      };
+
       const pickCalendarHeader = (cal) => {
         const localHeaders = Array.from(cal.querySelectorAll(
           ".datepicker-switch, .picker-switch, .datepicker th.switch, .ui-datepicker-title, caption, th"
@@ -3484,21 +3518,19 @@ async function bookEarliestAppointment(page, account) {
           const parsed = parseMonthYear(node.innerText || node.textContent || "");
           if (parsed.month && parsed.year) return parsed;
         }
-
-        const parentHeaders = Array.from((cal.parentElement || document.body).querySelectorAll(
-          ".datepicker-switch, .picker-switch, .datepicker th.switch, .ui-datepicker-title, caption, th"
-        ));
-        for (const node of parentHeaders) {
-          const parsed = parseMonthYear(node.innerText || node.textContent || "");
-          if (parsed.month && parsed.year) return parsed;
-        }
-
         return { month: null, year: null, headerText: "" };
       };
 
+      const dedupedCalendars = [];
+      for (const cal of calContainers) {
+        const root = findCalendarRoot(cal) || cal;
+        if (!isVisible(root)) continue;
+        if (!dedupedCalendars.includes(root)) dedupedCalendars.push(root);
+      }
+
       const candidateCalendars = [];
 
-      for (const cal of calContainers) {
+      for (const cal of dedupedCalendars) {
         const style = window.getComputedStyle(cal);
         const calRect = cal.getBoundingClientRect();
         if (style.display === "none" || style.visibility === "hidden") continue;
@@ -3586,15 +3618,19 @@ async function bookEarliestAppointment(page, account) {
         const distance = (anchorX != null && anchorY != null)
           ? Math.hypot(calCenterX - anchorX, calCenterY - anchorY)
           : 9999;
+        const insideX = anchorX != null && anchorX >= calRect.x - 24 && anchorX <= calRect.x + calRect.width + 24;
+        const belowAnchor = anchorY != null ? calRect.y >= anchorY - 90 : true;
+        const zIndex = parseInt(style.zIndex || "0", 10) || 0;
+        const score = (insideX ? 220 : -Math.min(220, Math.abs(calCenterX - (anchorX ?? calCenterX)))) + (belowAnchor ? 180 : -260) + Math.min(zIndex, 999) / 5 - Math.round(distance);
 
-        candidateCalendars.push({ days, distance, width: calRect.width, height: calRect.height, headerText });
+        candidateCalendars.push({ days, distance, width: calRect.width, height: calRect.height, headerText, score, y: calRect.y });
       }
 
       if (candidateCalendars.length === 0) {
         return { found: false, totalDays: 0, reason: "calendar_not_found" };
       }
 
-      candidateCalendars.sort((a, b) => a.distance - b.distance);
+      candidateCalendars.sort((a, b) => b.score - a.score || a.distance - b.distance || a.y - b.y);
       const selectedCalendar = candidateCalendars[0];
       const allDays = selectedCalendar.days;
 
@@ -3626,6 +3662,7 @@ async function bookEarliestAppointment(page, account) {
           postbackArg: target.postbackArg,
           linkHref: target.linkHref,
           calendarDistance: selectedCalendar.distance,
+          calendarScore: Math.round(selectedCalendar.score || 0),
           matchedWhitelist: target.matchesWhitelist,
         };
       }
@@ -3635,6 +3672,7 @@ async function bookEarliestAppointment(page, account) {
         totalDays: allDays.length,
         reason: allowedSet.size > 0 ? "no_whitelisted_green_days" : "no_green_days",
         visibleGreenDates: strictGreenDays.map((d) => d.normalizedDate).filter(Boolean).slice(0, 10),
+        calendarScore: Math.round(selectedCalendar.score || 0),
       };
     }, targetAppointmentDate?.normalized ?? null, announcedAppointmentDateKeys, calIconClicked?.inputX ?? null, calIconClicked?.inputY ?? null);
 
