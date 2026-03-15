@@ -1978,8 +1978,8 @@ async function checkAppointments(config, account) {
       else if (isLoginFailed) errorType = "❌ Giriş başarısız";
 
       // Session expired veya Turnstile hatalarında IP'yi anında banla — sıradaki IP + temiz profil ile yeniden başlasın
-      if (pageCheck.isSessionExpired || errorType.includes("Turnstile") || pageCheck.isWaitingRoom) {
-        banIpImmediately(activeIp, "post_login_session_or_turnstile_error");
+      if (pageCheck.isSessionExpired || pageCheck.isApiError || errorType.includes("Turnstile") || pageCheck.isWaitingRoom) {
+        banIpImmediately(activeIp, "post_login_session_or_api_or_turnstile_error");
       }
 
       const finalDiag = await getTurnstileDiagnostics(page).catch(() => null);
