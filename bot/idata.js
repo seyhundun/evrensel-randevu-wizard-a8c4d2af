@@ -11,6 +11,7 @@ const CONFIG = {
   API_URL: "https://ocrpzwrsyiprfuzsyivf.supabase.co/functions/v1/bot-api",
   API_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jcnB6d3JzeWlwcmZ1enN5aXZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMDQ1NzksImV4cCI6MjA4ODg4MDU3OX0.5MzKGm6byd1zLxjgxaXyQq5VfPFo_CE2MhcXijIRarc",
   CAPTCHA_API_KEY: (process.env.CAPTCHA_API_KEY || process.env.TWOCAPTCHA_API_KEY || "").trim(),
+  OTP_EMAIL_FROM: (process.env.IDATA_OTP_FROM || "").trim().toLowerCase(), // örn: no-reply@idata.com.tr
   REGISTER_URL: "https://it-tr-appointment.idata.com.tr/tr/membership/register",
   LOGIN_URL: "https://it-tr-appointment.idata.com.tr/tr/membership/login",
   APPOINTMENT_URL: "https://it-tr-appointment.idata.com.tr/tr/membership/dashboard/application/availability",
