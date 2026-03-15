@@ -3585,12 +3585,14 @@ async function bookEarliestAppointment(page, account) {
       if (!dateVerify.isActive) {
         console.log("  [BOOK] Tarih aktif değil, element handle ile deneniyor...");
         try {
-          const tdElements = await page.$$("td.enabled-day");
+          const tdElements = await page.$$("td.enabled-day, td .enabled-day, a.enabled-day");
           const greenPool = [];
           for (const elHandle of tdElements) {
             const elInfo = await page.evaluate(el => {
-              const text = (el.innerText || el.textContent || "").trim();
-              return { day: parseInt(text) };
+              const cell = el.tagName === "TD" ? el : (el.closest("td") || el);
+              const text = (cell.innerText || cell.textContent || "").trim();
+              const day = parseInt(text);
+              return { day };
             }, elHandle);
             if (!isNaN(elInfo.day)) {
               greenPool.push({ handle: elHandle, day: elInfo.day });
