@@ -174,7 +174,7 @@ export default function IdataAccounts() {
       email: "", password: generateSecurePassword(),
       first_name: "", last_name: "", passport_no: "",
       phone: "", birth_day: "01", birth_month: "01", birth_year: "1990",
-      residence_city: "", idata_office: "", travel_purpose: "",
+      residence_city: "", idata_office: "", travel_purpose: "", travel_date: "",
       invoice_city: "", invoice_district: "", invoice_address: "",
       membership_number: "", imap_host: "imap.gmail.com", imap_password: "",
     });
