@@ -3626,9 +3626,17 @@ async function bookEarliestAppointment(page, account) {
         const childControls = Array.from(el.querySelectorAll("button, a, input"));
         const hasNestedTimeControl = childControls.some(child => {
           const childTxt = (child.innerText || child.textContent || child.value || "").trim();
-          return childTxt.includes(timeMatch[1]);
+          return /(\d{1,2}[:.]\d{2})/.test(childTxt);
         });
         if (hasNestedTimeControl && tag !== "BUTTON" && tag !== "A" && tag !== "INPUT") continue;
+
+        // Saat metnini daha esnek yakala: 9:30, 09:30, 09.30
+        const normalizedRawText = rawText.replace(/\s+/g, " ");
+        const timeMatch = normalizedRawText.match(/(\d{1,2}[:.]\d{2})/);
+        if (!timeMatch && !cls.includes("getdatebtnhour")) continue;
+
+        const matchedTime = timeMatch ? timeMatch[1].replace(".", ":") : (el.getAttribute("data-time") || "").replace(".", ":");
+        if (!matchedTime) continue;
 
         const bgColor = style.backgroundColor;
         const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
@@ -3637,7 +3645,7 @@ async function bookEarliestAppointment(page, account) {
           const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
           isOrange = r > 180 && g > 80 && b < 100;
         }
-        if (cls.includes("btn-warning") || cls.includes("btn-orange") || cls.includes("warning") || cls.includes("active")) isOrange = true;
+        if (cls.includes("btn-warning") || cls.includes("btn-orange") || cls.includes("warning") || cls.includes("active") || cls.includes("getdatebtnhour")) isOrange = true;
 
         const href = el.getAttribute("href") || "";
         let postbackTarget = null, postbackArg = null;
