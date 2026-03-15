@@ -3368,24 +3368,32 @@ async function bookEarliestAppointment(page, account) {
         console.log("  [BOOK] Tarih aktif değil, element handle + jQuery datepicker ile deneniyor...");
         try {
           // Yöntem 1: element handle ile td tıklama
-          const tdElements = await page.$$("td.day:not(.disabled):not(.old):not(.new), td:not(.disabled):not(.old)");
+          // Yöntem 1: element handle ile td.enabled-day tıklama (iDATA specific)
+          const tdElements = await page.$$("td.enabled-day, td.day:not(.disabled):not(.disabled-day):not(.old):not(.new), td:not(.disabled):not(.disabled-day):not(.old)");
+          const greenPool = [];
           for (const elHandle of tdElements) {
             const elInfo = await page.evaluate(el => {
               const text = (el.innerText || el.textContent || "").trim();
               const bgColor = window.getComputedStyle(el).backgroundColor;
+              const cls = (el.className || "").toLowerCase();
               const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-              let isGreen = false;
-              if (rgbMatch) {
+              let isGreen = cls.includes("enabled-day");
+              if (!isGreen && rgbMatch) {
                 const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
                 isGreen = g > 100 && g > r * 1.3 && g > b * 1.3;
               }
-              return { text, isGreen, bgColor };
+              return { text, isGreen, bgColor, day: parseInt(text) };
             }, elHandle);
-            if (parseInt(elInfo.text) === dateInfo.day && elInfo.isGreen) {
-              await elHandle.click();
-              console.log(`  [BOOK] ✅ Element handle td tarih: Gün ${dateInfo.day}`);
-              break;
+            if (elInfo.isGreen && !isNaN(elInfo.day)) {
+              greenPool.push({ handle: elHandle, ...elInfo });
             }
+          }
+          // İkinci yeşil günü seç (pool[1]), yoksa ilki
+          greenPool.sort((a, b) => a.day - b.day);
+          const targetGreen = greenPool.find(g => g.day === dateInfo.day) || (greenPool.length > 1 ? greenPool[1] : greenPool[0]);
+          if (targetGreen) {
+            await targetGreen.handle.click();
+            console.log(`  [BOOK] ✅ Element handle td.enabled-day: Gün ${targetGreen.day}`);
           }
 
           await delay(1000, 1500);
