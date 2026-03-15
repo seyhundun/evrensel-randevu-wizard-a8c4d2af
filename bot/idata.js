@@ -3333,8 +3333,10 @@ async function bookEarliestAppointment(page, account) {
         const body = (document.body?.innerText || "").toLowerCase();
         const hasWarning = body.includes("bir randevu tarihi ve saati seçiniz") || 
                           body.includes("randevu tarihi ve saati") ||
-                          body.includes("tarih ve saat seçiniz");
-        // Uyarı varsa Tamam'a tıkla
+                          body.includes("tarih ve saat seçiniz") ||
+                          body.includes("lütfen başka bir tarih seçin") ||
+                          body.includes("başka bir tarih") ||
+                          body.includes("lütfen başka bir tarih");
         if (hasWarning) {
           const closeButtons = document.querySelectorAll('.swal2-confirm, .swal2-close, .modal .btn, button');
           for (const btn of closeButtons) {
