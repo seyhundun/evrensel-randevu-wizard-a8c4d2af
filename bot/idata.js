@@ -1243,16 +1243,22 @@ async function tryImapOtp(accountId) {
           .split(/\n(?:On .+ wrote:|-----Original Message-----|From:\s.+\nSent:\s.+)/i)[0]
           .slice(0, 5000);
 
+        const priorityPatterns = [
+          /(?:lütfen aşağıdaki doğrulama kodunu kullanın|please use the following verification code|si prega di utilizzare il seguente codice di verifica)[\s\S]{0,160}?\b(\d{4})\b/i,
+          /(?:doğrulama kodu|verification code|codice di verifica)[\s\S]{0,120}?\b(\d{4})\b/i,
+        ];
+
         const strictPatterns = [
-          /e-?posta doğrulama kodu[^\d]{0,20}(\d{4,6})/i,
-          /doğrulama kodu[^\d]{0,20}(\d{4,6})/i,
-          /verification code[^\d]{0,20}(\d{4,6})/i,
-          /one[-\s]?time password[^\d]{0,20}(\d{4,6})/i,
-          /otp[^\d]{0,20}(\d{4,6})/i,
+          /e-?posta doğrulama kodu[^\d]{0,30}(\d{4})/i,
+          /doğrulama kodu[^\d]{0,30}(\d{4})/i,
+          /verification code[^\d]{0,30}(\d{4})/i,
+          /codice di verifica[^\d]{0,30}(\d{4})/i,
+          /otp[^\d]{0,30}(\d{4})/i,
         ];
 
         let otp = null;
-        for (const pattern of strictPatterns) {
+
+        for (const pattern of priorityPatterns) {
           const match = mainBlock.match(pattern);
           if (match?.[1]) {
             otp = match[1];
@@ -1260,10 +1266,20 @@ async function tryImapOtp(accountId) {
           }
         }
 
-        // Fallback: üst blokta geçen ilk 4-6 haneli kod
         if (!otp) {
-          const fallback = mainBlock.match(/\b(\d{4,6})\b/);
-          if (fallback?.[1]) otp = fallback[1];
+          for (const pattern of strictPatterns) {
+            const match = mainBlock.match(pattern);
+            if (match?.[1]) {
+              otp = match[1];
+              break;
+            }
+          }
+        }
+
+        // Fallback: üst bloktaki son 4 haneli sayı (ilkini değil, en günceli al)
+        if (!otp) {
+          const allCodes = [...mainBlock.matchAll(/\b(\d{4})\b/g)].map((m) => m[1]);
+          if (allCodes.length > 0) otp = allCodes[allCodes.length - 1];
         }
 
         if (otp) {
@@ -1292,27 +1308,34 @@ async function tryImapOtp(accountId) {
 async function waitForLoginOtp(accountId, timeoutMs = 180000, hasImap = false) {
   const start = Date.now();
   let imapAttempts = 0;
-  let imapPromise = null; // background IMAP fetch
-  
+  let imapPromise = null;
+  let imapResolvedOtp = null;
+
   while (Date.now() - start < timeoutMs) {
     // 1) IMAP: arka planda çalıştır, sonucu beklemeden manual'ı da kontrol et
-    if (hasImap && imapAttempts < 20 && !imapPromise) {
+    if (hasImap && imapAttempts < 20 && !imapPromise && !imapResolvedOtp) {
       imapAttempts++;
       console.log(`  [OTP] IMAP ile otomatik okuma deneniyor (${imapAttempts})...`);
-      imapPromise = tryImapOtp(accountId).then(otp => {
-        imapPromise = null;
-        return otp;
-      }).catch(() => { imapPromise = null; return null; });
+      imapPromise = tryImapOtp(accountId)
+        .then((otp) => {
+          if (otp) imapResolvedOtp = otp;
+          return otp;
+        })
+        .catch(() => null)
+        .finally(() => {
+          imapPromise = null;
+        });
     }
-    
-    // Check if IMAP resolved
+
+    // IMAP sonucunu beklemeden kısa aralıklarla yokla
     if (imapPromise) {
-      const raceResult = await Promise.race([imapPromise, new Promise(r => setTimeout(() => r("__timeout__"), 500))]);
-      if (raceResult && raceResult !== "__timeout__") {
-        console.log(`  [OTP] ✅ IMAP'ten OTP alındı: ${raceResult}`);
-        await idataLog("login_otp", `📧 IMAP'ten OTP alındı otomatik: ${raceResult}`);
-        return raceResult;
-      }
+      await Promise.race([imapPromise, new Promise((r) => setTimeout(r, 500))]);
+    }
+
+    if (imapResolvedOtp) {
+      console.log(`  [OTP] ✅ IMAP'ten OTP alındı: ${imapResolvedOtp}`);
+      await idataLog("login_otp", `📧 IMAP'ten OTP alındı otomatik: ${imapResolvedOtp}`);
+      return imapResolvedOtp;
     }
 
     // 2) Manuel OTP kontrolü (dashboard'dan) — her zaman kontrol et
