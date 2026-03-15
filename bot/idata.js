@@ -3295,11 +3295,15 @@ async function bookEarliestAppointment(page, account) {
               }
             }
           }
-          // Ayrıca datepicker input'undaki değeri kontrol et
+          // Date input değeri gerçekten seçilen günü yansıtıyor mu kontrol et
           const dateInputs = document.querySelectorAll("input[data-provide='datepicker'], input.datepicker, input[name*='date' i], input[name*='tarih' i], input[placeholder*='Tarih' i]");
           for (const inp of dateInputs) {
-            if (inp.value && inp.value.trim().length > 0) {
-              return { isActive: true, cls: "input-has-value: " + inp.value };
+            const v = (inp.value || "").trim();
+            if (!v) continue;
+            const dayMatch = v.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/) || v.match(/(\d{1,2})/);
+            const pickedDay = dayMatch ? parseInt(dayMatch[1]) : NaN;
+            if (!Number.isNaN(pickedDay) && pickedDay === dayNum) {
+              return { isActive: true, cls: "input-matched-day: " + v };
             }
           }
           return { isActive: false, cls: "" };
