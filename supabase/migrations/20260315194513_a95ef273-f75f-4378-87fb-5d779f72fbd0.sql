@@ -1,0 +1,1 @@
+ALTER TABLE public.idata_accounts ADD COLUMN booking_enabled boolean NOT NULL DEFAULT true;

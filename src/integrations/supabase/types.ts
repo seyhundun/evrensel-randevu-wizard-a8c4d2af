@@ -91,6 +91,7 @@ export type Database = {
           birth_day: string
           birth_month: string
           birth_year: string
+          booking_enabled: boolean
           created_at: string
           email: string
           fail_count: number
@@ -126,6 +127,7 @@ export type Database = {
           birth_day?: string
           birth_month?: string
           birth_year?: string
+          booking_enabled?: boolean
           created_at?: string
           email: string
           fail_count?: number
@@ -161,6 +163,7 @@ export type Database = {
           birth_day?: string
           birth_month?: string
           birth_year?: string
+          booking_enabled?: boolean
           created_at?: string
           email?: string
           fail_count?: number

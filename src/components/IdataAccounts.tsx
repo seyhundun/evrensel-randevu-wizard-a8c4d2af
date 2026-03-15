@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Plus, Trash2, Eye, EyeOff, UserCheck, Ban, Clock, UserPlus, Loader2, RefreshCw, Pencil, Mail, Phone, MessageSquare, Send } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 const IDATA_PASSWORD_SPECIAL = "@$!%*#?&";
 
@@ -64,6 +65,7 @@ interface IdataAccount {
   otp_requested_at: string | null;
   registration_otp: string | null;
   registration_otp_type: string | null;
+  booking_enabled: boolean;
 }
 
 interface CityOffice {
@@ -506,7 +508,21 @@ export default function IdataAccounts() {
                      {acc.imap_password && <Badge className="bg-green-500/10 text-green-600 border-green-500/20 text-[10px]">📧 IMAP</Badge>}
                   </div>
                 </div>
-                <div className="flex gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 mr-2">
+                    <Switch
+                      checked={acc.booking_enabled}
+                      onCheckedChange={async (checked) => {
+                        await supabase.from("idata_accounts" as any)
+                          .update({ booking_enabled: checked } as any)
+                          .eq("id", acc.id);
+                        toast.success(checked ? "Randevu alımı açıldı" : "Randevu alımı kapatıldı");
+                      }}
+                    />
+                    <span className={`text-[10px] font-medium ${acc.booking_enabled ? "text-emerald-600" : "text-muted-foreground"}`}>
+                      {acc.booking_enabled ? "Randevu Aktif" : "Pasif"}
+                    </span>
+                  </div>
                   <Button size="sm" variant="outline" onClick={() => loadToForm(acc)} className="gap-1">
                     <Pencil className="w-3.5 h-3.5" /> Düzenle
                   </Button>
