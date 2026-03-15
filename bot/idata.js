@@ -1159,7 +1159,7 @@ async function tryImapOtp(accountId) {
 
     // Hesap bilgilerini al
     const res = await fetch(
-      `https://ocrpzwrsyiprfuzsyivf.supabase.co/rest/v1/idata_accounts?id=eq.${accountId}&select=email,imap_host,imap_password`,
+      `https://ocrpzwrsyiprfuzsyivf.supabase.co/rest/v1/idata_accounts?id=eq.${accountId}&select=email,imap_host,imap_password,otp_requested_at`,
       {
         headers: {
           apikey: CONFIG.API_KEY,
@@ -1178,10 +1178,34 @@ async function tryImapOtp(accountId) {
       .map((x) => x.trim().toLowerCase())
       .filter(Boolean);
 
+    const otpRequestedAt = account.otp_requested_at ? new Date(account.otp_requested_at) : null;
+    const otpRequestedTs = otpRequestedAt && !Number.isNaN(otpRequestedAt.getTime())
+      ? otpRequestedAt.getTime()
+      : null;
+
     console.log(`  [IMAP] ${account.email} → ${host} bağlanıyor...`);
     if (allowedFrom.length) {
       console.log(`  [IMAP] Gönderen filtresi: ${allowedFrom.join(", ")}`);
     }
+    if (otpRequestedTs) {
+      console.log(`  [IMAP] OTP istek zamanı: ${new Date(otpRequestedTs).toISOString()}`);
+    }
+
+    const decodeQuotedPrintable = (text = "") =>
+      text
+        .replace(/=\r?\n/g, "")
+        .replace(/=([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+
+    const htmlToText = (text = "") =>
+      text
+        .replace(/<br\s*\/?\s*>/gi, "\n")
+        .replace(/<\/(p|div|tr|td|h1|h2|h3|h4|h5|h6)>/gi, "\n")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/\u00a0/g, " ")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n");
 
     const client = new ImapFlow({
       host,
@@ -1197,20 +1221,24 @@ async function tryImapOtp(accountId) {
     const lock = await client.getMailboxLock("INBOX");
 
     try {
-      // Son 1 gündeki okunmamış mailleri ara
-      const since = new Date();
-      since.setDate(since.getDate() - 1);
+      // Son 1 gün (ve mümkünse OTP istek zamanına yakın) mailleri tara
+      const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      const sinceTs = otpRequestedTs
+        ? Math.max(oneDayAgo, otpRequestedTs - 5 * 60 * 1000)
+        : oneDayAgo;
+      const since = new Date(sinceTs);
 
-      const messages = await client.search({ seen: false, since }, { uid: true });
+      // seen filtresi kaldırıldı: kullanıcı maili açsa bile en güncel OTP okunabilsin
+      const messages = await client.search({ since }, { uid: true });
       if (!messages.length) {
-        console.log("  [IMAP] Okunmamış mail yok");
+        console.log("  [IMAP] Uygun zaman aralığında mail yok");
         await lock.release();
         await client.logout();
         return null;
       }
 
       // En yeni maillerden geriye doğru tara (önce son gelen mail)
-      const lastUids = messages.slice(-10).reverse();
+      const lastUids = messages.slice(-20).reverse();
 
       for (const uid of lastUids) {
         const msg = await client.fetchOne(
@@ -1224,6 +1252,13 @@ async function tryImapOtp(accountId) {
           .filter(Boolean);
         const fromText = fromList.join(", ");
         const subject = msg?.envelope?.subject || "";
+        const msgTs = msg?.internalDate ? new Date(msg.internalDate).getTime() : null;
+
+        // OTP isteğinden bariz eski mailleri atla
+        if (otpRequestedTs && msgTs && msgTs < otpRequestedTs - 15000) {
+          console.log(`  [IMAP] UID ${uid} atlandı (eski mail: ${new Date(msgTs).toISOString()})`);
+          continue;
+        }
 
         // Gönderen filtresi varsa sadece o adresten gelenleri işle
         if (allowedFrom.length > 0) {
@@ -1241,26 +1276,29 @@ async function tryImapOtp(accountId) {
         // Konuşma geçmişindeki eski kodları elemek için sadece üst (en yeni) bölüm
         const mainBlock = rawText
           .split(/\n(?:On .+ wrote:|-----Original Message-----|From:\s.+\nSent:\s.+)/i)[0]
-          .slice(0, 5000);
+          .slice(0, 12000);
+
+        // MIME/HTML kaynaklarını normalize et (quoted-printable + html strip)
+        const normalizedText = htmlToText(decodeQuotedPrintable(mainBlock));
 
         const priorityPatterns = [
-          /(?:lütfen aşağıdaki doğrulama kodunu kullanın|please use the following verification code|si prega di utilizzare il seguente codice di verifica)[\s\S]{0,160}?\b(\d{4})\b/i,
-          /(?:doğrulama kodu|verification code|codice di verifica)[\s\S]{0,120}?\b(\d{4})\b/i,
+          /(?:lütfen aşağıdaki doğrulama kodunu kullanın|please use the following verification code|si prega di utilizzare il seguente codice di verifica)[\s\S]{0,240}?\b(\d{4})\b/i,
+          /(?:doğrulama kodu|verification code|codice di verifica)[\s\S]{0,160}?\b(\d{4})\b/i,
         ];
 
         const strictPatterns = [
-          /e-?posta doğrulama kodu[^\d]{0,30}(\d{4})/i,
-          /doğrulama kodu[^\d]{0,30}(\d{4})/i,
-          /verification code[^\d]{0,30}(\d{4})/i,
-          /codice di verifica[^\d]{0,30}(\d{4})/i,
-          /otp[^\d]{0,30}(\d{4})/i,
+          /e-?posta doğrulama kodu[^\d]{0,40}(\d{4})/i,
+          /doğrulama kodu[^\d]{0,40}(\d{4})/i,
+          /verification code[^\d]{0,40}(\d{4})/i,
+          /codice di verifica[^\d]{0,40}(\d{4})/i,
+          /otp[^\d]{0,40}(\d{4})/i,
         ];
 
         let otp = null;
 
         for (const pattern of priorityPatterns) {
-          const match = mainBlock.match(pattern);
-          if (match?.[1]) {
+          const match = normalizedText.match(pattern);
+          if (match?.[1] && match[1] !== "0000") {
             otp = match[1];
             break;
           }
@@ -1268,17 +1306,27 @@ async function tryImapOtp(accountId) {
 
         if (!otp) {
           for (const pattern of strictPatterns) {
-            const match = mainBlock.match(pattern);
-            if (match?.[1]) {
+            const match = normalizedText.match(pattern);
+            if (match?.[1] && match[1] !== "0000") {
               otp = match[1];
               break;
             }
           }
         }
 
-        // Fallback: üst bloktaki son 4 haneli sayı (ilkini değil, en günceli al)
+        // Fallback-1: satır bazlı 4 haneli kod (mail şablonlarında OTP çoğunlukla tek satır)
         if (!otp) {
-          const allCodes = [...mainBlock.matchAll(/\b(\d{4})\b/g)].map((m) => m[1]);
+          const lineCodes = [...normalizedText.matchAll(/^\s*(\d{4})\s*$/gm)]
+            .map((m) => m[1])
+            .filter((x) => x !== "0000");
+          if (lineCodes.length > 0) otp = lineCodes[lineCodes.length - 1];
+        }
+
+        // Fallback-2: metindeki son 4 haneli sayı
+        if (!otp) {
+          const allCodes = [...normalizedText.matchAll(/\b(\d{4})\b/g)]
+            .map((m) => m[1])
+            .filter((x) => x !== "0000");
           if (allCodes.length > 0) otp = allCodes[allCodes.length - 1];
         }
 
