@@ -2998,8 +2998,8 @@ async function bookEarliestAppointment(page, account) {
       }
     }
     
-    // Yeşil günleri tespit et ve en erken olanı seç
-    const dateSelected = await page.evaluate((tDay) => {
+    // Yeşil günleri tespit et — koordinatlarını al (mouse.click için)
+    const dateInfo = await page.evaluate((tDay) => {
       const calContainers = document.querySelectorAll(
         ".datepicker, .datepicker-dropdown, .bootstrap-datetimepicker-widget, " +
         ".datepicker-days, .flatpickr-calendar, .ui-datepicker, " +
@@ -3021,58 +3021,112 @@ async function bookEarliestAppointment(page, account) {
           const dayNum = parseInt(text);
           const bgColor = window.getComputedStyle(d).backgroundColor;
           
-          // Renk tespiti: rgb değerlerini parse et
           const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-          let isGreen = false;
-          let isRed = false;
-          let isYellow = false;
+          let isGreen = false, isRed = false, isYellow = false;
           
           if (rgbMatch) {
             const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
-            // Yeşil: g > r ve g > b (müsait günler)
             isGreen = g > 100 && g > r * 1.3 && g > b * 1.3;
-            // Kırmızı: r > g ve r > b (dolu günler) 
             isRed = r > 150 && r > g * 1.5 && r > b * 1.5;
-            // Sarı/turuncu: r > 200 ve g > 150 ve b < 100
             isYellow = r > 200 && g > 150 && b < 100;
           }
           
-          // CSS class kontrolü
           if (d.classList.contains("bg-success") || d.classList.contains("success")) isGreen = true;
           if (d.classList.contains("bg-danger") || d.classList.contains("danger")) isRed = true;
           if (d.classList.contains("bg-warning") || d.classList.contains("warning") || d.classList.contains("today") || d.classList.contains("active")) isYellow = true;
           
-          allDays.push({ el: d, day: dayNum, isGreen, isRed, isYellow, bgColor });
+          const rect = d.getBoundingClientRect();
+          allDays.push({ day: dayNum, isGreen, isRed, isYellow, bgColor, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
         }
       }
       
-      // Yeşil günleri filtrele (en erken önce)
       const greenDays = allDays.filter(d => d.isGreen).sort((a, b) => a.day - b.day);
       const nonRedDays = allDays.filter(d => !d.isRed && !d.isYellow).sort((a, b) => a.day - b.day);
-      
-      // Öncelik: yeşil günler > kırmızı/sarı olmayan günler > tüm günler
       const pool = greenDays.length > 0 ? greenDays : (nonRedDays.length > 0 ? nonRedDays : allDays);
       
       if (pool.length > 0) {
         let target = null;
-        // Hedef gün belirtilmişse onu bul
         if (tDay) target = pool.find(d => d.day === tDay);
-        // Yoksa en erken günü seç
         if (!target) target = pool[0];
-        
-        target.el.click();
         return { 
-          selected: true, 
-          day: target.day, 
-          isGreen: target.isGreen,
-          totalDays: allDays.length, 
-          greenCount: greenDays.length,
-          bgColor: target.bgColor
+          found: true, day: target.day, isGreen: target.isGreen,
+          x: target.x, y: target.y,
+          totalDays: allDays.length, greenCount: greenDays.length, bgColor: target.bgColor
         };
       }
       
-      return { selected: false, calCount: calContainers.length, totalDays: allDays.length };
+      return { found: false, totalDays: allDays.length };
     }, targetDay);
+
+    console.log(`  [BOOK] Tarih bilgisi: ${JSON.stringify(dateInfo)}`);
+    
+    let dateSelected = { selected: false, day: 0, greenCount: 0, bgColor: "" };
+    
+    if (dateInfo.found) {
+      // Puppeteer gerçek mouse tıklaması
+      try {
+        await page.mouse.click(dateInfo.x, dateInfo.y);
+        console.log(`  [BOOK] ✅ Mouse.click tarih: Gün ${dateInfo.day} (x:${Math.round(dateInfo.x)}, y:${Math.round(dateInfo.y)})`);
+        dateSelected = { selected: true, day: dateInfo.day, isGreen: dateInfo.isGreen, greenCount: dateInfo.greenCount, bgColor: dateInfo.bgColor };
+      } catch (mouseErr) {
+        console.log(`  [BOOK] Mouse.click tarih hata: ${mouseErr.message}, DOM click deneniyor...`);
+        // Fallback: DOM click
+        const domResult = await page.evaluate((dayNum) => {
+          const calContainers = document.querySelectorAll("[class*='datepicker'], [class*='calendar'], table.table-condensed");
+          for (const cal of calContainers) {
+            const tds = cal.querySelectorAll("td");
+            for (const d of tds) {
+              const text = (d.innerText || d.textContent || "").trim();
+              if (parseInt(text) === dayNum && !d.classList.contains("disabled") && !d.classList.contains("old")) {
+                d.click();
+                return true;
+              }
+            }
+          }
+          return false;
+        }, dateInfo.day);
+        dateSelected = { selected: domResult, day: dateInfo.day, isGreen: dateInfo.isGreen, greenCount: dateInfo.greenCount, bgColor: dateInfo.bgColor };
+      }
+      
+      await delay(1500, 2500);
+      
+      // Doğrulama + element handle fallback
+      const dateVerify = await page.evaluate((dayNum) => {
+        const calContainers = document.querySelectorAll("[class*='datepicker'], [class*='calendar'], table.table-condensed");
+        for (const cal of calContainers) {
+          const tds = cal.querySelectorAll("td");
+          for (const d of tds) {
+            const text = (d.innerText || d.textContent || "").trim();
+            if (parseInt(text) === dayNum) {
+              const cls = (d.className || "").toLowerCase();
+              return { isActive: cls.includes("active") || cls.includes("selected") };
+            }
+          }
+        }
+        return { isActive: false };
+      }, dateInfo.day);
+      
+      if (!dateVerify.isActive) {
+        console.log("  [BOOK] Tarih aktif değil, element handle ile deneniyor...");
+        try {
+          const tdElements = await page.$$("td");
+          for (const elHandle of tdElements) {
+            const elText = await page.evaluate(el => (el.innerText || el.textContent || "").trim(), elHandle);
+            if (parseInt(elText) === dateInfo.day) {
+              const isDisabled = await page.evaluate(el => el.classList.contains("disabled") || el.classList.contains("old"), elHandle);
+              if (!isDisabled) {
+                await elHandle.click();
+                console.log(`  [BOOK] ✅ Element handle tarih: Gün ${dateInfo.day}`);
+                break;
+              }
+            }
+          }
+        } catch (ehErr) {
+          console.log(`  [BOOK] Element handle tarih hata: ${ehErr.message}`);
+        }
+        await delay(1000, 1500);
+      }
+    }
 
     console.log(`  [BOOK] Tarih seçimi: ${JSON.stringify(dateSelected)}`);
 
