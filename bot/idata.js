@@ -3767,6 +3767,16 @@ async function bookEarliestAppointment(page, account) {
     const ss3 = await takeScreenshotBase64(page);
     await idataLog("appt_time_selection", `⏰ Saat: ${timeButtonResult.clicked ? `${timeButtonResult.time} (${timeButtonResult.method})` : "seçilemedi"} | Butonlar: ${JSON.stringify((timeButtonInfo.allSlots || []).slice(0, 5))} | Hesap: ${account.email}`, ss3);
 
+    // Tarih/saat gerçekten seçilmediyse İLERİ'ye basma; booking'i yeniden dene
+    if (!dateSelected.selected || !timeButtonResult.clicked) {
+      const reason = !dateSelected.selected && !timeButtonResult.clicked
+        ? "date_and_time_not_confirmed"
+        : (!dateSelected.selected ? "date_not_confirmed" : "time_not_confirmed");
+      console.log(`  [BOOK] ⚠️ Doğrulama başarısız, Step5 atlanıyor: ${reason}`);
+      await idataLog("appt_selection_invalid", `⚠️ Tarih/saat seçimi doğrulanamadı (${reason}) — akış yeniden denenecek | Hesap: ${account.email}`, ss3);
+      return { success: false, partial: true, error: reason };
+    }
+
     // ===== STEP 5: İLERİ butonuna tıkla (TARİH sayfasından çık) =====
     console.log("  [BOOK] Step 5: İLERİ butonuna tıklanıyor (tarih sayfası)...");
     
