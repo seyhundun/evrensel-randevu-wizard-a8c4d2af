@@ -11,7 +11,7 @@ const CONFIG = {
   API_URL: "https://ocrpzwrsyiprfuzsyivf.supabase.co/functions/v1/bot-api",
   API_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jcnB6d3JzeWlwcmZ1enN5aXZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMDQ1NzksImV4cCI6MjA4ODg4MDU3OX0.5MzKGm6byd1zLxjgxaXyQq5VfPFo_CE2MhcXijIRarc",
   CAPTCHA_API_KEY: (process.env.CAPTCHA_API_KEY || process.env.TWOCAPTCHA_API_KEY || "").trim(),
-  OTP_EMAIL_FROM: (process.env.IDATA_OTP_FROM || "").trim().toLowerCase(), // örn: no-reply@idata.com.tr
+  OTP_EMAIL_FROM: (process.env.IDATA_OTP_FROM || "verify@idata.com.tr").trim().toLowerCase(),
   REGISTER_URL: "https://it-tr-appointment.idata.com.tr/tr/membership/register",
   LOGIN_URL: "https://it-tr-appointment.idata.com.tr/tr/membership/login",
   APPOINTMENT_URL: "https://it-tr-appointment.idata.com.tr/tr/membership/dashboard/application/availability",
@@ -1244,11 +1244,11 @@ async function tryImapOtp(accountId) {
           .slice(0, 5000);
 
         const strictPatterns = [
-          /e-?posta doğrulama kodu[^\d]{0,20}(\d{6})/i,
-          /doğrulama kodu[^\d]{0,20}(\d{6})/i,
-          /verification code[^\d]{0,20}(\d{6})/i,
-          /one[-\s]?time password[^\d]{0,20}(\d{6})/i,
-          /otp[^\d]{0,20}(\d{6})/i,
+          /e-?posta doğrulama kodu[^\d]{0,20}(\d{4,6})/i,
+          /doğrulama kodu[^\d]{0,20}(\d{4,6})/i,
+          /verification code[^\d]{0,20}(\d{4,6})/i,
+          /one[-\s]?time password[^\d]{0,20}(\d{4,6})/i,
+          /otp[^\d]{0,20}(\d{4,6})/i,
         ];
 
         let otp = null;
@@ -1260,9 +1260,9 @@ async function tryImapOtp(accountId) {
           }
         }
 
-        // Fallback: üst blokta geçen ilk 6 haneli kod
+        // Fallback: üst blokta geçen ilk 4-6 haneli kod
         if (!otp) {
-          const fallback = mainBlock.match(/\b(\d{6})\b/);
+          const fallback = mainBlock.match(/\b(\d{4,6})\b/);
           if (fallback?.[1]) otp = fallback[1];
         }
 
