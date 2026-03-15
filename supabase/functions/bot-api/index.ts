@@ -64,6 +64,7 @@ Deno.serve(async (req) => {
         .from("idata_accounts")
         .select("*")
         .in("status", ["active"])
+        .eq("booking_enabled", true)
         .order("last_used_at", { ascending: true, nullsFirst: true });
 
       return new Response(
