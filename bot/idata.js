@@ -3170,8 +3170,22 @@ async function bookEarliestAppointment(page, account) {
           if (d.classList.contains("bg-danger") || d.classList.contains("danger")) isRed = true;
           if (d.classList.contains("bg-warning") || d.classList.contains("warning") || d.classList.contains("today") || d.classList.contains("active")) isYellow = true;
           
-          const rect = d.getBoundingClientRect();
-          allDays.push({ day: dayNum, isGreen, isRed, isYellow, bgColor, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+          // ASP.NET postback: <td> içindeki <a> etiketini bul
+          const innerLink = d.querySelector("a[href*='doPostBack'], a[href*='javascript'], a");
+          const postbackHref = innerLink ? (innerLink.getAttribute("href") || "") : "";
+          // __doPostBack argümanlarını çıkar
+          let postbackTarget = null, postbackArg = null;
+          const pbMatch = postbackHref.match(/__doPostBack\(['"](.*?)['"],\s*['"](.*?)['"]\)/);
+          if (pbMatch) { postbackTarget = pbMatch[1]; postbackArg = pbMatch[2]; }
+          
+          const clickableEl = innerLink || d;
+          const rect = clickableEl.getBoundingClientRect();
+          allDays.push({ 
+            day: dayNum, isGreen, isRed, isYellow, bgColor, 
+            x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
+            hasLink: !!innerLink, postbackTarget, postbackArg,
+            linkHref: postbackHref.substring(0, 200)
+          });
         }
       }
       
@@ -3187,7 +3201,9 @@ async function bookEarliestAppointment(page, account) {
         return { 
           found: true, day: target.day, isGreen: target.isGreen,
           x: target.x, y: target.y,
-          totalDays: allDays.length, greenCount: greenDays.length, bgColor: target.bgColor
+          totalDays: allDays.length, greenCount: greenDays.length, bgColor: target.bgColor,
+          hasLink: target.hasLink, postbackTarget: target.postbackTarget, postbackArg: target.postbackArg,
+          linkHref: target.linkHref
         };
       }
       
@@ -3199,6 +3215,8 @@ async function bookEarliestAppointment(page, account) {
     let dateSelected = { selected: false, day: 0, greenCount: 0, bgColor: "" };
     
     if (dateInfo.found) {
+      console.log(`  [BOOK] Tarih bilgisi: hasLink=${dateInfo.hasLink} postbackTarget=${dateInfo.postbackTarget} linkHref=${dateInfo.linkHref}`);
+      
       // İnsan taklidi: takvimde bezier mouse hareketleri yap + ortadan tıkla
       try {
         // Hedef güne insansı tıklama (bezier curve + pre-moves + mousedown/up)
@@ -3206,28 +3224,12 @@ async function bookEarliestAppointment(page, account) {
         console.log(`  [BOOK] ✅ HumanClick tarih: Gün ${dateInfo.day} (x:${Math.round(dateInfo.x)}, y:${Math.round(dateInfo.y)})`);
         dateSelected = { selected: true, day: dateInfo.day, isGreen: dateInfo.isGreen, greenCount: dateInfo.greenCount, bgColor: dateInfo.bgColor };
       } catch (mouseErr) {
-        console.log(`  [BOOK] Mouse.click tarih hata: ${mouseErr.message}, DOM click deneniyor...`);
-        // Fallback: DOM click
-        const domResult = await page.evaluate((dayNum) => {
-          const calContainers = document.querySelectorAll("[class*='datepicker'], [class*='calendar'], table.table-condensed");
-          for (const cal of calContainers) {
-            const tds = cal.querySelectorAll("td");
-            for (const d of tds) {
-              const text = (d.innerText || d.textContent || "").trim();
-              if (parseInt(text) === dayNum && !d.classList.contains("disabled") && !d.classList.contains("old")) {
-                d.click();
-                return true;
-              }
-            }
-          }
-          return false;
-        }, dateInfo.day);
-        dateSelected = { selected: domResult, day: dateInfo.day, isGreen: dateInfo.isGreen, greenCount: dateInfo.greenCount, bgColor: dateInfo.bgColor };
+        console.log(`  [BOOK] Mouse.click tarih hata: ${mouseErr.message}`);
       }
       
       await delay(1500, 2500);
       
-      // Doğrulama + element handle fallback
+      // ASP.NET postback doğrulaması — eğer seçim gerçekleşmediyse __doPostBack çağır
       const dateVerify = await page.evaluate((dayNum) => {
         const calContainers = document.querySelectorAll("[class*='datepicker'], [class*='calendar'], table.table-condensed");
         for (const cal of calContainers) {
@@ -3243,18 +3245,73 @@ async function bookEarliestAppointment(page, account) {
         return { isActive: false };
       }, dateInfo.day);
       
+      // Eğer hala aktif değilse, __doPostBack ile dene
+      if (!dateVerify.isActive && dateInfo.postbackTarget) {
+        console.log(`  [BOOK] Tarih aktif değil, __doPostBack çağrılıyor: ${dateInfo.postbackTarget}`);
+        await page.evaluate((target, arg) => {
+          if (typeof window.__doPostBack === "function") {
+            window.__doPostBack(target, arg);
+          }
+        }, dateInfo.postbackTarget, dateInfo.postbackArg || "");
+        await delay(2000, 3000);
+      }
+      
+      // Hala seçilmediyse — içindeki <a> etiketine tıkla
+      if (!dateVerify.isActive && dateInfo.hasLink) {
+        console.log("  [BOOK] Tarih aktif değil, inner <a> link'e tıklanıyor...");
+        await page.evaluate((dayNum) => {
+          const calContainers = document.querySelectorAll("[class*='datepicker'], [class*='calendar'], table.table-condensed");
+          for (const cal of calContainers) {
+            const tds = cal.querySelectorAll("td");
+            for (const d of tds) {
+              const text = (d.innerText || d.textContent || "").trim();
+              if (parseInt(text) === dayNum && !d.classList.contains("disabled") && !d.classList.contains("old")) {
+                const link = d.querySelector("a");
+                if (link) {
+                  link.click();
+                  return true;
+                }
+                d.click();
+                return true;
+              }
+            }
+          }
+          return false;
+        }, dateInfo.day);
+        await delay(2000, 3000);
+      }
+      
+      // Son fallback: element handle
       if (!dateVerify.isActive) {
         console.log("  [BOOK] Tarih aktif değil, element handle ile deneniyor...");
         try {
-          const tdElements = await page.$$("td");
-          for (const elHandle of tdElements) {
-            const elText = await page.evaluate(el => (el.innerText || el.textContent || "").trim(), elHandle);
-            if (parseInt(elText) === dateInfo.day) {
-              const isDisabled = await page.evaluate(el => el.classList.contains("disabled") || el.classList.contains("old"), elHandle);
-              if (!isDisabled) {
-                await elHandle.click();
-                console.log(`  [BOOK] ✅ Element handle tarih: Gün ${dateInfo.day}`);
-                break;
+          // Önce <a> etiketlerini dene (ASP.NET postback)
+          const linkHandles = await page.$$("td a[href*='doPostBack'], td a[href*='javascript'], td a");
+          for (const elHandle of linkHandles) {
+            const parentText = await page.evaluate(el => {
+              const td = el.closest("td");
+              return td ? (td.innerText || td.textContent || "").trim() : "";
+            }, elHandle);
+            if (parseInt(parentText) === dateInfo.day) {
+              await elHandle.click();
+              console.log(`  [BOOK] ✅ Element handle <a> tarih: Gün ${dateInfo.day}`);
+              dateSelected.selected = true;
+              break;
+            }
+          }
+          
+          // Eğer link bulunamadıysa td'ye tıkla
+          if (!dateSelected.selected) {
+            const tdElements = await page.$$("td");
+            for (const elHandle of tdElements) {
+              const elText = await page.evaluate(el => (el.innerText || el.textContent || "").trim(), elHandle);
+              if (parseInt(elText) === dateInfo.day) {
+                const isDisabled = await page.evaluate(el => el.classList.contains("disabled") || el.classList.contains("old"), elHandle);
+                if (!isDisabled) {
+                  await elHandle.click();
+                  console.log(`  [BOOK] ✅ Element handle td tarih: Gün ${dateInfo.day}`);
+                  break;
+                }
               }
             }
           }
@@ -3324,12 +3381,28 @@ async function bookEarliestAppointment(page, account) {
         const cls = (el.className || "").toLowerCase();
         if (cls.includes("btn-warning") || cls.includes("btn-orange") || cls.includes("active")) isOrange = true;
         
+        // ASP.NET postback bilgisi
+        const href = el.getAttribute("href") || "";
+        let postbackTarget = null, postbackArg = null;
+        const pbMatch = href.match(/__doPostBack\(['"](.*?)['"],\s*['"](.*?)['"]\)/);
+        if (pbMatch) { postbackTarget = pbMatch[1]; postbackArg = pbMatch[2]; }
+        // İçindeki <a> etiketinde de ara
+        if (!postbackTarget && el.tagName !== "A") {
+          const innerA = el.querySelector("a[href*='doPostBack'], a[href*='javascript'], a");
+          if (innerA) {
+            const aHref = innerA.getAttribute("href") || "";
+            const aPb = aHref.match(/__doPostBack\(['"](.*?)['"],\s*['"](.*?)['"]\)/);
+            if (aPb) { postbackTarget = aPb[1]; postbackArg = aPb[2]; }
+          }
+        }
+        
         const rect = el.getBoundingClientRect();
         timeButtons.push({ 
           time: timeMatch[1], isOrange, bgColor, 
           tag: el.tagName, cls: (el.className || "").substring(0, 100),
           x: rect.x + rect.width / 2, 
-          y: rect.y + rect.height / 2
+          y: rect.y + rect.height / 2,
+          postbackTarget, postbackArg
         });
       }
       
@@ -3338,7 +3411,7 @@ async function bookEarliestAppointment(page, account) {
       
       return { 
         found: !!target, target, totalSlots: timeButtons.length,
-        allSlots: timeButtons.map(t => ({ time: t.time, isOrange: t.isOrange, tag: t.tag }))
+        allSlots: timeButtons.map(t => ({ time: t.time, isOrange: t.isOrange, tag: t.tag, pb: !!t.postbackTarget }))
       };
     });
 
@@ -3379,7 +3452,19 @@ async function bookEarliestAppointment(page, account) {
       
       console.log(`  [BOOK] Saat doğrulama: ${JSON.stringify(timeVerify)}`);
       
-      // 3) Seçilmediyse — element handle ile tıkla
+      // 3) Seçilmediyse — __doPostBack ile dene
+      if (!timeVerify.isActive && t.postbackTarget) {
+        console.log(`  [BOOK] Saat aktif değil, __doPostBack çağrılıyor: ${t.postbackTarget}`);
+        await page.evaluate((target, arg) => {
+          if (typeof window.__doPostBack === "function") {
+            window.__doPostBack(target, arg);
+          }
+        }, t.postbackTarget, t.postbackArg || "");
+        timeButtonResult.method = "postback";
+        await delay(2000, 3000);
+      }
+      
+      // 4) Element handle ile tıkla
       if (!timeVerify.isActive) {
         console.log("  [BOOK] Saat aktif değil, element handle ile deneniyor...");
         try {
@@ -3398,18 +3483,24 @@ async function bookEarliestAppointment(page, account) {
         }
         await delay(1000, 2000);
         
-        // 4) Hala seçilmediyse — dispatch events
+        // 5) Hala seçilmediyse — full event dispatch
         await page.evaluate((targetTime) => {
           const candidates = Array.from(document.querySelectorAll("a, button, span, div, li, label, td"));
           for (const el of candidates) {
             const text = (el.innerText || el.textContent || "").trim();
             if (text === targetTime) {
+              // Tam olay zinciri: focus → pointer → mouse → click
+              el.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+              el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
               el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+              el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
               el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
               el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-              el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-              el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-              el.focus && el.focus();
+              // ASP.NET: anchor href varsa doğrudan çalıştır
+              const href = el.getAttribute && el.getAttribute("href");
+              if (href && href.includes("__doPostBack")) {
+                try { eval(href.replace("javascript:", "")); } catch(e) {}
+              }
               break;
             }
           }
@@ -3443,23 +3534,50 @@ async function bookEarliestAppointment(page, account) {
     // ===== STEP 5: İLERİ butonuna tıkla (TARİH sayfasından çık) =====
     console.log("  [BOOK] Step 5: İLERİ butonuna tıklanıyor (tarih sayfası)...");
     
-    const step5Ileri = await page.evaluate(() => {
+    // İLERİ butonunun koordinatlarını al
+    const ileriInfo = await page.evaluate(() => {
       const candidates = Array.from(document.querySelectorAll('a, button, input[type="submit"], input[type="button"]'));
       const ileriBtn = candidates.find(el => {
         const txt = (el.innerText || el.value || el.textContent || "").trim().toUpperCase();
         return txt === "İLERİ" || txt === "ILERI" || txt === "DEVAM" || txt === "NEXT";
-      });
+      }) || document.querySelector('.btn-success, a.btn-success');
+      
       if (ileriBtn) {
-        ileriBtn.click();
-        return { clicked: true, text: (ileriBtn.innerText || ileriBtn.value || "").trim() };
+        const rect = ileriBtn.getBoundingClientRect();
+        const href = ileriBtn.getAttribute("href") || "";
+        let postbackTarget = null, postbackArg = null;
+        const pbMatch = href.match(/__doPostBack\(['"](.*?)['"],\s*['"](.*?)['"]\)/);
+        if (pbMatch) { postbackTarget = pbMatch[1]; postbackArg = pbMatch[2]; }
+        return { 
+          found: true, text: (ileriBtn.innerText || ileriBtn.value || "").trim(),
+          x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
+          postbackTarget, postbackArg
+        };
       }
-      const greenBtn = document.querySelector('.btn-success, a.btn-success');
-      if (greenBtn) {
-        greenBtn.click();
-        return { clicked: true, text: (greenBtn.innerText || "").trim(), method: "green" };
-      }
-      return { clicked: false };
+      return { found: false };
     });
+    
+    let step5Ileri = { clicked: false };
+    if (ileriInfo.found) {
+      // HumanClick ile İLERİ butonuna tıkla
+      try {
+        await humanClick(page, ileriInfo.x, ileriInfo.y, { preMovesNear: true });
+        step5Ileri = { clicked: true, text: ileriInfo.text };
+        console.log(`  [BOOK] ✅ HumanClick İLERİ: ${ileriInfo.text} (x:${Math.round(ileriInfo.x)}, y:${Math.round(ileriInfo.y)})`);
+      } catch (e) {
+        // Fallback: DOM click + postback
+        console.log(`  [BOOK] HumanClick İLERİ hata: ${e.message}, DOM click deneniyor...`);
+        await page.evaluate(() => {
+          const candidates = Array.from(document.querySelectorAll('a, button, input[type="submit"], input[type="button"]'));
+          const btn = candidates.find(el => {
+            const txt = (el.innerText || el.value || el.textContent || "").trim().toUpperCase();
+            return txt === "İLERİ" || txt === "ILERI";
+          });
+          if (btn) btn.click();
+        });
+        step5Ileri = { clicked: true, text: ileriInfo.text, method: "dom_fallback" };
+      }
+    }
 
     console.log(`  [BOOK] Step 5 İLERİ: ${JSON.stringify(step5Ileri)}`);
     
@@ -3515,7 +3633,7 @@ async function bookEarliestAppointment(page, account) {
 
         await delay(500, 1000);
 
-        // ===== TAMAM'dan sonra yeniden tarih seç (yeşil günün ortasından) =====
+        // ===== TAMAM'dan sonra yeniden tarih seç (yeşil günün ortasından + postback) =====
         const retryDateInfo = await page.evaluate(() => {
           const calContainers = document.querySelectorAll(
             ".datepicker, .datepicker-dropdown, .bootstrap-datetimepicker-widget, " +
@@ -3540,9 +3658,18 @@ async function bookEarliestAppointment(page, account) {
                 isGreen = g > 100 && g > r * 1.3 && g > b * 1.3;
               }
               if (d.classList.contains("bg-success") || d.classList.contains("success")) isGreen = true;
-              const rect = d.getBoundingClientRect();
+              
+              // ASP.NET postback bilgisi
+              const innerLink = d.querySelector("a[href*='doPostBack'], a[href*='javascript'], a");
+              const postbackHref = innerLink ? (innerLink.getAttribute("href") || "") : "";
+              let postbackTarget = null, postbackArg = null;
+              const pbMatch = postbackHref.match(/__doPostBack\(['"](.*?)['"],\s*['"](.*?)['"]\)/);
+              if (pbMatch) { postbackTarget = pbMatch[1]; postbackArg = pbMatch[2]; }
+              
+              const clickableEl = innerLink || d;
+              const rect = clickableEl.getBoundingClientRect();
               if (rect.width > 0 && rect.height > 0) {
-                allDays.push({ day: dayNum, isGreen, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+                allDays.push({ day: dayNum, isGreen, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, postbackTarget, postbackArg, hasLink: !!innerLink });
               }
             }
           }
@@ -3552,15 +3679,26 @@ async function bookEarliestAppointment(page, account) {
           if (pool.length > 0) {
             const idx = Math.floor(Math.random() * pool.length);
             const target = pool[idx];
-            return { found: true, day: target.day, x: target.x, y: target.y, greenCount: greenDays.length };
+            return { found: true, day: target.day, x: target.x, y: target.y, greenCount: greenDays.length, postbackTarget: target.postbackTarget, postbackArg: target.postbackArg, hasLink: target.hasLink };
           }
           return { found: false };
         });
 
         if (retryDateInfo.found) {
-          console.log(`  [BOOK] 📅 Retry tarih seçimi: Gün ${retryDateInfo.day} (${retryDateInfo.greenCount} yeşil)`);
+          console.log(`  [BOOK] 📅 Retry tarih seçimi: Gün ${retryDateInfo.day} (${retryDateInfo.greenCount} yeşil, postback=${!!retryDateInfo.postbackTarget})`);
           await humanClick(page, retryDateInfo.x, retryDateInfo.y, { preMovesNear: true });
           await delay(1500, 2500);
+          
+          // Postback fallback
+          if (retryDateInfo.postbackTarget) {
+            await page.evaluate((target, arg) => {
+              if (typeof window.__doPostBack === "function") {
+                window.__doPostBack(target, arg);
+              }
+            }, retryDateInfo.postbackTarget, retryDateInfo.postbackArg || "");
+            console.log(`  [BOOK] ✅ Retry tarih __doPostBack çağrıldı`);
+            await delay(1500, 2500);
+          }
         } else {
           console.log(`  [BOOK] ⚠️ Retry'da takvimde gün bulunamadı`);
         }
@@ -3586,9 +3724,16 @@ async function bookEarliestAppointment(page, account) {
             }
             const cls = (el.className || "").toLowerCase();
             if (cls.includes("btn-warning") || cls.includes("btn-orange") || cls.includes("active")) isOrange = true;
+            
+            // ASP.NET postback
+            const href = el.getAttribute("href") || "";
+            let postbackTarget = null, postbackArg = null;
+            const pbMatch = href.match(/__doPostBack\(['"](.*?)['"],\s*['"](.*?)['"]\)/);
+            if (pbMatch) { postbackTarget = pbMatch[1]; postbackArg = pbMatch[2]; }
+            
             const rect = el.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0) {
-              timeButtons.push({ time: timeMatch[1], isOrange, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+              timeButtons.push({ time: timeMatch[1], isOrange, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, postbackTarget, postbackArg });
             }
           }
           const orangeButtons = timeButtons.filter(t => t.isOrange);
@@ -3602,9 +3747,20 @@ async function bookEarliestAppointment(page, account) {
         });
 
         if (retryTimeInfo.found) {
-          console.log(`  [BOOK] ⏰ Retry saat seçimi: ${retryTimeInfo.time}`);
+          console.log(`  [BOOK] ⏰ Retry saat seçimi: ${retryTimeInfo.time} (postback=${!!retryTimeInfo.postbackTarget})`);
           await humanClick(page, retryTimeInfo.x, retryTimeInfo.y, { preMovesNear: true });
           await delay(1500, 2500);
+          
+          // Postback fallback
+          if (retryTimeInfo.postbackTarget) {
+            await page.evaluate((target, arg) => {
+              if (typeof window.__doPostBack === "function") {
+                window.__doPostBack(target, arg);
+              }
+            }, retryTimeInfo.postbackTarget, retryTimeInfo.postbackArg || "");
+            console.log(`  [BOOK] ✅ Retry saat __doPostBack çağrıldı`);
+            await delay(1500, 2500);
+          }
         } else {
           console.log(`  [BOOK] ⚠️ Retry'da saat butonu bulunamadı`);
         }
