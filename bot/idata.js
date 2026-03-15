@@ -3415,18 +3415,67 @@ async function bookEarliestAppointment(page, account) {
             }
           }
           // Date input değeri gerçekten seçilen günü yansıtıyor mu kontrol et
-          // iDATA uses .calendarinput and .flightDate classes
-          const dateInputs = document.querySelectorAll(
+          // ÖNEMLİ: Seyahat alanını dışla, yalnızca randevu inputunu doğrula
+          const travelWords = ["seyahat", "gidiş", "gidis", "travel", "flight", "departure", "baslangic", "başlangıç"];
+          const hasTravelWord = (txt) => travelWords.some((w) => txt.includes(w));
+
+          const allDateInputs = Array.from(document.querySelectorAll(
             "input[data-provide='datepicker'], input.datepicker, input.calendarinput, input.flightDate, " +
             "input[name*='date' i], input[name*='tarih' i], input[placeholder*='Tarih' i], input[placeholder*='tarih' i]"
-          );
-          for (const inp of dateInputs) {
+          ));
+
+          const nonTravelInputs = allDateInputs.filter((inp) => {
+            const blob = `${(inp.placeholder || "")} ${(inp.name || "")} ${(inp.id || "")}`.toLowerCase();
+            return !hasTravelWord(blob);
+          });
+
+          const hint = window.__idataApptInputHint || null;
+          let targetInput = null;
+
+          if (hint?.id) {
+            targetInput = nonTravelInputs.find((inp) => (inp.id || "") === hint.id) || null;
+          }
+
+          if (!targetInput && hint?.name) {
+            targetInput = nonTravelInputs.find((inp) => (inp.name || "") === hint.name) || null;
+          }
+
+          if (!targetInput && hint?.placeholder) {
+            const ph = (hint.placeholder || "").toLowerCase();
+            targetInput = nonTravelInputs.find((inp) => (inp.placeholder || "").toLowerCase() === ph) || null;
+          }
+
+          if (!targetInput && hint?.y != null && nonTravelInputs.length > 0) {
+            targetInput = nonTravelInputs
+              .map((inp) => {
+                const r = inp.getBoundingClientRect();
+                return { inp, dy: Math.abs(r.y - hint.y) };
+              })
+              .sort((a, b) => a.dy - b.dy)[0]?.inp || null;
+          }
+
+          const parsePickedDay = (val) => {
+            const dayMatch = val.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/) || val.match(/(\d{1,2})/);
+            return dayMatch ? parseInt(dayMatch[1]) : NaN;
+          };
+
+          if (targetInput) {
+            const v = (targetInput.value || "").trim();
+            if (v) {
+              const pickedDay = parsePickedDay(v);
+              if (!Number.isNaN(pickedDay) && pickedDay === dayNum) {
+                return { isActive: true, cls: "appt-input-matched-day: " + v };
+              }
+            }
+          }
+
+          // Fallback: seyahat dışı herhangi bir date input hedef günü tutuyorsa aktif say
+          for (const inp of nonTravelInputs) {
             const v = (inp.value || "").trim();
             if (!v) continue;
-            const dayMatch = v.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/) || v.match(/(\d{1,2})/);
-            const pickedDay = dayMatch ? parseInt(dayMatch[1]) : NaN;
+            const pickedDay = parsePickedDay(v);
             if (!Number.isNaN(pickedDay) && pickedDay === dayNum) {
-              return { isActive: true, cls: "input-matched-day: " + v };
+              return { isActive: true, cls: "non-travel-input-matched-day: " + v };
             }
           }
           return { isActive: false, cls: "" };
