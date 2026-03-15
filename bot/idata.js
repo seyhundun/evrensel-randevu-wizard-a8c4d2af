@@ -4149,7 +4149,11 @@ async function mainLoop() {
                       const retryBook = await bookEarliestAppointment(page, account);
                       if (retryBook.success) {
                         console.log(`  🎉 RANDEVU ALINDI (retry)! Tarih: ${retryBook.date}`);
-                        await idataLog("appt_booked", `🎉 RANDEVU ALINDI (retry)! | Tarih: ${retryBook.date} | Hesap: ${account.email}`);
+                        const retryLogStatus = retryBook.needsPayment ? "appt_payment_page" : "appt_booked";
+                        const retryLogMsg = retryBook.needsPayment
+                          ? `💳 ÖDEME SAYFASINA ULAŞILDI (retry)! | Tarih: ${retryBook.date} | Hesap: ${account.email}`
+                          : `🎉 ÖDEME BAŞARILI — RANDEVU ALINDI (retry)! | Tarih: ${retryBook.date} | Hesap: ${account.email}`;
+                        await idataLog(retryLogStatus, retryLogMsg);
                         console.log("  🔒 Tarayıcı açık kalacak — 5 dakika bekleniyor...");
                         await delay(300000, 300000);
                         break;
