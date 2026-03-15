@@ -3227,6 +3227,20 @@ async function bookEarliestAppointment(page, account) {
     if (timeButtonInfo.found && timeButtonInfo.target) {
       const t = timeButtonInfo.target;
       
+      // İnsan taklidi: saat alanında rastgele mouse hareketleri
+      const randMoves = 3 + Math.floor(Math.random() * 3); // 3-5 hareket
+      for (let m = 0; m < randMoves; m++) {
+        const rx = t.x + (Math.random() - 0.5) * 200;
+        const ry = t.y + (Math.random() - 0.5) * 120;
+        await page.mouse.move(rx, ry);
+        await delay(200, 800);
+      }
+      
+      // Hedefe yavaş yaklaşma
+      const steps = 10 + Math.floor(Math.random() * 16);
+      await page.mouse.move(t.x, t.y, { steps });
+      await delay(300, 700);
+      
       // 1) Puppeteer gerçek mouse tıklaması (DOM click yerine fiziksel)
       try {
         await page.mouse.click(t.x, t.y);
