@@ -2547,14 +2547,25 @@ async function checkAppointments(page, account) {
       }
 
       // === KESİN RANDEVU VAR === (çok spesifik kontroller)
-      // Sadece gerçek tarih seçim arayüzü görünüyorsa "found" de
       const hasDatePicker = !!document.querySelector('input[type="date"], .datepicker-days, .flatpickr-calendar');
       const hasAvailableSlots = lower.includes("müsait randevu tarihleri") || 
                                   lower.includes("aşağıdaki tarihlerden") ||
-                                  lower.includes("randevu tarihini seçiniz");
+                                  lower.includes("randevu tarihini seçiniz") ||
+                                  lower.includes("en yakın randevu tarihleri");
       
-      if (hasDatePicker || hasAvailableSlots) {
-        return { found: true, status: "appointment_available", text: body.substring(0, 500) };
+      // Tarih input'larından tarihleri çek
+      const dateInputs = Array.from(document.querySelectorAll('input[type="date"], input[type="text"]'));
+      const dates = [];
+      for (const inp of dateInputs) {
+        const val = inp.value || "";
+        // DD-MM-YYYY or DD.MM.YYYY or YYYY-MM-DD formatları
+        if (/\d{2}[-/.]\d{2}[-/.]\d{4}/.test(val) || /\d{4}[-/.]\d{2}[-/.]\d{2}/.test(val)) {
+          dates.push(val);
+        }
+      }
+      
+      if (hasDatePicker || hasAvailableSlots || dates.length > 0) {
+        return { found: true, status: "appointment_available", text: body.substring(0, 500), dates };
       }
 
       // === FORM HENÜZ DOLDURULMADI / SONUÇ BELİRSİZ ===
