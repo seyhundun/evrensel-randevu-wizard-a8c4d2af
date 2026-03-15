@@ -1150,30 +1150,96 @@ async function selectDropdownOption(page, dropdownSelector, optionText) {
   }
 }
 
-// ==================== IMAP OTP READ ====================
+// ==================== IMAP OTP READ (doğrudan Node.js) ====================
 async function tryImapOtp(accountId) {
   try {
+    const { ImapFlow } = require("imapflow");
     const fetch = (await import("node-fetch")).default;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+    
+    // Hesap bilgilerini al
     const res = await fetch(
-      `https://ocrpzwrsyiprfuzsyivf.supabase.co/functions/v1/read-otp`,
+      `https://ocrpzwrsyiprfuzsyivf.supabase.co/rest/v1/idata_accounts?id=eq.${accountId}&select=email,imap_host,imap_password`,
       {
-        method: "POST",
         headers: {
-          "Content-Type": "application/json",
           apikey: CONFIG.API_KEY,
           Authorization: `Bearer ${CONFIG.API_KEY}`,
         },
-        body: JSON.stringify({ account_id: accountId, account_type: "idata" }),
-        signal: controller.signal,
       }
     );
-    clearTimeout(timeout);
-    const data = await res.json();
-    if (data?.ok && data?.otp) {
-      return data.otp;
+    const accounts = await res.json();
+    if (!accounts?.length || !accounts[0].imap_password) return null;
+    
+    const account = accounts[0];
+    const host = account.imap_host || "imap.gmail.com";
+    console.log(`  [IMAP] ${account.email} → ${host} bağlanıyor...`);
+    
+    const client = new ImapFlow({
+      host,
+      port: 993,
+      secure: true,
+      auth: { user: account.email, pass: account.imap_password },
+      logger: false,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
+    
+    await client.connect();
+    
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      // Son 1 gündeki okunmamış mailleri ara
+      const since = new Date();
+      since.setDate(since.getDate() - 1);
+      
+      const messages = await client.search({ seen: false, since }, { uid: true });
+      if (!messages.length) {
+        console.log(`  [IMAP] Okunmamış mail yok`);
+        await lock.release();
+        await client.logout();
+        return null;
+      }
+      
+      // Son 5 maili kontrol et
+      const lastUids = messages.slice(-5).reverse();
+      
+      for (const uid of lastUids) {
+        const msg = await client.fetchOne(uid, { source: true }, { uid: true });
+        const rawText = msg.source.toString();
+        const lower = rawText.toLowerCase();
+        
+        // VFS/iDATA OTP maili mi?
+        const isOtp = lower.includes("vfs") || lower.includes("idata") || 
+                      lower.includes("doğrulama") || lower.includes("verification") ||
+                      lower.includes("otp") || lower.includes("code");
+        
+        if (isOtp) {
+          // OTP kodunu çıkar (4-8 haneli)
+          const patterns = [
+            /(?:code|kod|otp|doğrulama|verification)[:\s]*(\d{4,8})/i,
+            /(\d{4,8})\s*(?:is your|doğrulama|verification|code|kod)/i,
+            /\b(\d{6})\b/,
+            /\b(\d{4})\b/,
+          ];
+          
+          for (const pattern of patterns) {
+            const match = rawText.match(pattern);
+            if (match) {
+              console.log(`  [IMAP] ✅ OTP bulundu: ${match[1]}`);
+              await lock.release();
+              await client.logout();
+              return match[1];
+            }
+          }
+        }
+      }
+      
+      await lock.release();
+    } catch (e) {
+      lock.release();
+      throw e;
     }
+    
+    await client.logout();
     return null;
   } catch (err) {
     console.log(`  [IMAP] Hata: ${err.message}`);
