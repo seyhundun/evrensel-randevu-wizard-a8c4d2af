@@ -159,7 +159,7 @@ async function fetchEvomiRegions() {
       })
       .filter(Boolean);
 
-    // Eğer şehir yoksa region'ları dene
+    // Eğer şehir yoksa fallback Türkiye bölgeleri kullan (global region'lar Türkiye dışı olabilir)
     if (trCities.length > 0) {
       evomiRegionsCache = [...new Set(trCities)]; // benzersiz
       evomiRegionsLastFetch = now;
@@ -167,14 +167,7 @@ async function fetchEvomiRegions() {
       return evomiRegionsCache;
     }
 
-    // Fallback: genel region listesi
-    const allRegions = productData.regions?.data || [];
-    if (allRegions.length > 0) {
-      evomiRegionsCache = allRegions;
-      evomiRegionsLastFetch = now;
-      console.log(`  [EVOMI] ✅ ${evomiRegionsCache.length} genel bölge bulundu (TR şehir yok)`);
-      return evomiRegionsCache;
-    }
+    console.warn("  [EVOMI] ⚠️ TR şehir bulunamadı, Türkiye fallback bölgeleri kullanılacak");
 
     console.warn("  [EVOMI] ⚠️ Hiç bölge bulunamadı, fallback kullanılacak");
     return PROXY_REGIONS_FALLBACK;
