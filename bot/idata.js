@@ -2751,7 +2751,7 @@ async function checkAppointments(page, account) {
       return { found: true, screenshot: ss, message: result.text, dates: result.dates || [], datesStr };
     }
 
-    const extraInfo = result.openUntil ? ` | Açık tarih: ${result.openUntil}` : "";
+    const extraInfo = result.openUntil ? ` | Açık tarihler: ${result.openUntil}` : "";
     console.log(`  [CHECK] ❌ Randevu yok (${result.status})${extraInfo}`);
     return { found: false, screenshot: ss, message: `[${result.status}] ${result.text}${extraInfo}` };
 
