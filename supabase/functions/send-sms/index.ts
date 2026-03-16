@@ -6,17 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Transliterate Turkish chars & remove emojis for GSM-7 compatibility
-function toGsm7(text: string): string {
-  const map: Record<string, string> = {
-    'ş': 's', 'Ş': 'S', 'ç': 'c', 'Ç': 'C', 'ğ': 'g', 'Ğ': 'G',
-    'ö': 'o', 'Ö': 'O', 'ü': 'u', 'Ü': 'U', 'ı': 'i', 'İ': 'I',
-  };
-  let result = text.replace(/[şŞçÇğĞöÖüÜıİ]/g, (ch) => map[ch] || ch);
-  // Remove emojis (surrogate pairs and common emoji ranges)
-  result = result.replace(/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FEFF}]/gu, '');
-  return result.trim();
-}
+const MUTLUCELL_API_URL = "https://smsgw.mutlucell.com/smsgw-ws/sndblkex";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -26,11 +16,12 @@ Deno.serve(async (req) => {
   try {
     const { to, message } = await req.json();
 
-    const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+    const username = Deno.env.get("MUTLUCELL_USERNAME");
+    const password = Deno.env.get("MUTLUCELL_PASSWORD");
+    const originator = Deno.env.get("MUTLUCELL_ORIGINATOR");
 
-    if (!accountSid || !authToken) {
-      throw new Error("Twilio credentials not configured");
+    if (!username || !password || !originator) {
+      throw new Error("Mutlucell credentials not configured");
     }
 
     const supabase = createClient(
@@ -38,19 +29,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Get "from" number
-    const { data: fromSetting } = await supabase
-      .from("bot_settings")
-      .select("value")
-      .eq("key", "twilio_from_number")
-      .single();
-
-    const fromNumber = fromSetting?.value;
-    if (!fromNumber) {
-      throw new Error("Twilio from number not configured in bot_settings");
-    }
-
-    // Build recipient list: use provided 'to' or fall back to bot_settings (comma-separated)
+    // Build recipient list: use provided 'to' or fall back to bot_settings
     let recipients: string[] = [];
     if (to) {
       recipients = to.split(",").map((n: string) => n.trim()).filter(Boolean);
@@ -69,39 +48,43 @@ Deno.serve(async (req) => {
       throw new Error("No recipient phone numbers configured");
     }
 
-    // Send SMS to each recipient
-    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-    const credentials = btoa(`${accountSid}:${authToken}`);
-    const smsBody = toGsm7(message || "Randevu bulundu!");
+    // Normalize phone numbers for Mutlucell (remove + prefix, ensure 90 prefix for Turkish)
+    const normalizedNums = recipients.map((num) => {
+      let n = num.replace(/[\s\-\(\)]/g, "");
+      if (n.startsWith("+")) n = n.substring(1);
+      if (n.startsWith("0")) n = "90" + n.substring(1);
+      return n;
+    });
 
-    const results = await Promise.allSettled(
-      recipients.map(async (toNumber) => {
-        const response = await fetch(twilioUrl, {
-          method: "POST",
-          headers: {
-            "Authorization": `Basic ${credentials}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: new URLSearchParams({
-            To: toNumber,
-            From: fromNumber,
-            Body: smsBody,
-          }),
-        });
+    const smsBody = message || "Randevu bulundu!";
 
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(`Twilio error [${response.status}] for ${toNumber}: ${JSON.stringify(data)}`);
-        }
-        return { to: toNumber, sid: data.sid };
-      })
-    );
+    // Build Mutlucell XML
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<smspack ka="${escapeXml(username)}" pwd="${escapeXml(password)}" org="${escapeXml(originator)}">
+  <mesaj>
+    <metin>${escapeXml(smsBody)}</metin>
+    <nums>${normalizedNums.join(",")}</nums>
+  </mesaj>
+</smspack>`;
 
-    const sent = results.filter(r => r.status === "fulfilled").map(r => (r as PromiseFulfilledResult<any>).value);
-    const failed = results.filter(r => r.status === "rejected").map(r => (r as PromiseRejectedResult).reason?.message);
+    const response = await fetch(MUTLUCELL_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/xml; charset=UTF-8" },
+      body: xml,
+    });
+
+    const responseText = await response.text();
+    console.log("Mutlucell response:", responseText);
+
+    // Response starting with $ means success (e.g. $34672#13.0)
+    const success = responseText.trim().startsWith("$");
+
+    if (!success) {
+      throw new Error(`Mutlucell error: ${responseText}`);
+    }
 
     return new Response(
-      JSON.stringify({ ok: true, sent, failed }),
+      JSON.stringify({ ok: true, response: responseText.trim(), recipients: normalizedNums }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
@@ -112,3 +95,12 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
