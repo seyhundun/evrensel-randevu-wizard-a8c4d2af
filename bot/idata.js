@@ -4237,7 +4237,7 @@ async function bookEarliestAppointment(page, account) {
         ? "date_and_time_not_confirmed"
         : (!dateSelected.selected ? "date_not_confirmed" : "time_not_confirmed");
       console.log(`  [BOOK] ⚠️ Doğrulama başarısız, Step5 atlanıyor: ${reason}`);
-      await idataLog("appt_selection_invalid", `⚠️ Tarih/saat seçimi doğrulanamadı (${reason}) — akış yeniden denenecek | Hesap: ${account.email}`, ss3);
+      await idataLog("appt_selection_invalid", `⚠️ Tarih/saat seçimi doğrulanamadı (${reason}) — akış yeniden denenecek | ${getAccountName(account)}`, ss3);
       return { success: false, partial: true, error: reason };
     }
 
