@@ -4229,7 +4229,7 @@ async function bookEarliestAppointment(page, account) {
     await delay(2000, 3000);
 
     const ss3 = await takeScreenshotBase64(page);
-    await idataLog("appt_time_selection", `⏰ Saat: ${timeButtonResult.clicked ? `${timeButtonResult.time} (${timeButtonResult.method})` : "seçilemedi"} | Butonlar: ${JSON.stringify((timeButtonInfo.allSlots || []).slice(0, 5))} | Hesap: ${account.email}`, ss3);
+    await idataLog("appt_time_selection", `⏰ Saat: ${timeButtonResult.clicked ? `${timeButtonResult.time} (${timeButtonResult.method})` : "seçilemedi"} | Butonlar: ${JSON.stringify((timeButtonInfo.allSlots || []).slice(0, 5))} | ${getAccountName(account)}`, ss3);
 
     // Tarih/saat gerçekten seçilmediyse İLERİ'ye basma; booking'i yeniden dene
     if (!dateSelected.selected || !timeButtonResult.clicked) {
