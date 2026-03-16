@@ -5103,54 +5103,15 @@ async function mainLoop() {
               }
               
               if (apptResult.found) {
-                await idataLog("appt_found", `🎉 RANDEVU BULUNDU! | Hesap: ${account.email}`, apptResult.screenshot);
+                await idataLog("appt_found", `🎉 RANDEVU BULUNDU! Manuel ilerleyin! | Hesap: ${account.email}`, apptResult.screenshot);
                 startAlarm();
                 
-                // Otomatik randevu alma — en erken tarihi seç ve ilerle
-                console.log("  ⚡ Randevu bulundu! Otomatik randevu alma başlıyor...");
-                const bookResult = await bookEarliestAppointment(page, account);
-                
-                if (bookResult.success) {
-                  console.log(`  🎉 RANDEVU BULUNDU ve İLERLENDİ! Tarih: ${bookResult.date}`);
-                  const logStatus = bookResult.needsPayment ? "appt_payment_page" : "appt_booked";
-                  const logMsg = bookResult.needsPayment 
-                    ? `💳 ÖDEME SAYFASINA ULAŞILDI! | Tarih: ${bookResult.date} | Hesap: ${account.email}`
-                    : `🎉 ÖDEME BAŞARILI — RANDEVU ALINDI! | Tarih: ${bookResult.date} | Hesap: ${account.email}`;
-                  await idataLog(logStatus, logMsg);
-                  // Tarayıcıyı açık tut — kullanıcı fark edene kadar bekle
-                  console.log("  🔒 Tarayıcı açık kalacak — randevu alındı! 5 dakika bekleniyor...");
-                  await delay(300000, 300000); // 5 dakika bekle
-                } else {
-                  console.log(`  ⚠️ Otomatik alma ${bookResult.partial ? "kısmen ilerledi" : "başarısız"}: ${bookResult.error || "Bilinmeyen"}`);
-                  // Randevu hala mevcut mu kontrol et
-                  let fastCheckCount = 0;
-                  while (fastCheckCount < 10) {
-                    await delay(15000, 20000);
-                    fastCheckCount++;
-                    const recheck = await checkAppointments(page, account);
-                    if (recheck.found) {
-                      await idataLog("appt_found", `🎉 RANDEVU HALA MEVCUT! (${fastCheckCount}) | Hesap: ${account.email}`, recheck.screenshot);
-                      // Tekrar dene
-                      const retryBook = await bookEarliestAppointment(page, account);
-                      if (retryBook.success) {
-                        console.log(`  🎉 RANDEVU ALINDI (retry)! Tarih: ${retryBook.date}`);
-                        const retryLogStatus = retryBook.needsPayment ? "appt_payment_page" : "appt_booked";
-                        const retryLogMsg = retryBook.needsPayment
-                          ? `💳 ÖDEME SAYFASINA ULAŞILDI (retry)! | Tarih: ${retryBook.date} | Hesap: ${account.email}`
-                          : `🎉 ÖDEME BAŞARILI — RANDEVU ALINDI (retry)! | Tarih: ${retryBook.date} | Hesap: ${account.email}`;
-                        await idataLog(retryLogStatus, retryLogMsg);
-                        console.log("  🔒 Tarayıcı açık kalacak — 5 dakika bekleniyor...");
-                        await delay(300000, 300000);
-                        break;
-                      }
-                    } else {
-                      await idataLog("appt_none", `Randevu kapandı | ${recheck.message || ""} | Hesap: ${account.email}`, recheck.screenshot);
-                      stopAlarm();
-                      break;
-                    }
-                  }
-                  if (fastCheckCount >= 10) stopAlarm();
-                }
+                // Manuel mod — otomatik booking devre dışı, tarayıcıyı açık tut
+                console.log("  🔔 RANDEVU BULUNDU! Tarayıcı açık kalacak — VNC üzerinden manuel ilerleyin.");
+                console.log("  ⏳ Tarayıcı 10 dakika açık kalacak...");
+                await delay(600000, 600000); // 10 dakika bekle
+                console.log("  ⏰ 10 dakika doldu, tarayıcı kapanıyor.");
+                stopAlarm();
               } else {
                 stopAlarm();
                 await idataLog("appt_none", `Randevu yok | ${apptResult.message || ""} | Hesap: ${account.email}`, apptResult.screenshot);
