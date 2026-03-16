@@ -2796,8 +2796,17 @@ async function bookEarliestAppointment(page, account) {
       const body = (document.body?.innerText || "");
       const hasDateSection = body.includes("En yakın randevu tarihleri");
       
-      // Ekranda listelenen uygun tarihleri topla
-      const dateMatches = Array.from(new Set(body.match(/\b\d{2}[./-]\d{2}[./-]\d{4}\b/g) || []));
+      // Ekranda listelenen uygun tarihleri topla (geçmiş tarihleri filtrele)
+      const allDateMatches = Array.from(new Set(body.match(/\b\d{2}[./-]\d{2}[./-]\d{4}\b/g) || []));
+      const todayTs = new Date(); todayTs.setHours(0,0,0,0);
+      const dateMatches = allDateMatches.filter(td => {
+        const p = td.split(/[.\/-]/);
+        if (p.length === 3) {
+          const parsed = new Date(parseInt(p[2],10), parseInt(p[1],10)-1, parseInt(p[0],10));
+          return parsed >= todayTs;
+        }
+        return true;
+      });
       
       // İLERİ butonunu bul — genelde yeşil, sağ altta
       const candidates = Array.from(document.querySelectorAll('a, button, input[type="submit"], input[type="button"]'));
