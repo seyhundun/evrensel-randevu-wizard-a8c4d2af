@@ -5128,7 +5128,7 @@ async function mainLoop() {
                 stopAlarm();
               } else {
                 stopAlarm();
-                await idataLog("appt_none", `Randevu yok | ${apptResult.message || ""} | Hesap: ${account.email}`, apptResult.screenshot);
+                await idataLog("appt_none", `Randevu yok | ${apptResult.message || ""} | ${getAccountName(account)}`, apptResult.screenshot);
               }
               success = true;
             } else {
