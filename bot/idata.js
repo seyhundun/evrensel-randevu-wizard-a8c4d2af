@@ -3920,7 +3920,7 @@ async function bookEarliestAppointment(page, account) {
 
     await delay(2000, 3000);
     const ss2 = await takeScreenshotBase64(page);
-    await idataLog("appt_date_picked", `📅 Tarih seçildi: ${dateSelected.selected ? `Gün ${dateSelected.day} (${dateSelected.greenCount} yeşil gün, bg: ${dateSelected.bgColor})` : "Manuel"} | Hesap: ${account.email}`, ss2);
+    await idataLog("appt_date_picked", `📅 Tarih seçildi: ${dateSelected.selected ? `Gün ${dateSelected.day} (${dateSelected.greenCount} yeşil gün, bg: ${dateSelected.bgColor})` : "Manuel"} | ${getAccountName(account)}`, ss2);
 
     // ===== STEP 4: Turuncu saat butonuna tıkla =====
     console.log("  [BOOK] Step 4: Turuncu saat butonu aranıyor...");
