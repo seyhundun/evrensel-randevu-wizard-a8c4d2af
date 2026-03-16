@@ -228,6 +228,12 @@ function delay(min = 2000, max = 5000) {
   return new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min) + min)));
 }
 
+// Hesap adını döndür (email yerine ad soyad)
+function getAccountName(account) {
+  const name = `${account.first_name || ""} ${account.last_name || ""}`.trim();
+  return name || account.email;
+}
+
 // ==================== AUDIO ALARM ====================
 const { exec } = require("child_process");
 let alarmInterval = null;
@@ -2694,7 +2700,7 @@ async function checkAppointments(page, account) {
           found: false, 
           status: "no_appointment",
           text: "Uygun randevu tarihi bulunmamaktadır",
-          openUntil: dateMatch ? dateMatch[dateMatch.length - 1] : null 
+          openUntil: dateMatch && dateMatch.length > 0 ? dateMatch.join(", ") : null 
         };
       }
 
@@ -2745,7 +2751,7 @@ async function checkAppointments(page, account) {
       return { found: true, screenshot: ss, message: result.text, dates: result.dates || [], datesStr };
     }
 
-    const extraInfo = result.openUntil ? ` | Açık tarih: ${result.openUntil}` : "";
+    const extraInfo = result.openUntil ? ` | Açık tarihler: ${result.openUntil}` : "";
     console.log(`  [CHECK] ❌ Randevu yok (${result.status})${extraInfo}`);
     return { found: false, screenshot: ss, message: `[${result.status}] ${result.text}${extraInfo}` };
 
@@ -3060,12 +3066,12 @@ async function bookEarliestAppointment(page, account) {
     
     if (!step1Result.clicked) {
       const ss = await takeScreenshotBase64(page);
-      await idataLog("appt_error", `Step 1: İLERİ butonu bulunamadı | Hesap: ${account.email}`, ss);
+      await idataLog("appt_error", `Step 1: İLERİ butonu bulunamadı | ${getAccountName(account)}`, ss);
       return { success: false, error: "İLERİ butonu bulunamadı (step1)" };
     }
 
     const ss1 = await takeScreenshotBase64(page);
-    await idataLog("appt_step1_ileri", `✅ İLERİ tıklandı | Tarihler: ${(step1Result.dates || []).join(", ")} | Hedef: ${preferredAppointmentDate?.raw || "ilk yeşil"} | Hesap: ${account.email}`, ss1);
+    await idataLog("appt_step1_ileri", `✅ İLERİ tıklandı | Tarihler: ${(step1Result.dates || []).join(", ")} | Hedef: ${preferredAppointmentDate?.raw || "ilk yeşil"} | ${getAccountName(account)}`, ss1);
     
     await delay(3000, 5000);
 
@@ -3235,7 +3241,7 @@ async function bookEarliestAppointment(page, account) {
     
     await delay(2000, 3000);
     const ssTravelDate = await takeScreenshotBase64(page);
-    await idataLog("appt_travel_date", `🗓️ Seyahat Başlangıç Tarihi: ${travelDateStr} | Hesap: ${account.email}`, ssTravelDate);
+    await idataLog("appt_travel_date", `🗓️ Seyahat Başlangıç Tarihi: ${travelDateStr} | ${getAccountName(account)}`, ssTravelDate);
 
     // ===== STEP 2: TARİH sayfası — "Randevu Tarihinizi Seçiniz" takvim ikonuna tıkla =====
     console.log("  [BOOK] Step 2: TARİH sayfası — 'Randevu Tarihinizi Seçiniz' takvim ikonu aranıyor...");
@@ -3914,7 +3920,7 @@ async function bookEarliestAppointment(page, account) {
 
     await delay(2000, 3000);
     const ss2 = await takeScreenshotBase64(page);
-    await idataLog("appt_date_picked", `📅 Tarih seçildi: ${dateSelected.selected ? `Gün ${dateSelected.day} (${dateSelected.greenCount} yeşil gün, bg: ${dateSelected.bgColor})` : "Manuel"} | Hesap: ${account.email}`, ss2);
+    await idataLog("appt_date_picked", `📅 Tarih seçildi: ${dateSelected.selected ? `Gün ${dateSelected.day} (${dateSelected.greenCount} yeşil gün, bg: ${dateSelected.bgColor})` : "Manuel"} | ${getAccountName(account)}`, ss2);
 
     // ===== STEP 4: Turuncu saat butonuna tıkla =====
     console.log("  [BOOK] Step 4: Turuncu saat butonu aranıyor...");
@@ -4223,7 +4229,7 @@ async function bookEarliestAppointment(page, account) {
     await delay(2000, 3000);
 
     const ss3 = await takeScreenshotBase64(page);
-    await idataLog("appt_time_selection", `⏰ Saat: ${timeButtonResult.clicked ? `${timeButtonResult.time} (${timeButtonResult.method})` : "seçilemedi"} | Butonlar: ${JSON.stringify((timeButtonInfo.allSlots || []).slice(0, 5))} | Hesap: ${account.email}`, ss3);
+    await idataLog("appt_time_selection", `⏰ Saat: ${timeButtonResult.clicked ? `${timeButtonResult.time} (${timeButtonResult.method})` : "seçilemedi"} | Butonlar: ${JSON.stringify((timeButtonInfo.allSlots || []).slice(0, 5))} | ${getAccountName(account)}`, ss3);
 
     // Tarih/saat gerçekten seçilmediyse İLERİ'ye basma; booking'i yeniden dene
     if (!dateSelected.selected || !timeButtonResult.clicked) {
@@ -4231,7 +4237,7 @@ async function bookEarliestAppointment(page, account) {
         ? "date_and_time_not_confirmed"
         : (!dateSelected.selected ? "date_not_confirmed" : "time_not_confirmed");
       console.log(`  [BOOK] ⚠️ Doğrulama başarısız, Step5 atlanıyor: ${reason}`);
-      await idataLog("appt_selection_invalid", `⚠️ Tarih/saat seçimi doğrulanamadı (${reason}) — akış yeniden denenecek | Hesap: ${account.email}`, ss3);
+      await idataLog("appt_selection_invalid", `⚠️ Tarih/saat seçimi doğrulanamadı (${reason}) — akış yeniden denenecek | ${getAccountName(account)}`, ss3);
       return { success: false, partial: true, error: reason };
     }
 
@@ -4331,7 +4337,7 @@ async function bookEarliestAppointment(page, account) {
         const ssWarn = await takeScreenshotBase64(page);
         await idataLog(
           "appt_warning_retry",
-          `⚠️ Tarih/Saat uyarısı! Retry ${warningRetry + 1}/${MAX_WARNING_RETRIES} | TAMAM→TARİH→SAAT→İLERİ | Hesap: ${account.email}`,
+          `⚠️ Tarih/Saat uyarısı! Retry ${warningRetry + 1}/${MAX_WARNING_RETRIES} | TAMAM→TARİH→SAAT→İLERİ | ${getAccountName(account)}`,
           ssWarn
         );
 
@@ -4631,7 +4637,7 @@ async function bookEarliestAppointment(page, account) {
         };
       });
 
-      await idataLog(`appt_page_${pageIdx}`, `Sayfa ${pageIdx} | URL: ${pageState.url} | İleri: ${pageState.hasIleri} | Ödeme: ${pageState.hasPayment} | EkHizmet: ${pageState.hasEkHizmetler} | Fatura: ${pageState.hasFatura} | KrediKartı: ${pageState.hasKrediKarti} | DateWarn: ${pageState.hasDateWarning} | Checkbox: ${pageState.checkboxCount} | Hesap: ${account.email}\n${pageState.bodyPreview.substring(0, 500)}`, ssPage);
+      await idataLog(`appt_page_${pageIdx}`, `Sayfa ${pageIdx} | URL: ${pageState.url} | İleri: ${pageState.hasIleri} | Ödeme: ${pageState.hasPayment} | EkHizmet: ${pageState.hasEkHizmetler} | Fatura: ${pageState.hasFatura} | KrediKartı: ${pageState.hasKrediKarti} | DateWarn: ${pageState.hasDateWarning} | Checkbox: ${pageState.checkboxCount} | ${getAccountName(account)}\n${pageState.bodyPreview.substring(0, 500)}`, ssPage);
 
       // ===== Tarih/saat warning yakalandı — akışı resetle ve üst döngüden yeniden dene =====
       if (pageState.hasDateWarning) {
@@ -4643,14 +4649,14 @@ async function bookEarliestAppointment(page, account) {
           });
           if (ok) ok.click();
         }).catch(() => {});
-        await idataLog("appt_date_warning", `⚠️ Tarih/saat warning Step6'da yakalandı, booking akışı yeniden denenecek | Hesap: ${account.email}`, ssPage);
+        await idataLog("appt_date_warning", `⚠️ Tarih/saat warning Step6'da yakalandı, booking akışı yeniden denenecek | ${getAccountName(account)}`, ssPage);
         return { success: false, partial: true, error: "date_time_warning_after_ileri" };
       }
 
       // ===== Dashboard/duyurular sayfasına geri atıldıysa booking'i yeniden başlat =====
       if (pageState.hasDashboardHome) {
         console.log("  [BOOK] ⚠️ Akış dashboard/duyurular sayfasına döndü (seçim backend'e işlenmemiş olabilir). Yeniden denenecek.");
-        await idataLog("appt_redirect_dashboard", `⚠️ Akış duyurular/dashboard sayfasına döndü, booking yeniden denenecek | URL: ${pageState.url} | Hesap: ${account.email}`, ssPage);
+        await idataLog("appt_redirect_dashboard", `⚠️ Akış duyurular/dashboard sayfasına döndü, booking yeniden denenecek | URL: ${pageState.url} | ${getAccountName(account)}`, ssPage);
         try {
           await page.goto(CONFIG.APPOINTMENT_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
           await delay(2000, 3500);
@@ -5093,10 +5099,10 @@ async function mainLoop() {
             if (loginResult.success) {
               allCfBlocked = false;
               await clearCfBlocked(); // CF engeli kalktı
-              await idataLog("login_success", `Giriş başarılı: ${account.email}`);
+              await idataLog("login_success", `Giriş başarılı: ${getAccountName(account)}`);
               
               // Randevu kontrol
-              await idataLog("appt_check", `Randevu kontrol ediliyor | Hesap: ${account.email}`);
+              await idataLog("appt_check", `Randevu kontrol ediliyor | ${getAccountName(account)}`);
               const apptResult = await checkAppointments(page, account);
               
               if (apptResult.reason === "cloudflare") {
@@ -5111,7 +5117,7 @@ async function mainLoop() {
               if (apptResult.found) {
                 const datesInfo = apptResult.datesStr ? ` | Açık tarihler: ${apptResult.datesStr}` : "";
                 const loginLink = CONFIG.LOGIN_URL;
-                await idataLog("appt_found", `🎉 RANDEVU BULUNDU! Manuel ilerleyin!${datesInfo} | Giriş: ${loginLink} | Hesap: ${account.email}`, apptResult.screenshot);
+                await idataLog("appt_found", `🎉 RANDEVU BULUNDU! Manuel ilerleyin!${datesInfo} | Giriş: ${loginLink} | ${getAccountName(account)}`, apptResult.screenshot);
                 startAlarm();
                 
                 // Manuel mod — otomatik booking devre dışı, tarayıcıyı açık tut
@@ -5122,7 +5128,7 @@ async function mainLoop() {
                 stopAlarm();
               } else {
                 stopAlarm();
-                await idataLog("appt_none", `Randevu yok | ${apptResult.message || ""} | Hesap: ${account.email}`, apptResult.screenshot);
+                await idataLog("appt_none", `Randevu yok | ${apptResult.message || ""} | ${getAccountName(account)}`, apptResult.screenshot);
               }
               success = true;
             } else {
