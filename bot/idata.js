@@ -4611,20 +4611,11 @@ async function bookEarliestAppointment(page, account) {
         }, retryTargetDate?.normalized ?? null, announcedAppointmentDateKeys, calIconClicked?.inputX ?? null, calIconClicked?.inputY ?? null);
 
         if (retryDateInfo.found) {
-          console.log(`  [BOOK] 📅 Retry tarih seçimi: Gün ${retryDateInfo.day} (${retryDateInfo.greenCount} yeşil, postback=${!!retryDateInfo.postbackTarget})`);
-          await humanClick(page, retryDateInfo.x, retryDateInfo.y, { preMovesNear: true });
+          console.log(`  [BOOK] 📅 Retry tarih seçimi: Gün ${retryDateInfo.day} (${retryDateInfo.greenCount} yeşil)`);
+          const retryClickX = retryDateInfo.cellX ?? retryDateInfo.x;
+          const retryClickY = retryDateInfo.cellY ?? retryDateInfo.y;
+          await humanClick(page, retryClickX, retryClickY, { preMovesNear: true });
           await delay(1500, 2500);
-          
-          // Postback fallback
-          if (retryDateInfo.postbackTarget) {
-            await page.evaluate((target, arg) => {
-              if (typeof window.__doPostBack === "function") {
-                window.__doPostBack(target, arg);
-              }
-            }, retryDateInfo.postbackTarget, retryDateInfo.postbackArg || "");
-            console.log(`  [BOOK] ✅ Retry tarih __doPostBack çağrıldı`);
-            await delay(1500, 2500);
-          }
         } else {
           console.log(`  [BOOK] ⚠️ Retry'da takvimde gün bulunamadı`);
         }
