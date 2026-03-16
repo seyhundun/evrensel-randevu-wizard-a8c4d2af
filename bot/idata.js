@@ -4337,7 +4337,7 @@ async function bookEarliestAppointment(page, account) {
         const ssWarn = await takeScreenshotBase64(page);
         await idataLog(
           "appt_warning_retry",
-          `⚠️ Tarih/Saat uyarısı! Retry ${warningRetry + 1}/${MAX_WARNING_RETRIES} | TAMAM→TARİH→SAAT→İLERİ | Hesap: ${account.email}`,
+          `⚠️ Tarih/Saat uyarısı! Retry ${warningRetry + 1}/${MAX_WARNING_RETRIES} | TAMAM→TARİH→SAAT→İLERİ | ${getAccountName(account)}`,
           ssWarn
         );
 
