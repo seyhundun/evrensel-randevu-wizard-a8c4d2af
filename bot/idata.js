@@ -2734,8 +2734,20 @@ async function checkAppointments(page, account) {
       
       // Sayfa metninden tarihleri de çek (DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY)
       const textDates = Array.from(new Set(body.match(/\b\d{2}[./-]\d{2}[./-]\d{4}\b/g) || []));
+      const today = new Date();
+      today.setHours(0,0,0,0);
       for (const td of textDates) {
-        if (!dates.includes(td)) dates.push(td);
+        if (dates.includes(td)) continue;
+        // Geçmiş tarihleri filtrele (doğum tarihi gibi yanlış eşleşmeleri önle)
+        const parts = td.split(/[.\/-]/);
+        if (parts.length === 3) {
+          const d = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const y = parseInt(parts[2], 10);
+          const parsed = new Date(y, m, d);
+          if (parsed < today) continue; // Geçmiş tarih, atla
+        }
+        dates.push(td);
       }
       
       if (hasDatePicker || hasAvailableSlots || dates.length > 0) {
