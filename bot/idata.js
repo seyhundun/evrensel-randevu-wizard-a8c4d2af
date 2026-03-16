@@ -4656,7 +4656,7 @@ async function bookEarliestAppointment(page, account) {
       // ===== Dashboard/duyurular sayfasına geri atıldıysa booking'i yeniden başlat =====
       if (pageState.hasDashboardHome) {
         console.log("  [BOOK] ⚠️ Akış dashboard/duyurular sayfasına döndü (seçim backend'e işlenmemiş olabilir). Yeniden denenecek.");
-        await idataLog("appt_redirect_dashboard", `⚠️ Akış duyurular/dashboard sayfasına döndü, booking yeniden denenecek | URL: ${pageState.url} | Hesap: ${account.email}`, ssPage);
+        await idataLog("appt_redirect_dashboard", `⚠️ Akış duyurular/dashboard sayfasına döndü, booking yeniden denenecek | URL: ${pageState.url} | ${getAccountName(account)}`, ssPage);
         try {
           await page.goto(CONFIG.APPOINTMENT_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
           await delay(2000, 3500);
