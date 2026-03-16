@@ -4577,13 +4577,35 @@ async function bookEarliestAppointment(page, account) {
             const clickableEl = innerLink || d;
             const rect = clickableEl.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0) {
-              allDays.push({ day: dayNum, normalizedDate, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, postbackTarget, postbackArg, hasLink: !!innerLink });
+              allDays.push({
+                day: dayNum,
+                normalizedDate,
+                x: rect.x + rect.width / 2,
+                y: rect.y + rect.height / 2,
+                cellX: d.getBoundingClientRect().x + d.getBoundingClientRect().width / 2,
+                cellY: d.getBoundingClientRect().y + d.getBoundingClientRect().height / 2,
+                postbackTarget,
+                postbackArg,
+                hasLink: !!innerLink
+              });
             }
           }
           allDays.sort((a, b) => (a.normalizedDate || "").localeCompare(b.normalizedDate || "") || a.day - b.day);
           if (allDays.length > 0) {
             const target = allDays.find((d) => d.normalizedDate === targetNormalized) || allDays[0];
-            return { found: true, day: target.day, normalizedDate: target.normalizedDate, x: target.x, y: target.y, greenCount: allDays.length, postbackTarget: target.postbackTarget, postbackArg: target.postbackArg, hasLink: target.hasLink };
+            return {
+              found: true,
+              day: target.day,
+              normalizedDate: target.normalizedDate,
+              x: target.x,
+              y: target.y,
+              cellX: target.cellX,
+              cellY: target.cellY,
+              greenCount: allDays.length,
+              postbackTarget: target.postbackTarget,
+              postbackArg: target.postbackArg,
+              hasLink: target.hasLink
+            };
           }
           return { found: false };
         }, retryTargetDate?.normalized ?? null, announcedAppointmentDateKeys, calIconClicked?.inputX ?? null, calIconClicked?.inputY ?? null);
