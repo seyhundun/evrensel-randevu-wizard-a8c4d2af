@@ -2696,74 +2696,135 @@ async function checkAppointments(page, account) {
     });
     await delay(3000, 5000);
 
-    // 6) Sonucu kontrol et — ÇOK SIKI TESPİT
+    // 6) Sonucu kontrol et — yalnızca gerçek randevu tarihlerini kabul et
     const result = await page.evaluate(() => {
       const body = (document.body?.innerText || "");
       const lower = body.toLowerCase();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-      // === KESİN RANDEVU YOK ===
-      if (lower.includes("uygun randevu tarihi bulunmamaktadır") || 
-          lower.includes("randevu tarihi bulunmamaktadır") ||
-          lower.includes("uygun randevu bulunmamaktadır") ||
-          lower.includes("no available appointment")) {
-        const dateMatch = body.match(/(\d{2}\.\d{2}\.\d{4})/g);
-        return { 
-          found: false, 
+      const parseDateValue = (raw) => {
+        const value = String(raw || "").trim();
+        if (!value) return null;
+
+        let match = value.match(/\b(\d{2})[./-](\d{2})[./-](\d{4})\b/);
+        if (match) {
+          const parsed = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+          return Number.isNaN(parsed.getTime()) ? null : parsed;
+        }
+
+        match = value.match(/\b(\d{4})[./-](\d{2})[./-](\d{2})\b/);
+        if (match) {
+          const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+          return Number.isNaN(parsed.getTime()) ? null : parsed;
+        }
+
+        return null;
+      };
+
+      const isFutureOrToday = (raw) => {
+        const parsed = parseDateValue(raw);
+        return !!parsed && parsed >= today;
+      };
+
+      const normalizeDate = (raw) => {
+        const parsed = parseDateValue(raw);
+        if (!parsed) return null;
+        const d = String(parsed.getDate()).padStart(2, "0");
+        const m = String(parsed.getMonth() + 1).padStart(2, "0");
+        const y = parsed.getFullYear();
+        return `${d}.${m}.${y}`;
+      };
+
+      const extractDates = (text) => {
+        const matches = String(text || "").match(/\b(?:\d{2}[./-]\d{2}[./-]\d{4}|\d{4}[./-]\d{2}[./-]\d{2})\b/g) || [];
+        return Array.from(new Set(matches.map(normalizeDate).filter((date) => date && isFutureOrToday(date))));
+      };
+
+      const positiveAppointmentSignals = [
+        "müsait randevu tarihleri",
+        "aşağıdaki tarihlerden",
+        "randevu tarihini seçiniz",
+        "en yakın randevu tarihleri",
+        "uygun tarih seçiniz",
+        "available appointment"
+      ];
+
+      const negativeAppointmentSignals = [
+        "uygun randevu tarihi bulunmamaktadır",
+        "randevu tarihi bulunmamaktadır",
+        "uygun randevu bulunmamaktadır",
+        "no available appointment"
+      ];
+
+      const hasPositiveText = positiveAppointmentSignals.some((signal) => lower.includes(signal));
+      const hasNegativeText = negativeAppointmentSignals.some((signal) => lower.includes(signal));
+
+      const visibleElements = Array.from(document.querySelectorAll("body *")).filter((el) => {
+        const text = (el.textContent || "").trim();
+        if (!text) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+
+      const scopedTexts = visibleElements
+        .map((el) => (el.textContent || "").trim())
+        .filter((text) => positiveAppointmentSignals.some((signal) => text.toLowerCase().includes(signal)));
+
+      const scopedFutureDates = Array.from(new Set(scopedTexts.flatMap((text) => extractDates(text))));
+      const bodyFutureDates = extractDates(body);
+
+      const availableCalendarCells = Array.from(document.querySelectorAll("td, button, span, div"))
+        .filter((el) => {
+          const text = (el.textContent || "").trim();
+          if (!/^\d{1,2}$/.test(text)) return false;
+          const style = window.getComputedStyle(el);
+          if (style.display === "none" || style.visibility === "hidden") return false;
+          const rect = el.getBoundingClientRect();
+          if (rect.width < 8 || rect.height < 8) return false;
+          const cls = `${el.className || ""}`.toLowerCase();
+          if (/(disabled|old|new|passive|off|other-month)/.test(cls)) return false;
+          return /(available|active|selectable|free|slot|day|calendar|datepicker|flatpickr|ui-datepicker)/.test(cls);
+        })
+        .length;
+
+      if (hasNegativeText) {
+        const futureDates = scopedFutureDates.length > 0 ? scopedFutureDates : bodyFutureDates;
+        return {
+          found: false,
           status: "no_appointment",
           text: "Uygun randevu tarihi bulunmamaktadır",
-          openUntil: dateMatch && dateMatch.length > 0 ? dateMatch.join(", ") : null 
+          openUntil: futureDates.length > 0 ? futureDates.join(", ") : null
         };
       }
 
-      // === KESİN RANDEVU VAR === (çok spesifik kontroller)
-      const hasDatePicker = !!document.querySelector('input[type="date"], .datepicker-days, .flatpickr-calendar');
-      const hasAvailableSlots = lower.includes("müsait randevu tarihleri") || 
-                                  lower.includes("aşağıdaki tarihlerden") ||
-                                  lower.includes("randevu tarihini seçiniz") ||
-                                  lower.includes("en yakın randevu tarihleri");
-      
-      // Tarih input'larından VE sayfa metninden tarihleri çek
-      const dateInputs = Array.from(document.querySelectorAll('input[type="date"], input[type="text"]'));
-      const dates = [];
-      for (const inp of dateInputs) {
-        const val = inp.value || "";
-        if (/\d{2}[-/.]\d{2}[-/.]\d{4}/.test(val) || /\d{4}[-/.]\d{2}[-/.]\d{2}/.test(val)) {
-          dates.push(val);
-        }
-      }
-      
-      // Sayfa metninden tarihleri de çek (DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY)
-      const textDates = Array.from(new Set(body.match(/\b\d{2}[./-]\d{2}[./-]\d{4}\b/g) || []));
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      for (const td of textDates) {
-        if (dates.includes(td)) continue;
-        // Geçmiş tarihleri filtrele (doğum tarihi gibi yanlış eşleşmeleri önle)
-        const parts = td.split(/[.\/-]/);
-        if (parts.length === 3) {
-          const d = parseInt(parts[0], 10);
-          const m = parseInt(parts[1], 10) - 1;
-          const y = parseInt(parts[2], 10);
-          const parsed = new Date(y, m, d);
-          if (parsed < today) continue; // Geçmiş tarih, atla
-        }
-        dates.push(td);
-      }
-      
-      if (hasDatePicker || hasAvailableSlots || dates.length > 0) {
-        return { found: true, status: "appointment_available", text: body.substring(0, 500), dates };
+      const finalDates = scopedFutureDates.length > 0 ? scopedFutureDates : (hasPositiveText ? bodyFutureDates : []);
+      const hasRealAppointment = hasPositiveText && (finalDates.length > 0 || availableCalendarCells > 0);
+
+      if (hasRealAppointment) {
+        return {
+          found: true,
+          status: "appointment_available",
+          text: body.substring(0, 500),
+          dates: finalDates,
+          debug: `positiveText=${hasPositiveText} dates=${finalDates.length} cells=${availableCalendarCells}`
+        };
       }
 
       // === FORM HENÜZ DOLDURULMADI / SONUÇ BELİRSİZ ===
-      // Form hala görünüyorsa ve sonuç mesajı yoksa → randevu yok say
       const selects = document.querySelectorAll("select");
       if (selects.length >= 2) {
-        // Form görünüyor, henüz sonuç yok veya seçim yapılmadı
         return { found: false, status: "form_visible", text: "Form görünüyor, sonuç belirsiz: " + body.substring(0, 300) };
       }
 
-      // Sayfa boş veya beklenmeyen durum
-      return { found: false, status: "unknown", text: body.substring(0, 300) };
+      return {
+        found: false,
+        status: "unknown",
+        text: body.substring(0, 300),
+        debug: `positiveText=${hasPositiveText} dates=${finalDates.length} cells=${availableCalendarCells}`
+      };
     });
 
     const ss = await takeScreenshotBase64(page);
