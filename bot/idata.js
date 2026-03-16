@@ -228,6 +228,12 @@ function delay(min = 2000, max = 5000) {
   return new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min) + min)));
 }
 
+// Hesap adını döndür (email yerine ad soyad)
+function getAccountName(account) {
+  const name = `${account.first_name || ""} ${account.last_name || ""}`.trim();
+  return name || account.email;
+}
+
 // ==================== AUDIO ALARM ====================
 const { exec } = require("child_process");
 let alarmInterval = null;
