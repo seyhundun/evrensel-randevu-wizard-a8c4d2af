@@ -3422,6 +3422,10 @@ async function bookEarliestAppointment(page, account) {
     }
 
     console.log(`  [BOOK] Takvim ikonu: ${JSON.stringify(calIconClicked)}`);
+    await page.evaluate((anchorX, anchorY) => {
+      window.__idataApptAnchorX = anchorX;
+      window.__idataApptAnchorY = anchorY;
+    }, calIconClicked?.inputX ?? null, calIconClicked?.inputY ?? null).catch(() => {});
     await delay(2000, 3000);
 
     // ===== STEP 3: Takvimden sadece YEŞİL ve en erken günü seç =====
