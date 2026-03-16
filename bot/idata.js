@@ -2736,7 +2736,8 @@ async function checkAppointments(page, account) {
 
     if (result.found) {
       console.log("  [CHECK] 🎉 RANDEVU BULUNDU!");
-      return { found: true, screenshot: ss, message: result.text };
+      const datesStr = (result.dates && result.dates.length > 0) ? result.dates.join(", ") : "";
+      return { found: true, screenshot: ss, message: result.text, dates: result.dates || [], datesStr };
     }
 
     const extraInfo = result.openUntil ? ` | Açık tarih: ${result.openUntil}` : "";
