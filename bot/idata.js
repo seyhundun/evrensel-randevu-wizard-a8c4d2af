@@ -3066,7 +3066,7 @@ async function bookEarliestAppointment(page, account) {
     
     if (!step1Result.clicked) {
       const ss = await takeScreenshotBase64(page);
-      await idataLog("appt_error", `Step 1: İLERİ butonu bulunamadı | Hesap: ${account.email}`, ss);
+      await idataLog("appt_error", `Step 1: İLERİ butonu bulunamadı | ${getAccountName(account)}`, ss);
       return { success: false, error: "İLERİ butonu bulunamadı (step1)" };
     }
 
