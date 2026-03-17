@@ -178,8 +178,7 @@ async function fetchEvomiRegions() {
 }
 
 async function getNextProxyRegion() {
-  // Her zaman Türkiye, bölge her seferinde değişsin
-  EVOMI_PROXY_COUNTRY = "TR";
+  // DB'den gelen ülke ayarını koru (idata_proxy_country), zorla TR yapma
   const regions = await fetchEvomiRegions();
   currentRegionIndex = (currentRegionIndex + 1) % regions.length;
   let region = regions[currentRegionIndex];
@@ -188,7 +187,7 @@ async function getNextProxyRegion() {
     region = region.city || region.name || region.region || JSON.stringify(region);
   }
   region = String(region || "").toLowerCase().replace(/\s+/g, "").replace(/\.(province|city|region|state)$/i, "");
-  console.log(`  [PROXY] 🏙 Bölge rotasyonu: ${region} (${currentRegionIndex + 1}/${regions.length})`);
+  console.log(`  [PROXY] 🏙 Bölge rotasyonu: ${region} (${currentRegionIndex + 1}/${regions.length}) ülke: ${EVOMI_PROXY_COUNTRY}`);
   return region;
 }
 
