@@ -5222,6 +5222,10 @@ async function mainLoop() {
               } else {
                 stopAlarm();
                 await idataLog("appt_none", `Randevu yok | ${apptResult.message || ""} | ${getAccountName(account)}`, apptResult.screenshot);
+                // Randevu olmasa bile tarayıcıyı 20 dakika açık bırak
+                console.log("  ⏳ Randevu yok ama tarayıcı 20 dakika açık kalacak (VNC erişimi için)...");
+                await delay(1200000, 1200000); // 20 dakika bekle
+                console.log("  ⏰ 20 dakika doldu, tarayıcı kapanıyor.");
               }
               success = true;
             } else {
