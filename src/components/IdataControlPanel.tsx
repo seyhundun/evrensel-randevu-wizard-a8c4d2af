@@ -182,14 +182,15 @@ export default function IdataControlPanel() {
             }
           }}
           min={30}
-          max={600}
+          max={1800}
           step={30}
           className="w-full"
         />
         <div className="flex justify-between text-[10px] text-muted-foreground">
           <span>30s</span>
-          <span>5dk</span>
           <span>10dk</span>
+          <span>20dk</span>
+          <span>30dk</span>
         </div>
       </div>
 
