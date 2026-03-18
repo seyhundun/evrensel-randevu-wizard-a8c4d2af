@@ -1,0 +1,1 @@
+UPDATE bot_settings SET value = '' WHERE key = 'idata_proxy_region';
