@@ -263,13 +263,27 @@ if (CAPSOLVER_API_KEY) console.log(`🔐 Capsolver API key: var (${CAPSOLVER_API
 // Ülke → VFS URL kodu eşlemesi
 const COUNTRY_VFS_CODES = {
   france: "fra",
+  fr: "fra",
+  fra: "fra",
   netherlands: "nld",
+  holland: "nld",
+  nl: "nld",
+  nld: "nld",
   denmark: "dnk",
+  dk: "dnk",
+  dnk: "dnk",
   poland: "pol",
+  pl: "pol",
+  pol: "pol",
 };
 
+function getVfsCountryCode(country) {
+  const normalizedCountry = String(country || "").trim().toLowerCase();
+  return COUNTRY_VFS_CODES[normalizedCountry] || null;
+}
+
 function getVfsLoginUrl(country) {
-  const code = COUNTRY_VFS_CODES[country] || "fra";
+  const code = getVfsCountryCode(country) || "fra";
   return `https://visa.vfsglobal.com/tur/tr/${code}/login`;
 }
 
@@ -1921,8 +1935,15 @@ async function checkAppointments(config, account) {
     await delay(1000, 2000);
     const queueResult = await waitForLoginFormAfterQueue(page, vfsLoginUrl);
     if (!queueResult.ok) {
-      banIpImmediately(activeIp, "queue_or_login_form_timeout");
       const ss = await takeScreenshotBase64(page);
+      const isSessionLike = String(queueResult.reason || "").toLowerCase().includes("not-found/session");
+      if (isSessionLike) {
+        const cooldownSec = 90 + Math.floor(Math.random() * 60);
+        await logStep(id, "session_expired", `⏰ Queue sonrası not-found/session algılandı | ${account.email} | ${cooldownSec}s bekleniyor | IP banlanmadı`);
+        await reportResult(id, "session_expired", `${queueResult.reason} | Hesap: ${account.email} | ${cooldownSec}s soğuma bekleniyor`, 0, ss);
+        return { found: false, accountBanned: false, ipBlocked: false, hadError: false, sessionExpired: true, sessionCooldownMs: cooldownSec * 1000 };
+      }
+      banIpImmediately(activeIp, "queue_or_login_form_timeout");
       await reportResult(id, "error", `${queueResult.reason} | Hesap: ${account.email}`, 0, ss);
       return { found: false, accountBanned: false, ipBlocked: true, hadError: true };
     }
