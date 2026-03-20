@@ -54,6 +54,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
       setProxyHost(map.proxy_host || "—");
       setProxyCountry(map.proxy_country || "—");
       setProxyEnabled(map.proxy_enabled !== "false");
+      setProxyType(map.proxy_type || "residential");
       setHealth(prev => ({ ...prev, region: map.proxy_region || null }));
     }
   }, []);
