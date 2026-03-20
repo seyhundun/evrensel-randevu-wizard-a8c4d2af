@@ -65,7 +65,8 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
       setProxyPort(map.proxy_port || "—");
       setProxyCountry(map.proxy_country || "—");
       setProxyEnabled(map.proxy_enabled !== "false");
-      setProxyType(deriveProxyType(map.proxy_host || "", map.proxy_port || ""));
+      // Use stored proxy_type if available, otherwise derive from host/port
+      setProxyType(map.proxy_type || deriveProxyType(map.proxy_host || "", map.proxy_port || ""));
       setHealth(prev => ({ ...prev, region: map.proxy_region || null }));
     }
   }, []);
