@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Network, Shield, Clock, Globe, Zap, Loader2, CheckCircle2, XCircle, Copy, Activity, AlertTriangle, Wifi, WifiOff, MapPin, Smartphone } from "lucide-react";
+import { Network, Shield, Clock, Globe, Zap, Loader2, CheckCircle2, XCircle, Copy, Activity, AlertTriangle, Wifi, WifiOff, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 interface ProxySettingsProps {
