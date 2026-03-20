@@ -1764,7 +1764,7 @@ async function checkAppointments(config, account) {
   const ts = new Date().toLocaleTimeString("tr-TR");
   // Her kontrolde sıradaki IP'yi kullan (datacenter) veya residential proxy
   const activeIp = (PROXY_MODE !== "residential" && IP_LIST.length > 0) ? getNextIp() : null;
-  const countryLabels = { france: "Fransa", netherlands: "Hollanda", denmark: "Danimarka" };
+  const countryLabels = { france: "Fransa", netherlands: "Hollanda", denmark: "Danimarka", poland: "Polonya" };
   const countryLabel = countryLabels[country] || country;
   const proxyLabel = PROXY_MODE === "residential" ? "residential proxy" : (activeIp || "doğrudan");
   console.log(`\n[${ts}] Kontrol: ${countryLabel} ${city} | Hesap: ${account.email} | ${proxyLabel}`);
