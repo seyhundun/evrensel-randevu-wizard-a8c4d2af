@@ -520,6 +520,44 @@ async function reportResult(configId, status, message = "", slotsAvailable = 0, 
   }
 }
 
+// ========== SMS BİLDİRİM (Mutlucell) ==========
+async function sendSmsNotification(message) {
+  try {
+    const fetch = (await import("node-fetch")).default;
+    const smsUrl = "https://ocrpzwrsyiprfuzsyivf.supabase.co/functions/v1/send-sms";
+    
+    // GSM7 uyumlu Türkçe karakter dönüşümü
+    const toGsm7 = (str) => str
+      .replace(/ç/g, "c").replace(/Ç/g, "C")
+      .replace(/ğ/g, "g").replace(/Ğ/g, "G")
+      .replace(/ı/g, "i").replace(/İ/g, "I")
+      .replace(/ö/g, "o").replace(/Ö/g, "O")
+      .replace(/ş/g, "s").replace(/Ş/g, "S")
+      .replace(/ü/g, "u").replace(/Ü/g, "U")
+      .replace(/[^\x20-\x7E\n]/g, ""); // Emoji ve özel karakterleri temizle
+    
+    const smsBody = toGsm7(message);
+    
+    const res = await fetch(smsUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": CONFIG.API_KEY,
+      },
+      body: JSON.stringify({ message: smsBody }),
+    });
+    
+    const data = await res.json();
+    if (data.ok) {
+      console.log(`  [SMS] ✅ Bildirim gönderildi: ${data.recipients?.join(", ") || "?"}`);
+    } else {
+      console.error(`  [SMS] ❌ Hata: ${data.error}`);
+    }
+  } catch (err) {
+    console.error(`  [SMS] ❌ Gönderim hatası: ${err.message}`);
+  }
+}
+
 // Dashboard'da adım adım görünecek hafif log fonksiyonu
 async function logStep(configId, stepStatus, message = "") {
   if (!configId) return;
