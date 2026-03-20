@@ -36,6 +36,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
   const [proxyHost, setProxyHost] = useState("—");
   const [proxyCountry, setProxyCountry] = useState("—");
   const [proxyEnabled, setProxyEnabled] = useState(true);
+  const [proxyType, setProxyType] = useState("residential");
   const [cfStatus, setCfStatus] = useState<{ blocked: boolean; ip: string | null; since: string | null }>({
     blocked: false, ip: null, since: null,
   });
