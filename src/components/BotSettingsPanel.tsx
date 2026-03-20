@@ -120,6 +120,7 @@ export default function BotSettingsPanel() {
     setSavingSettings(true);
     const keys = [
       { key: "proxy_enabled", label: "Proxy Aktif" },
+      { key: "proxy_type", label: "Proxy Türü" },
       { key: "proxy_host", label: "Proxy Host" },
       { key: "proxy_port", label: "Proxy Port" },
       { key: "proxy_user", label: "Proxy Kullanıcı" },
@@ -298,13 +299,42 @@ export default function BotSettingsPanel() {
             <p className="text-[10px] text-muted-foreground">
               {getDraft("proxy_enabled") === "false" 
                 ? "Kapalı — sunucu kendi IP'si ile çıkıyor" 
-                : "Açık — Evomi residential proxy üzerinden çıkıyor"}
+                : `Açık — Evomi ${getDraft("proxy_type") === "mobile" ? "Mobile" : getDraft("proxy_type") === "premium" ? "Premium Residential" : "Residential"} proxy`}
             </p>
           </div>
           <Switch
             checked={getDraft("proxy_enabled") !== "false"}
             onCheckedChange={(checked) => setDraftValue("proxy_enabled", checked ? "true" : "false")}
           />
+        </div>
+
+        {/* Proxy Type Selector */}
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">Proxy Türü</Label>
+          <Select
+            value={getDraft("proxy_type") || "residential"}
+            onValueChange={v => {
+              setDraftValue("proxy_type", v);
+              // Auto-set host/port based on type
+              const typeMap: Record<string, { host: string; port: string }> = {
+                residential: { host: "rp.evomi.com", port: "1000" },
+                mobile: { host: "mp.evomi.com", port: "3000" },
+                premium: { host: "rp.evomi.com", port: "1001" },
+              };
+              const cfg = typeMap[v] || typeMap.residential;
+              setDraftValue("proxy_host", cfg.host);
+              setDraftValue("proxy_port", cfg.port);
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="residential">🏠 Residential (rp:1000)</SelectItem>
+              <SelectItem value="mobile">📱 Mobile 3G/4G/5G (mp:3000)</SelectItem>
+              <SelectItem value="premium">⭐ Premium Residential (rp:1001)</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

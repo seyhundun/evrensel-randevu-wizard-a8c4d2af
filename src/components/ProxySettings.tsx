@@ -36,6 +36,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
   const [proxyHost, setProxyHost] = useState("—");
   const [proxyCountry, setProxyCountry] = useState("—");
   const [proxyEnabled, setProxyEnabled] = useState(true);
+  const [proxyType, setProxyType] = useState("residential");
   const [cfStatus, setCfStatus] = useState<{ blocked: boolean; ip: string | null; since: string | null }>({
     blocked: false, ip: null, since: null,
   });
@@ -53,6 +54,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
       setProxyHost(map.proxy_host || "—");
       setProxyCountry(map.proxy_country || "—");
       setProxyEnabled(map.proxy_enabled !== "false");
+      setProxyType(map.proxy_type || "residential");
       setHealth(prev => ({ ...prev, region: map.proxy_region || null }));
     }
   }, []);
@@ -360,8 +362,14 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
             </span>
           </div>
           <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1">
-            <span className="text-muted-foreground">CAPTCHA</span>
-            <span className="font-medium text-foreground">capsolver</span>
+            <span className="text-muted-foreground">Tür</span>
+            <Badge className={`text-[9px] px-1.5 py-0 h-4 ${
+              proxyType === "mobile" ? "bg-blue-500/15 text-blue-600 border-blue-500/30 hover:bg-blue-500/15" :
+              proxyType === "premium" ? "bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/15" :
+              "bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15"
+            }`}>
+              {proxyType === "mobile" ? "📱 Mobile" : proxyType === "premium" ? "⭐ Premium" : "🏠 Residential"}
+            </Badge>
           </div>
           {proxyEnabled && (
             <>
