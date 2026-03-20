@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Network, Shield, Clock, Globe, Zap, Loader2, CheckCircle2, XCircle, Copy, Activity, AlertTriangle, Wifi, WifiOff, MapPin, Smartphone } from "lucide-react";
+import { Network, Shield, Clock, Globe, Zap, Loader2, CheckCircle2, XCircle, Copy, Activity, AlertTriangle, Wifi, WifiOff, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 interface ProxySettingsProps {
@@ -39,7 +39,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
   const [proxyPort, setProxyPort] = useState("—");
   const [proxyCountry, setProxyCountry] = useState("—");
   const [proxyEnabled, setProxyEnabled] = useState(true);
-  const [proxyType, setProxyType] = useState("mobile"); // mobile, core, premium
+  const [proxyType, setProxyType] = useState("core"); // core, premium
   const [cfStatus, setCfStatus] = useState<{ blocked: boolean; ip: string | null; since: string | null }>({
     blocked: false, ip: null, since: null,
   });
@@ -52,7 +52,6 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
 
   // Derive proxy type from host/port
   const deriveProxyType = (host: string, port: string) => {
-    if (host.startsWith("mp.")) return "mobile";
     if (port === "1001") return "premium";
     return "core";
   };
@@ -210,7 +209,6 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
 
   const handleProxyTypeChange = async (type: string) => {
     const config: Record<string, { host: string; port: string; label: string }> = {
-      mobile: { host: "mp.evomi.com", port: "3000", label: "Mobile" },
       core: { host: "rp.evomi.com", port: "1000", label: "Core Residential" },
       premium: { host: "rp.evomi.com", port: "1001", label: "Premium Residential" },
     };
@@ -269,7 +267,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
         {/* Proxy Type Selector */}
         <div className="space-y-1">
           <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
-            <Smartphone className="w-3 h-3" />
+            <Globe className="w-3 h-3" />
             Proxy Türü
           </Label>
           <Select value={proxyType} onValueChange={handleProxyTypeChange}>
@@ -277,7 +275,6 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="mobile">📱 Mobile (3G/4G/5G) — En güçlü</SelectItem>
               <SelectItem value="core">🏠 Core Residential — Ekonomik</SelectItem>
               <SelectItem value="premium">⭐ Premium Residential — Kaliteli</SelectItem>
             </SelectContent>
