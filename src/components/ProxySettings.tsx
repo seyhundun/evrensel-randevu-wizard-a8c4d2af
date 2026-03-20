@@ -1,53 +1,66 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Network, Shield, Clock, Globe, Zap, Loader2, CheckCircle2, XCircle, Copy } from "lucide-react";
+import { Network, Shield, Clock, Globe, Zap, Loader2, CheckCircle2, XCircle, Copy, Activity, AlertTriangle, Wifi, WifiOff, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 interface ProxySettingsProps {
   configId: string | null;
 }
 
+interface HealthData {
+  currentIp: string | null;
+  lastReset: string | null;
+  lastSuccess: { time: string; message: string } | null;
+  lastError: { time: string; message: string } | null;
+  region: string | null;
+  totalChecks: number;
+  errorCount: number;
+  successRate: number;
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}sn önce`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}dk önce`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}sa önce`;
+  return `${Math.floor(hr / 24)}g önce`;
+}
+
 export default function ProxySettings({ configId }: ProxySettingsProps) {
-  const [currentIp, setCurrentIp] = useState<string | null>(null);
-  const [lastReset, setLastReset] = useState<string | null>(null);
   const [proxyHost, setProxyHost] = useState("—");
   const [proxyCountry, setProxyCountry] = useState("—");
+  const [proxyEnabled, setProxyEnabled] = useState(true);
   const [cfStatus, setCfStatus] = useState<{ blocked: boolean; ip: string | null; since: string | null }>({
     blocked: false, ip: null, since: null,
   });
-  const [proxyEnabled, setProxyEnabled] = useState(true);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; ip?: string | null; message?: string; curl_test?: string; config?: any } | null>(null);
+  const [health, setHealth] = useState<HealthData>({
+    currentIp: null, lastReset: null, lastSuccess: null, lastError: null,
+    region: null, totalChecks: 0, errorCount: 0, successRate: 100,
+  });
 
-  useEffect(() => {
-    loadBotSettings();
-    if (!configId) return;
-    loadData();
-    const channel = supabase
-      .channel("proxy-status")
-      .on("postgres_changes", { event: "*", schema: "public", table: "tracking_logs", filter: `config_id=eq.${configId}` }, () => loadData())
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tracking_configs", filter: `id=eq.${configId}` }, () => loadCfStatus())
-      .on("postgres_changes", { event: "*", schema: "public", table: "bot_settings" }, () => loadBotSettings())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [configId]);
-
-  const loadBotSettings = async () => {
+  const loadBotSettings = useCallback(async () => {
     const { data } = await supabase.from("bot_settings").select("key, value");
     if (data) {
       const map = Object.fromEntries(data.map(d => [d.key, d.value]));
       setProxyHost(map.proxy_host || "—");
       setProxyCountry(map.proxy_country || "—");
       setProxyEnabled(map.proxy_enabled !== "false");
+      setHealth(prev => ({ ...prev, region: map.proxy_region || null }));
     }
-  };
+  }, []);
 
-  const loadData = async () => {
+  const loadHealthData = useCallback(async () => {
     if (!configId) return;
-    // ip_change loglarından aktif IP'yi bul
+
+    // Current IP from ip_change logs
     const { data: ipLogs } = await supabase
       .from("tracking_logs")
       .select("message, created_at")
@@ -55,33 +68,100 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
       .eq("status", "ip_change")
       .order("created_at", { ascending: false })
       .limit(1);
+
+    let currentIp: string | null = null;
+    let lastReset: string | null = null;
+    let region: string | null = null;
+
     if (ipLogs && ipLogs.length > 0) {
       const msg = ipLogs[0].message || "";
-      const match = msg.match(/Aktif IP:\s*([^\s|]+)/);
-      if (match && match[1]) {
-        setCurrentIp(match[1]);
-        setLastReset(ipLogs[0].created_at);
-      }
+      const ipMatch = msg.match(/Aktif IP:\s*([^\s|]+)/);
+      if (ipMatch?.[1]) currentIp = ipMatch[1];
+      lastReset = ipLogs[0].created_at;
+      const regionMatch = msg.match(/bölge:\s*([^\s|,)]+)/i);
+      if (regionMatch?.[1]) region = regionMatch[1];
     }
-    loadCfStatus();
-  };
 
-  const loadCfStatus = async () => {
-    if (!configId) return;
-    const { data } = await supabase
+    // Last successful check
+    const { data: successLogs } = await supabase
+      .from("tracking_logs")
+      .select("message, created_at")
+      .eq("config_id", configId)
+      .in("status", ["no_appointment", "found", "checking"])
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const lastSuccess = successLogs?.[0]
+      ? { time: successLogs[0].created_at, message: successLogs[0].message || "" }
+      : null;
+
+    // Last error
+    const { data: errorLogs } = await supabase
+      .from("tracking_logs")
+      .select("message, created_at")
+      .eq("config_id", configId)
+      .in("status", ["error", "network_error", "cloudflare"])
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const lastError = errorLogs?.[0]
+      ? { time: errorLogs[0].created_at, message: errorLogs[0].message || "" }
+      : null;
+
+    // Stats — last 50 logs
+    const { data: recentLogs } = await supabase
+      .from("tracking_logs")
+      .select("status")
+      .eq("config_id", configId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    const total = recentLogs?.length || 0;
+    const errors = recentLogs?.filter(l =>
+      ["error", "network_error", "cloudflare"].includes(l.status)
+    ).length || 0;
+    const rate = total > 0 ? Math.round(((total - errors) / total) * 100) : 100;
+
+    // Total checks
+    const { count } = await supabase
+      .from("tracking_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("config_id", configId);
+
+    setHealth({
+      currentIp, lastReset, lastSuccess, lastError,
+      region: region || health.region,
+      totalChecks: count || 0, errorCount: errors, successRate: rate,
+    });
+
+    // CF status
+    const { data: cfData } = await supabase
       .from("tracking_configs")
       .select("cf_blocked_since, cf_blocked_ip" as any)
       .eq("id", configId)
       .single();
-    if (data) {
-      const d = data as any;
+    if (cfData) {
+      const d = cfData as any;
       setCfStatus({
         blocked: !!d.cf_blocked_since,
         ip: d.cf_blocked_ip || null,
         since: d.cf_blocked_since || null,
       });
     }
-  };
+  }, [configId]);
+
+  useEffect(() => {
+    loadBotSettings();
+    if (!configId) return;
+    loadHealthData();
+    const channel = supabase
+      .channel("proxy-health")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tracking_logs", filter: `config_id=eq.${configId}` }, () => loadHealthData())
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tracking_configs", filter: `id=eq.${configId}` }, () => loadHealthData())
+      .on("postgres_changes", { event: "*", schema: "public", table: "bot_settings" }, () => loadBotSettings())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [configId, loadBotSettings, loadHealthData]);
 
   const testProxy = async () => {
     setTesting(true);
@@ -90,13 +170,9 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
       const { data, error } = await supabase.functions.invoke("proxy-test");
       if (error) throw error;
       setTestResult(data);
-      if (data?.ip) {
-        toast.success(`Proxy çalışıyor! IP: ${data.ip}`);
-      } else if (data?.ok) {
-        toast.info("Yapılandırma doğru, sunucudan test edin");
-      } else {
-        toast.error(data?.error || "Test başarısız");
-      }
+      if (data?.ip) toast.success(`Proxy çalışıyor! IP: ${data.ip}`);
+      else if (data?.ok) toast.info("Yapılandırma doğru, sunucudan test edin");
+      else toast.error(data?.error || "Test başarısız");
     } catch (err: any) {
       setTestResult({ ok: false, message: err.message });
       toast.error("Proxy test hatası: " + err.message);
@@ -111,64 +187,203 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
     }
   };
 
-  const rows = [
-    { label: "Aktif IP", value: currentIp || "—", icon: <Network className="w-3.5 h-3.5" /> },
-    {
-      label: "Son IP Değişimi",
-      value: lastReset ? new Date(lastReset).toLocaleString("tr-TR") : "—",
-      icon: <Clock className="w-3.5 h-3.5" />,
-    },
-    { label: "Captcha Solver", value: "capsolver.com", icon: <Shield className="w-3.5 h-3.5" /> },
-    { label: "Proxy", value: proxyEnabled ? "Evomi Residential" : "Kapalı — Direct IP", icon: <Globe className="w-3.5 h-3.5" /> },
-    ...(proxyEnabled ? [
-      { label: "Proxy Host", value: proxyHost, icon: <Network className="w-3.5 h-3.5" /> },
-      { label: "Proxy Ülke", value: proxyCountry, icon: <Globe className="w-3.5 h-3.5" /> },
-    ] : []),
-  ];
+  // Health indicator color
+  const healthColor = health.successRate >= 80
+    ? "text-emerald-500"
+    : health.successRate >= 50
+      ? "text-amber-500"
+      : "text-destructive";
+
+  const healthBg = health.successRate >= 80
+    ? "bg-emerald-500/10 border-emerald-500/20"
+    : health.successRate >= 50
+      ? "bg-amber-500/10 border-amber-500/20"
+      : "bg-destructive/10 border-destructive/20";
 
   return (
-    <Card className="p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Proxy & Bot Ayarları</h3>
-        <div className="flex items-center gap-1.5">
-          {cfStatus.blocked && (
-            <Badge className="bg-destructive/10 text-destructive border-destructive/30 text-[10px] hover:bg-destructive/10">
-              CF Engeli
-            </Badge>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 text-[10px] gap-1 px-2"
-            onClick={testProxy}
-            disabled={testing}
-          >
-            {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
-            {testing ? "Test..." : "Proxy Test"}
-          </Button>
+    <div className="space-y-3">
+      {/* Connection Status Card */}
+      <Card className="p-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${
+              cfStatus.blocked ? "bg-destructive animate-pulse" :
+              health.currentIp ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground"
+            }`} />
+            <h3 className="text-xs font-semibold text-foreground">Bağlantı Durumu</h3>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {cfStatus.blocked && (
+              <Badge className="bg-destructive/10 text-destructive border-destructive/30 text-[10px] hover:bg-destructive/10">
+                CF Engeli
+              </Badge>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-[10px] gap-1 px-2"
+              onClick={testProxy}
+              disabled={testing}
+            >
+              {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+              {testing ? "Test..." : "Test"}
+            </Button>
+          </div>
         </div>
-      </div>
 
-      <div className="space-y-2.5">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              {row.icon}
-              <span className="text-xs">{row.label}</span>
+        {/* IP & Region */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-md border bg-card p-2 space-y-1">
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <Wifi className="w-3 h-3" />
+              <span className="text-[10px]">Aktif IP</span>
             </div>
-            <span className="text-xs font-mono font-medium text-foreground truncate max-w-[140px]">
-              {row.value}
+            <p className="text-xs font-mono font-semibold text-foreground truncate">
+              {health.currentIp || "—"}
+            </p>
+          </div>
+          <div className="rounded-md border bg-card p-2 space-y-1">
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <MapPin className="w-3 h-3" />
+              <span className="text-[10px]">Bölge</span>
+            </div>
+            <p className="text-xs font-mono font-semibold text-foreground truncate capitalize">
+              {health.region || proxyCountry || "—"}
+            </p>
+          </div>
+        </div>
+
+        {/* Success Rate Bar */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+              <Activity className="w-3 h-3" />
+              Başarı Oranı (son 50)
+            </span>
+            <span className={`text-xs font-bold tabular-nums ${healthColor}`}>
+              %{health.successRate}
             </span>
           </div>
-        ))}
-      </div>
+          <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${
+                health.successRate >= 80 ? "bg-emerald-500" :
+                health.successRate >= 50 ? "bg-amber-500" : "bg-destructive"
+              }`}
+              style={{ width: `${health.successRate}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+            <span>Toplam: {health.totalChecks} kontrol</span>
+            <span>{health.errorCount}/50 hata</span>
+          </div>
+        </div>
+      </Card>
+
+      {/* Health Details Card */}
+      <Card className="p-3 space-y-2.5">
+        <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+          <Shield className="w-3.5 h-3.5 text-muted-foreground" />
+          Sağlık Detayları
+        </h3>
+
+        {/* Last Success */}
+        <div className={`rounded-md border p-2 space-y-0.5 ${
+          health.lastSuccess ? "bg-emerald-500/5 border-emerald-500/15" : "bg-card"
+        }`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+              Son Başarılı Bağlantı
+            </span>
+            {health.lastSuccess && (
+              <span className="text-[10px] text-emerald-600 font-medium tabular-nums">
+                {timeAgo(health.lastSuccess.time)}
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-foreground/80 truncate">
+            {health.lastSuccess?.message
+              ? health.lastSuccess.message.substring(0, 80)
+              : "Henüz kayıt yok"}
+          </p>
+        </div>
+
+        {/* Last Error */}
+        <div className={`rounded-md border p-2 space-y-0.5 ${
+          health.lastError ? "bg-destructive/5 border-destructive/15" : "bg-card"
+        }`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-destructive" />
+              Son Hata
+            </span>
+            {health.lastError && (
+              <span className="text-[10px] text-destructive font-medium tabular-nums">
+                {timeAgo(health.lastError.time)}
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-foreground/80 truncate">
+            {health.lastError?.message
+              ? health.lastError.message.substring(0, 80)
+              : "Hata yok ✓"}
+          </p>
+        </div>
+
+        {/* IP Change */}
+        <div className="rounded-md border bg-card p-2 space-y-0.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              Son IP Değişimi
+            </span>
+            {health.lastReset && (
+              <span className="text-[10px] text-foreground/70 tabular-nums">
+                {timeAgo(health.lastReset)}
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-foreground/80">
+            {health.lastReset
+              ? new Date(health.lastReset).toLocaleString("tr-TR")
+              : "—"}
+          </p>
+        </div>
+
+        {/* Proxy Config Summary */}
+        <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+          <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1">
+            <span className="text-muted-foreground">Proxy</span>
+            <span className={`font-medium ${proxyEnabled ? "text-emerald-600" : "text-amber-600"}`}>
+              {proxyEnabled ? "Aktif" : "Kapalı"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1">
+            <span className="text-muted-foreground">CAPTCHA</span>
+            <span className="font-medium text-foreground">capsolver</span>
+          </div>
+          {proxyEnabled && (
+            <>
+              <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1">
+                <span className="text-muted-foreground">Host</span>
+                <span className="font-mono text-foreground truncate max-w-[80px]">{proxyHost}</span>
+              </div>
+              <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1">
+                <span className="text-muted-foreground">Ülke</span>
+                <span className="font-medium text-foreground">{proxyCountry}</span>
+              </div>
+            </>
+          )}
+        </div>
+      </Card>
 
       {/* Proxy Test Result */}
       {testResult && (
-        <div className={`rounded-md border p-2.5 space-y-1.5 ${
-          testResult.ok 
-            ? testResult.ip 
-              ? "bg-emerald-500/5 border-emerald-500/20" 
+        <Card className={`p-2.5 space-y-1.5 ${
+          testResult.ok
+            ? testResult.ip
+              ? "bg-emerald-500/5 border-emerald-500/20"
               : "bg-amber-500/5 border-amber-500/20"
             : "bg-destructive/5 border-destructive/20"
         }`}>
@@ -183,14 +398,14 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
               <XCircle className="w-3.5 h-3.5 text-destructive" />
             )}
             <span className={`text-[11px] font-medium ${
-              testResult.ok 
+              testResult.ok
                 ? testResult.ip ? "text-emerald-600" : "text-amber-600"
                 : "text-destructive"
             }`}>
-              {testResult.ip 
-                ? `Proxy aktif — IP: ${testResult.ip}` 
-                : testResult.ok 
-                  ? "Yapılandırma doğru" 
+              {testResult.ip
+                ? `Proxy aktif — IP: ${testResult.ip}`
+                : testResult.ok
+                  ? "Yapılandırma doğru"
                   : testResult.message || "Test başarısız"}
             </span>
           </div>
@@ -211,19 +426,23 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
               Sunucu curl komutunu kopyala
             </button>
           )}
-        </div>
+        </Card>
       )}
 
+      {/* CF Block Alert */}
       {cfStatus.blocked && cfStatus.ip && (
-        <div className="rounded-md bg-destructive/5 border border-destructive/20 p-2.5">
-          <p className="text-[11px] text-destructive font-medium">
-            Cloudflare engeli: {cfStatus.ip}
-          </p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
+        <Card className="p-2.5 bg-destructive/5 border-destructive/20">
+          <div className="flex items-center gap-1.5">
+            <WifiOff className="w-3.5 h-3.5 text-destructive" />
+            <p className="text-[11px] text-destructive font-medium">
+              Cloudflare engeli: {cfStatus.ip}
+            </p>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-0.5 ml-5">
             {cfStatus.since && new Date(cfStatus.since).toLocaleString("tr-TR")} tarihinden beri
           </p>
-        </div>
+        </Card>
       )}
-    </Card>
+    </div>
   );
 }
