@@ -586,25 +586,15 @@ export default function BotSettingsPanel() {
         </div>
       </div>
 
-      {/* Twilio SMS Bildirimleri */}
+      {/* Mutlucell SMS Bildirimleri */}
       <div className="space-y-3 border-t border-border pt-4">
         <div className="flex items-center gap-2">
           <span className="text-sm">📱</span>
-          <Label className="text-xs font-medium">SMS Bildirimleri (Twilio)</Label>
+          <Label className="text-xs font-medium">SMS Bildirimleri (Mutlucell)</Label>
         </div>
         <p className="text-[10px] text-muted-foreground">
-          Randevu bulununca size SMS gelir. Birden fazla numara virgülle ayırın.
+          Randevu bulununca size SMS gelir. Gönderen: HotsBOX. Birden fazla numara virgülle ayırın.
         </p>
-
-        <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">Gönderen Numara (Twilio'dan)</Label>
-          <Input
-            className="h-8 text-xs font-mono"
-            value={getDraft("twilio_from_number")}
-            onChange={e => setDraftValue("twilio_from_number", e.target.value)}
-            placeholder="+1234567890"
-          />
-        </div>
 
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">Alıcı Numaralar</Label>
