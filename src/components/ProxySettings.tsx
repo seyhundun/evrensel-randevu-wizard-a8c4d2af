@@ -39,7 +39,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
   const [proxyPort, setProxyPort] = useState("—");
   const [proxyCountry, setProxyCountry] = useState("—");
   const [proxyEnabled, setProxyEnabled] = useState(true);
-  const [proxyType, setProxyType] = useState("mobile"); // mobile, core, premium
+  const [proxyType, setProxyType] = useState("core"); // core, premium
   const [cfStatus, setCfStatus] = useState<{ blocked: boolean; ip: string | null; since: string | null }>({
     blocked: false, ip: null, since: null,
   });
