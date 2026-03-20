@@ -1787,14 +1787,15 @@ async function launchBrowser(proxyIp = null) {
   ];
   
   let proxyConfig = undefined;
+  let proxyAuth = null;
 
   if (!PROXY_ENABLED) {
     console.log(`  [BROWSER] 🔵 Proxy KAPALI — sunucu kendi IP'si ile çıkıyor`);
   } else if (PROXY_MODE === "residential" && EVOMI_PROXY_USER) {
     const rp = getResidentialProxyUrl();
-    proxyConfig = {
-      host: rp.host,
-      port: rp.port,
+    args.push(`--proxy-server=http://${rp.host}:${rp.port}`);
+    proxyConfig = rp;
+    proxyAuth = {
       username: rp.user,
       password: rp.pass,
     };
@@ -1811,18 +1812,18 @@ async function launchBrowser(proxyIp = null) {
     turnstile: true,
     disableXvfb: true,
   };
-  if (proxyConfig) {
-    connectOptions.proxy = proxyConfig;
-  }
 
   const { browser, page } = await connect(connectOptions);
+  if (proxyAuth) {
+    await page.authenticate(proxyAuth);
+  }
   await page.setViewport({ width: 1920, height: 1080 });
   
   const proxyInfo = PROXY_MODE === "residential" 
     ? "(residential proxy)" 
     : (proxyIp ? `(IP: ${proxyIp})` : "(proxy yok)");
   console.log(`  [BROWSER] ✅ Tarayıcı başlatıldı ${proxyInfo}`);
-  return { browser, page };
+  return { browser, page, proxyAuth, proxyConfig };
 }
 
 // ==================== MAIN CHECK ====================
@@ -1840,7 +1841,7 @@ async function checkAppointments(config, account) {
   let browser;
   try {
     const fp = generateFingerprint();
-    const { browser: br, page } = await launchBrowser(activeIp);
+    const { browser: br, page, proxyAuth } = await launchBrowser(activeIp);
     browser = br;
     await applyFingerprint(page, fp);
     await humanMove(page);
@@ -1849,6 +1850,9 @@ async function checkAppointments(config, account) {
     let realIp = "bilinmiyor";
     try {
       const ipPage = await browser.newPage();
+      if (proxyAuth) {
+        await ipPage.authenticate(proxyAuth);
+      }
       await ipPage.goto("https://ip.evomi.com/s", { waitUntil: "networkidle2", timeout: 10000 });
       realIp = (await ipPage.evaluate(() => document.body.innerText)).trim();
       await ipPage.close();
