@@ -164,11 +164,61 @@ function banIpImmediately(ip, reason = "") {
 function isPageBlocked(pageContent) {
   if (!pageContent || pageContent.trim().length < 100) return true; // boş sayfa
   const lower = pageContent.toLowerCase();
+  // "just a moment" ve "ray id" Cloudflare challenge sayfası — engel değil, çözülmeli
+  // Sadece gerçek engel durumlarını tespit et
   return lower.includes("access denied") || 
-         lower.includes("blocked") ||
          lower.includes("403 forbidden") ||
-         lower.includes("just a moment") ||
-         lower.includes("ray id");
+         (lower.includes("blocked") && !lower.includes("just a moment"));
+}
+
+// Cloudflare challenge sayfasında mı kontrol et
+function isCloudflareChallenge(pageContent) {
+  if (!pageContent) return false;
+  const lower = pageContent.toLowerCase();
+  return lower.includes("just a moment") ||
+         lower.includes("ray id") ||
+         lower.includes("checking your browser") ||
+         lower.includes("verify you are human") ||
+         lower.includes("enable javascript and cookies");
+}
+
+// Cloudflare challenge'ın çözülmesini bekle
+async function waitForCloudflareChallengeResolve(page, timeoutMs = 60000) {
+  const startedAt = Date.now();
+  let attempt = 0;
+  
+  while (Date.now() - startedAt < timeoutMs) {
+    attempt++;
+    const content = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+    
+    if (!isCloudflareChallenge(content) && content.trim().length > 200) {
+      console.log(`  [CF] ✅ Cloudflare challenge geçildi (${attempt}. deneme, ${Math.round((Date.now() - startedAt) / 1000)}s)`);
+      return true;
+    }
+    
+    // puppeteer-real-browser'ın turnstile: true özelliği otomatik çözecek
+    // Ek olarak manuel checkbox tıklama dene
+    if (attempt % 3 === 0) {
+      await tryClickTurnstileCheckbox(page).catch(() => {});
+    }
+    
+    // Her 5 denemede bir sayfayı yenile (challenge takılmışsa)
+    if (attempt % 10 === 0 && attempt < 30) {
+      console.log(`  [CF] 🔄 Sayfa yenileniyor (${attempt}. deneme)...`);
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+      await delay(3000, 5000);
+    }
+    
+    const elapsed = Math.round((Date.now() - startedAt) / 1000);
+    if (attempt % 5 === 0) {
+      console.log(`  [CF] ⏳ Cloudflare challenge bekleniyor... ${elapsed}s`);
+    }
+    
+    await delay(2000, 4000);
+  }
+  
+  console.log(`  [CF] ❌ Cloudflare challenge timeout (${Math.round(timeoutMs / 1000)}s)`);
+  return false;
 }
 
 let Solver;
