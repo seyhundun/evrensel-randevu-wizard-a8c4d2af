@@ -77,6 +77,8 @@ export default function BotSettingsPanel() {
       // Initialize draft from DB values (only if not dirty)
       setDraft(prev => {
         const dbMap = Object.fromEntries(data.map(s => [s.key, s.value]));
+        dbMap.proxy_port = "1000";
+        dbMap.proxy_type = "core";
         // Keep user edits if dirty, otherwise use DB values
         if (Object.keys(prev).length === 0) return dbMap;
         return prev;
@@ -140,13 +142,18 @@ export default function BotSettingsPanel() {
     for (const { key, label } of keys) {
       const value = draft[key];
       if (value === undefined) continue;
+      const normalizedValue = key === "proxy_port"
+        ? "1000"
+        : key === "proxy_type"
+          ? "core"
+          : value;
       const existing = settings.find(s => s.key === key);
       if (existing) {
-        if (existing.value !== value) {
-          await supabase.from("bot_settings").update({ value }).eq("key", key);
+        if (existing.value !== normalizedValue) {
+          await supabase.from("bot_settings").update({ value: normalizedValue }).eq("key", key);
         }
-      } else if (value) {
-        await supabase.from("bot_settings").insert({ key, value, label });
+      } else if (normalizedValue) {
+        await supabase.from("bot_settings").insert({ key, value: normalizedValue, label });
       }
     }
 
@@ -324,10 +331,12 @@ export default function BotSettingsPanel() {
           <Label className="text-[11px] text-muted-foreground">Port</Label>
           <Input
             className="h-8 text-xs font-mono"
-            value={getDraft("proxy_port")}
-            onChange={e => setDraftValue("proxy_port", e.target.value)}
+            value="1000"
+            readOnly
+            disabled
             placeholder="1000"
           />
+          <p className="text-[10px] text-muted-foreground">VFS için port sabit: 1000</p>
         </div>
 
         <div className="space-y-1">
