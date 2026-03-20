@@ -118,7 +118,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
 
     const total = recentLogs?.length || 0;
     const errors = recentLogs?.filter(l =>
-      ["error", "network_error", "cloudflare"].includes(l.status)
+      ["error", "network_error", "cloudflare", "session_expired"].includes(l.status)
     ).length || 0;
     const rate = total > 0 ? Math.round(((total - errors) / total) * 100) : 100;
 
