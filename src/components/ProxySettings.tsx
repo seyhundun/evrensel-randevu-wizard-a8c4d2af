@@ -52,7 +52,6 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
 
   // Derive proxy type from host/port
   const deriveProxyType = (host: string, port: string) => {
-    if (host.startsWith("mp.")) return "mobile";
     if (port === "1001") return "premium";
     return "core";
   };
