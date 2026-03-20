@@ -2023,6 +2023,10 @@ async function checkAppointments(config, account) {
         url,
         isNotFound: url.includes("page-not-found") || url.includes("404"),
         isSessionExpired: body.includes("oturum süresi doldu") || body.includes("oturum süresi dolmuş") || body.includes("session expired") || body.includes("oturumunuzun süresi") || (body.includes("oturum") && body.includes("geçersiz")),
+        // Spesifik "Oturum süresi doldu veya geçersiz" sayfası (VFS hata sayfası)
+        isSessionExpiredPage: (body.includes("oturum") && body.includes("geçersiz")) || 
+                              (body.includes("oturum süresi doldu") && body.includes("yeniden giriş yap")) ||
+                              (body.includes("oturumunuzun süresi dolmuş") && body.includes("anasayfaya geri")),
         isBanned: body.includes("engellenmiş") || body.includes("blocked") || body.includes("banned"),
         isApiError: isApiJsonError,
         isWaitingRoom: (document.title || "").toLowerCase().includes("waiting room"),
@@ -2049,15 +2053,37 @@ async function checkAppointments(config, account) {
       if (isBanned) errorType = "❌ Hesap engellenmiş!";
       else if (pageCheck.isApiError) errorType = "❌ VFS API hatası (403)";
       else if (pageCheck.isNotFound) errorType = "❌ Sayfa bulunamadı (404)";
-      else if (pageCheck.isSessionExpired) errorType = "❌ Oturum süresi dolmuş";
+      else if (pageCheck.isSessionExpiredPage) errorType = "⏰ Oturum süresi doldu veya geçersiz";
+      else if (pageCheck.isSessionExpired) errorType = "⏰ Oturum süresi dolmuş";
       else if (pageCheck.isWaitingRoom) errorType = "❌ Hala waiting room'da";
       else if (pageCheck.hasTurnstileWidget && !pageCheck.hasCaptchaToken && pageCheck.hasCaptchaError) errorType = "❌ Turnstile doğrulanmadı (captcha token yok)";
       else if (pageCheck.hasTurnstileWidget && pageCheck.loginSubmitDisabled) errorType = "❌ Turnstile doğrulanmadı (submit pasif)";
       else if (isLoginFailed) errorType = "❌ Giriş başarısız";
 
-      // Session expired veya Turnstile hatalarında IP'yi anında banla — sıradaki IP + temiz profil ile yeniden başlasın
-      if (pageCheck.isSessionExpired || pageCheck.isApiError || errorType.includes("Turnstile") || pageCheck.isWaitingRoom) {
-        banIpImmediately(activeIp, "post_login_session_or_api_or_turnstile_error");
+      // === GÜVENLİ RECOVERY: Oturum süresi doldu sayfası ===
+      // Bu bir IP sorunu değil, oturum sorunu — IP banlamadan, hesaba hata yazmadan bekle ve tekrar dene
+      if (pageCheck.isSessionExpiredPage || pageCheck.isSessionExpired) {
+        const ss = await takeScreenshotBase64(page);
+        const cooldownSec = 30 + Math.floor(Math.random() * 30); // 30-60 saniye bekleme
+        console.log(`  [SESSION] ⏰ Oturum süresi doldu — ${cooldownSec}s bekleme sonrası tekrar denenecek`);
+        console.log(`  [SESSION] ℹ️ IP banlanmadı, hesap fail_count artırılmadı (oturum sorunu)`);
+        await logStep(id, "session_expired", `⏰ Oturum süresi doldu | ${account.email} | ${cooldownSec}s bekleniyor | IP banlanmadı`);
+        await reportResult(id, "session_expired", `${errorType} | Hesap: ${account.email} | ${cooldownSec}s soğuma bekleniyor`, 0, ss);
+        
+        // Hesap durumunu değiştirme, fail_count artırma — sadece bekle
+        return { 
+          found: false, 
+          accountBanned: false, 
+          ipBlocked: false, // IP'yi banlamıyoruz
+          hadError: false,  // consecutiveErrors artmasın
+          sessionExpired: true, // Yeni flag: ana döngüde özel bekleme
+          sessionCooldownMs: cooldownSec * 1000,
+        };
+      }
+
+      // Turnstile/API/waiting-room hatalarında IP'yi banla
+      if (pageCheck.isApiError || errorType.includes("Turnstile") || pageCheck.isWaitingRoom) {
+        banIpImmediately(activeIp, "post_login_api_or_turnstile_error");
       }
 
       const finalDiag = await getTurnstileDiagnostics(page).catch(() => null);
@@ -2069,8 +2095,8 @@ async function checkAppointments(config, account) {
       await reportResult(id, "error", `${errorType} | Hesap: ${account.email}`, 0, ss);
       if (isBanned) { await updateAccountStatus(account.id, "banned"); return { found: false, accountBanned: true, hadError: true }; }
       
-      // Session/Turnstile/waiting-room durumunda hemen sonraki IP ile devam et
-      if (pageCheck.isSessionExpired || pageCheck.isApiError || errorType.includes("Turnstile") || pageCheck.isWaitingRoom) {
+      // API/Turnstile/waiting-room durumunda hemen sonraki IP ile devam et
+      if (pageCheck.isApiError || errorType.includes("Turnstile") || pageCheck.isWaitingRoom) {
         return { found: false, accountBanned: false, ipBlocked: true, hadError: true };
       }
       
@@ -4172,6 +4198,17 @@ async function main() {
         accountLastUsed.set(account.id, Date.now());
         await logStep(config.id, "account_switch", `Hesap: ${account.email} | IP: sıradaki proxy`);
         const result = await checkAppointments(config, account);
+
+        // === GÜVENLİ RECOVERY: Oturum süresi doldu ===
+        // IP banlamadan, hata sayacı artırmadan, sadece bekle ve tekrar dene
+        if (result.sessionExpired) {
+          const cooldownMs = result.sessionCooldownMs || 30000;
+          console.log(`\n⏰ [SESSION] Oturum süresi doldu — ${Math.round(cooldownMs / 1000)}s soğuma bekleniyor...`);
+          await logStep(config.id, "session_cooldown", `⏰ Soğuma bekleniyor: ${Math.round(cooldownMs / 1000)}s | Hesap: ${account.email} | IP korunuyor, hata sayacı artmıyor`);
+          await new Promise((r) => setTimeout(r, cooldownMs));
+          // consecutiveErrors artmıyor — bu bir engel/hata değil
+          continue;
+        }
 
         // IP engellendiyse — CF otomatik recovery mekanizması
         if (result.ipBlocked) {

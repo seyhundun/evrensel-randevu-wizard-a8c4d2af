@@ -100,7 +100,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
       .from("tracking_logs")
       .select("message, created_at")
       .eq("config_id", configId)
-      .in("status", ["error", "network_error", "cloudflare"])
+      .in("status", ["error", "network_error", "cloudflare", "session_expired"])
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -118,7 +118,7 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
 
     const total = recentLogs?.length || 0;
     const errors = recentLogs?.filter(l =>
-      ["error", "network_error", "cloudflare"].includes(l.status)
+      ["error", "network_error", "cloudflare", "session_expired"].includes(l.status)
     ).length || 0;
     const rate = total > 0 ? Math.round(((total - errors) / total) * 100) : 100;
 

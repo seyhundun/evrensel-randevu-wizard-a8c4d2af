@@ -77,6 +77,11 @@ const statusConfig: Record<string, { icon: React.ReactNode; label: string; color
 
   cloudflare:     { icon: <ShieldCheck className="w-4 h-4" />, label: "⚠️ Cloudflare Engeli", color: "text-amber-500 bg-amber-500/10 font-bold" },
   cf_retry:       { icon: <RefreshCw className="w-4 h-4" />, label: "CF Yeniden Deneniyor", color: "text-cyan-500 bg-cyan-500/10" },
+  cf_auto_retry:  { icon: <RefreshCw className="w-4 h-4" />, label: "CF Otomatik Recovery", color: "text-cyan-500 bg-cyan-500/10" },
+
+  // --- Session recovery ---
+  session_expired:  { icon: <Timer className="w-4 h-4" />, label: "⏰ Oturum Süresi Doldu", color: "text-orange-500 bg-orange-500/10" },
+  session_cooldown: { icon: <Clock className="w-4 h-4 animate-pulse" />, label: "⏳ Soğuma Bekleniyor", color: "text-orange-400 bg-orange-400/10" },
 
   // --- Network / page ---
   page_load:      { icon: <Globe className="w-4 h-4" />, label: "Sayfa Yüklendi", color: "text-blue-400 bg-blue-400/10" },
