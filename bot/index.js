@@ -4199,6 +4199,17 @@ async function main() {
         await logStep(config.id, "account_switch", `Hesap: ${account.email} | IP: sıradaki proxy`);
         const result = await checkAppointments(config, account);
 
+        // === GÜVENLİ RECOVERY: Oturum süresi doldu ===
+        // IP banlamadan, hata sayacı artırmadan, sadece bekle ve tekrar dene
+        if (result.sessionExpired) {
+          const cooldownMs = result.sessionCooldownMs || 30000;
+          console.log(`\n⏰ [SESSION] Oturum süresi doldu — ${Math.round(cooldownMs / 1000)}s soğuma bekleniyor...`);
+          await logStep(config.id, "session_cooldown", `⏰ Soğuma bekleniyor: ${Math.round(cooldownMs / 1000)}s | Hesap: ${account.email} | IP korunuyor, hata sayacı artmıyor`);
+          await new Promise((r) => setTimeout(r, cooldownMs));
+          // consecutiveErrors artmıyor — bu bir engel/hata değil
+          continue;
+        }
+
         // IP engellendiyse — CF otomatik recovery mekanizması
         if (result.ipBlocked) {
           consecutiveErrors++;
