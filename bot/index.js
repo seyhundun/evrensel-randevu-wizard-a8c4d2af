@@ -18,6 +18,10 @@ let EVOMI_PROXY_PASS = process.env.EVOMI_PROXY_PASS || "";
 let EVOMI_PROXY_COUNTRY = process.env.EVOMI_PROXY_COUNTRY || "TR";
 let EVOMI_PROXY_REGION = process.env.EVOMI_PROXY_REGION || "";
 
+function normalizeVfsProxyPort(port) {
+  return Number(port) === 1000 ? 1000 : 1000;
+}
+
 // DB'den proxy ayarlarını yükle (dashboard'dan değiştirilebilir)
 async function loadProxySettingsFromDB() {
   try {
@@ -41,7 +45,7 @@ async function loadProxySettingsFromDB() {
       }
       if (map.proxy_country) EVOMI_PROXY_COUNTRY = map.proxy_country;
       if (map.proxy_host) EVOMI_PROXY_HOST = map.proxy_host;
-      if (map.proxy_port) EVOMI_PROXY_PORT = Number(map.proxy_port);
+      if (map.proxy_port) EVOMI_PROXY_PORT = normalizeVfsProxyPort(map.proxy_port);
       if (map.proxy_region !== undefined) { EVOMI_PROXY_REGION = map.proxy_region; DB_PROXY_REGION = map.proxy_region; }
       if (map.proxy_user) EVOMI_PROXY_USER = map.proxy_user;
       if (map.proxy_pass) EVOMI_PROXY_PASS = map.proxy_pass;

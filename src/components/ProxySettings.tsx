@@ -3,7 +3,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Network, Shield, Clock, Globe, Zap, Loader2, CheckCircle2, XCircle, Copy, Activity, AlertTriangle, Wifi, WifiOff, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -39,7 +38,6 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
   const [proxyPort, setProxyPort] = useState("—");
   const [proxyCountry, setProxyCountry] = useState("—");
   const [proxyEnabled, setProxyEnabled] = useState(true);
-  const [proxyType, setProxyType] = useState("core"); // core, premium
   const [cfStatus, setCfStatus] = useState<{ blocked: boolean; ip: string | null; since: string | null }>({
     blocked: false, ip: null, since: null,
   });
@@ -50,12 +48,6 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
     region: null, totalChecks: 0, errorCount: 0, successRate: 100,
   });
 
-  // Derive proxy type from host/port
-  const deriveProxyType = (host: string, port: string) => {
-    if (port === "1001") return "premium";
-    return "core";
-  };
-
   const loadBotSettings = useCallback(async () => {
     const { data } = await supabase.from("bot_settings").select("key, value");
     if (data) {
@@ -64,8 +56,6 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
       setProxyPort(map.proxy_port || "—");
       setProxyCountry(map.proxy_country || "—");
       setProxyEnabled(map.proxy_enabled !== "false");
-      // Use stored proxy_type if available, otherwise derive from host/port
-      setProxyType(map.proxy_type || deriveProxyType(map.proxy_host || "", map.proxy_port || ""));
       setHealth(prev => ({ ...prev, region: map.proxy_region || null }));
     }
   }, []);
@@ -207,32 +197,6 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
       ? "text-amber-500"
       : "text-destructive";
 
-  const handleProxyTypeChange = async (type: string) => {
-    const config: Record<string, { host: string; port: string; label: string }> = {
-      core: { host: "rp.evomi.com", port: "1000", label: "Core Residential" },
-      premium: { host: "rp.evomi.com", port: "1001", label: "Premium Residential" },
-    };
-    const c = config[type];
-    if (!c) return;
-
-    setProxyType(type);
-    // Update host, port, and proxy_type in bot_settings
-    const updates: [string, string, string][] = [
-      ["proxy_host", c.host, "Proxy Host"],
-      ["proxy_port", c.port, "Proxy Port"],
-      ["proxy_type", type, "Proxy Type"],
-    ];
-    for (const [key, value, label] of updates) {
-      const { data: existing } = await supabase.from("bot_settings").select("id").eq("key", key).maybeSingle();
-      if (existing) {
-        await supabase.from("bot_settings").update({ value }).eq("key", key);
-      } else {
-        await supabase.from("bot_settings").insert({ key, value, label });
-      }
-    }
-    toast.success(`Proxy türü ${c.label} olarak değiştirildi (${c.host}:${c.port})`);
-  };
-
   return (
     <div className="space-y-3">
       {/* Connection Status Card */}
@@ -264,21 +228,16 @@ export default function ProxySettings({ configId }: ProxySettingsProps) {
           </div>
         </div>
 
-        {/* Proxy Type Selector */}
+        {/* Proxy Type Summary */}
         <div className="space-y-1">
           <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
             <Globe className="w-3 h-3" />
             Proxy Türü
           </Label>
-          <Select value={proxyType} onValueChange={handleProxyTypeChange}>
-            <SelectTrigger className="h-7 text-[11px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="core">🏠 Core Residential — Ekonomik</SelectItem>
-              <SelectItem value="premium">⭐ Premium Residential — Kaliteli</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex h-7 items-center justify-between rounded-md border bg-secondary/40 px-2.5 text-[11px]">
+            <span className="font-medium text-foreground">🏠 Core Residential</span>
+            <span className="font-mono text-muted-foreground">Port 1000</span>
+          </div>
         </div>
 
         {/* IP & Region */}
