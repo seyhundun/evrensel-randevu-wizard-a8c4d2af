@@ -1,0 +1,1 @@
+UPDATE bot_settings SET value = 'core-residential.evomi-proxy.com', updated_at = now() WHERE key = 'proxy_host';
