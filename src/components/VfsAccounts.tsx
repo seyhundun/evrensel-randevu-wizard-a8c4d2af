@@ -370,12 +370,22 @@ export default function VfsAccounts() {
       ) : (
         <div className="space-y-2">
           {accounts.map((acc) => (
-            <Card key={acc.id} className="p-3 flex flex-col gap-2">
+            <Card key={acc.id} className={`p-3 flex flex-col gap-2 ${!acc.booking_enabled ? 'opacity-60' : ''}`}>
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <div className="flex items-center gap-2 shrink-0">
+                  <Switch
+                    checked={acc.booking_enabled}
+                    onCheckedChange={(v) => toggleBooking(acc.id, v)}
+                    className="data-[state=checked]:bg-emerald-500"
+                  />
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-sm truncate">{acc.email}</span>
                     {statusBadge(acc)}
+                    {acc.imap_password && (
+                      <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-[10px]">📧 IMAP</Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs text-muted-foreground font-mono">
