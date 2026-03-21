@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { LogOut, Clock, PanelLeftClose, PanelLeft, Network, Globe, Settings, BookOpen, Monitor, Menu } from "lucide-react";
+import { LogOut, Clock, PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, Network, Globe, Settings, BookOpen, Menu } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import ControlPanel from "@/components/ControlPanel";
 import ModuleStatus from "@/components/ModuleStatus";
@@ -100,12 +100,31 @@ function IdataSidebarContent() {
   );
 }
 
+function VfsRightSidebarContent({ t }: { t: ReturnType<typeof useTracking> }) {
+  return (
+    <div className="p-3 space-y-3">
+      <VfsAccounts />
+      <TrackingLogs configId={t.configId} />
+    </div>
+  );
+}
+
+function IdataRightSidebarContent() {
+  return (
+    <div className="p-3 space-y-3">
+      <IdataTrackingLogs />
+    </div>
+  );
+}
+
 const Index = () => {
   const t = useTracking();
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  const [mobileRightSheetOpen, setMobileRightSheetOpen] = useState(false);
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("vfs");
 
@@ -145,6 +164,25 @@ const Index = () => {
             <LogOut className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Çıkış</span>
           </Button>
+          {isMobile ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setMobileRightSheetOpen(true)}
+            >
+              <PanelRight className="w-4 h-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+            >
+              {rightSidebarOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
+            </Button>
+          )}
         </div>
       </header>
 
@@ -160,7 +198,7 @@ const Index = () => {
           </TabsList>
         </div>
 
-        {/* Mobile Sidebar Sheet */}
+        {/* Mobile Left Sheet */}
         {isMobile && (
           <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
             <SheetContent side="left" className="w-[320px] p-0 overflow-y-auto">
@@ -169,10 +207,19 @@ const Index = () => {
           </Sheet>
         )}
 
+        {/* Mobile Right Sheet */}
+        {isMobile && (
+          <Sheet open={mobileRightSheetOpen} onOpenChange={setMobileRightSheetOpen}>
+            <SheetContent side="right" className="w-[320px] p-0 overflow-y-auto">
+              {activeTab === "vfs" ? <VfsRightSidebarContent t={t} /> : <IdataRightSidebarContent />}
+            </SheetContent>
+          </Sheet>
+        )}
+
         {/* ========== VFS TAB ========== */}
         <TabsContent value="vfs" className="mt-0 flex-1 min-h-0">
           <div className="flex h-[calc(100vh-105px)]">
-            {/* LEFT SIDEBAR — Desktop only */}
+            {/* LEFT SIDEBAR */}
             {!isMobile && (
               <aside
                 className={`shrink-0 border-r border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
@@ -190,13 +237,10 @@ const Index = () => {
             <main className="flex-1 min-w-0">
               <ScrollArea className="h-full">
                 <div className="p-3 md:p-6 space-y-4 md:space-y-5">
-                  {/* VNC Canlı Ekranlar */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                     <VncViewer title="🌍 VFS Bot Ekranı" pathPrefix="/vfs" />
                     <VncViewer title="🇮🇹 iDATA Bot Ekranı" pathPrefix="/idata" />
                   </div>
-
-                  {/* Top cards */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                     <ModuleStatus
                       status={t.status}
@@ -214,7 +258,6 @@ const Index = () => {
                       canStart={!!t.country && !!t.city}
                     />
                   </div>
-
                   <StatusPanel
                     status={t.status}
                     country={t.country}
@@ -230,18 +273,30 @@ const Index = () => {
                     personCount={t.personCount}
                     setPersonCount={t.setPersonCount}
                   />
-                  <VfsAccounts />
-                  <TrackingLogs configId={t.configId} />
                 </div>
               </ScrollArea>
             </main>
+
+            {/* RIGHT SIDEBAR */}
+            {!isMobile && (
+              <aside
+                className={`shrink-0 border-l border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
+                  rightSidebarOpen ? "w-[380px]" : "w-0 border-l-0"
+                }`}
+                style={{ height: "calc(100vh - 105px)" }}
+              >
+                <div className="w-[380px] h-full overflow-y-auto overflow-x-hidden">
+                  <VfsRightSidebarContent t={t} />
+                </div>
+              </aside>
+            )}
           </div>
         </TabsContent>
 
         {/* ========== iDATA TAB ========== */}
         <TabsContent value="idata" className="mt-0 flex-1 min-h-0">
           <div className="flex h-[calc(100vh-105px)]">
-            {/* LEFT SIDEBAR — Desktop only */}
+            {/* LEFT SIDEBAR */}
             {!isMobile && (
               <aside
                 className={`shrink-0 border-r border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
@@ -258,12 +313,25 @@ const Index = () => {
             {/* MAIN CONTENT */}
             <main className="flex-1 min-w-0">
               <ScrollArea className="h-full">
-                <div className="p-3 md:p-6 space-y-4 md:space-y-6 max-w-6xl">
+                <div className="p-3 md:p-6 space-y-4 md:space-y-6">
                   <IdataAccounts />
-                  <IdataTrackingLogs />
                 </div>
               </ScrollArea>
             </main>
+
+            {/* RIGHT SIDEBAR */}
+            {!isMobile && (
+              <aside
+                className={`shrink-0 border-l border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
+                  rightSidebarOpen ? "w-[380px]" : "w-0 border-l-0"
+                }`}
+                style={{ height: "calc(100vh - 105px)" }}
+              >
+                <div className="w-[380px] h-full overflow-y-auto overflow-x-hidden">
+                  <IdataRightSidebarContent />
+                </div>
+              </aside>
+            )}
           </div>
         </TabsContent>
       </Tabs>
