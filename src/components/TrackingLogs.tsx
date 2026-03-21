@@ -206,8 +206,8 @@ export default function TrackingLogs({ configId }: TrackingLogsProps) {
   return (
     <div className="space-y-3">
       {/* Bot Status Bar */}
-      <div className="flex items-center justify-between rounded-lg bg-card border border-border/50 px-4 py-3">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-card border border-border/50 px-3 md:px-4 py-3">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
           <div className="flex items-center gap-2">
             {botActive ? (
               <>
