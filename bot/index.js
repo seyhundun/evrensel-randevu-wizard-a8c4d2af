@@ -292,7 +292,7 @@ const CONFIG = {
   OTP_WAIT_MS: Number(process.env.OTP_WAIT_MS || 120000),
   OTP_POLL_MS: Number(process.env.OTP_POLL_MS || 5000),
   MIN_ACCOUNT_GAP_MS: Number(process.env.MIN_ACCOUNT_GAP_MS || 600000),
-  BASE_INTERVAL_MS: Number(process.env.BASE_INTERVAL_MS || 60000),
+  BASE_INTERVAL_MS: Number(process.env.BASE_INTERVAL_MS || 20000),
   MAX_BACKOFF_MS: Number(process.env.MAX_BACKOFF_MS || 900000),
 };
 
