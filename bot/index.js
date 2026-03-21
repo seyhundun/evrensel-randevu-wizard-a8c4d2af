@@ -1755,18 +1755,22 @@ function cleanupUserDataDir(dir) {
 }
 
 function getResidentialProxyUrl() {
-  // Her bağlantıda benzersiz session ID ile farklı IP al
-  residentialSessionId = Date.now() + Math.floor(Math.random() * 100000);
+  // Evomi session değeri kısa alfanumerik olmalı (6-10 karakter)
+  residentialSessionId = Math.random().toString(36).slice(2, 10);
   
-  // Bölge rotasyonu yap (her seferinde farklı bölge)
-  const region = getNextProxyRegion();
-  EVOMI_PROXY_REGION = region;
+  // VFS tarafında rotasyon listesi şehirlerden oluşuyor; Evomi'de bu _city- ile gönderilmeli
+  const city = String(getNextProxyRegion() || "")
+    .toLowerCase()
+    .replace(/\s+/g, ".")
+    .replace(/\.(province|city|region|state)$/i, "")
+    .trim();
+  EVOMI_PROXY_REGION = city;
   
   let pass = `${EVOMI_PROXY_PASS}_country-${EVOMI_PROXY_COUNTRY}`;
   pass += `_session-${residentialSessionId}`;
-  if (region) pass += `_region-${region}`;
+  if (city) pass += `_city-${city}`;
   
-  console.log(`  [PROXY] 🏠 Residential proxy: ${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT} (ülke: ${EVOMI_PROXY_COUNTRY}, bölge: ${region || 'yok'}, session: ${residentialSessionId})`);
+  console.log(`  [PROXY] 🏠 Residential proxy: ${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT} (ülke: ${EVOMI_PROXY_COUNTRY}, şehir: ${city || 'yok'}, session: ${residentialSessionId})`);
   return {
     proxyUrl: `http://${EVOMI_PROXY_USER}:${pass}@${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT}`,
     user: EVOMI_PROXY_USER,
