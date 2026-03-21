@@ -2892,29 +2892,126 @@ async function tickAllCheckboxes(page) {
   const otherCbs = checkboxInfo.checkboxes.filter(c => !c.priority);
   const allCbs = [...priorityCbs, ...otherCbs];
 
+  const emitFormEvents = async () => {
+    await page.evaluate(() => {
+      const formEl = document.querySelector("form");
+      if (formEl) {
+        formEl.dispatchEvent(new Event("input", { bubbles: true }));
+        formEl.dispatchEvent(new Event("change", { bubbles: true }));
+        formEl.dispatchEvent(new Event("blur", { bubbles: true }));
+      }
+    });
+  };
+
+  const getCheckboxStateAtPoint = async (x, y) => {
+    return await page.evaluate(({ x, y }) => {
+      const el = document.elementFromPoint(x, y);
+      if (!el) return { found: false, checked: false };
+
+      const input = el.closest('input[type="checkbox"]') || el.querySelector?.('input[type="checkbox"]');
+      if (input) {
+        return { found: true, checked: !!input.checked };
+      }
+
+      const roleBox = el.closest('mat-checkbox, .mat-checkbox, .mat-mdc-checkbox, [role="checkbox"]');
+      if (roleBox) {
+        const roleInput = roleBox.querySelector('input[type="checkbox"]');
+        if (roleInput) return { found: true, checked: !!roleInput.checked };
+        const ariaChecked = roleBox.getAttribute("aria-checked") === "true";
+        const classChecked = roleBox.classList.contains("mat-checkbox-checked") ||
+          roleBox.classList.contains("mat-mdc-checkbox-checked") ||
+          roleBox.classList.contains("mdc-checkbox--selected") ||
+          roleBox.classList.contains("mdc-checkbox--checked");
+        return { found: true, checked: ariaChecked || classChecked };
+      }
+
+      return { found: false, checked: false };
+    }, { x, y });
+  };
+
+  const pulseCheckbox = async (x, y) => {
+    let state = await getCheckboxStateAtPoint(x, y);
+
+    if (!state.found) {
+      await page.mouse.click(x, y);
+      await delay(1000, 1200);
+      await page.mouse.click(x, y);
+      await delay(1000, 1200);
+      return;
+    }
+
+    if (!state.checked) {
+      await page.mouse.click(x, y);
+      await delay(250, 450);
+      state = await getCheckboxStateAtPoint(x, y);
+    }
+
+    await page.mouse.click(x, y);
+    await delay(1000, 1200);
+    await page.mouse.click(x, y);
+    await delay(1000, 1200);
+
+    state = await getCheckboxStateAtPoint(x, y);
+    if (!state.checked) {
+      await page.mouse.click(x, y);
+      await delay(350, 650);
+    }
+  };
+
+  const getSubmitStatus = async () => {
+    return await page.evaluate(() => {
+      const submitKeywords = ["devam", "continue", "register", "create", "kayıt", "oluştur", "sign up"];
+      const btns = Array.from(document.querySelectorAll("button"));
+      const submitBtn = btns.find(b => {
+        const txt = (b.textContent || "").toLowerCase().trim();
+        return submitKeywords.some(k => txt.includes(k));
+      }) || document.querySelector('button[type="submit"]');
+
+      const visibleInputs = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter(cb => {
+        const rect = cb.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+
+      const roleBoxes = Array.from(document.querySelectorAll('mat-checkbox, .mat-checkbox, .mat-mdc-checkbox, [role="checkbox"]')).filter(box => {
+        const rect = box.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+
+      const checkedInputCount = visibleInputs.filter(cb => cb.checked).length;
+      const checkedRoleOnlyCount = roleBoxes.filter(box => {
+        const input = box.querySelector('input[type="checkbox"]');
+        if (input) return false;
+        const ariaChecked = box.getAttribute("aria-checked") === "true";
+        const classChecked = box.classList.contains("mat-checkbox-checked") ||
+          box.classList.contains("mat-mdc-checkbox-checked") ||
+          box.classList.contains("mdc-checkbox--selected") ||
+          box.classList.contains("mdc-checkbox--checked");
+        return ariaChecked || classChecked;
+      }).length;
+
+      return {
+        submitDisabled: !!submitBtn?.disabled,
+        submitText: (submitBtn?.textContent || "").trim().substring(0, 30),
+        totalVisible: visibleInputs.length + roleBoxes.filter(box => !box.querySelector('input[type="checkbox"]')).length,
+        checkedCount: checkedInputCount + checkedRoleOnlyCount,
+      };
+    });
+  };
+
   let touched = 0;
   for (const cb of allCbs) {
-    console.log(`  [REG] Checkbox tıklanıyor: ${cb.meta.substring(0, 40)}...`);
+    console.log(`  [REG] Checkbox pulse: ${cb.meta.substring(0, 40)}...`);
+    await pulseCheckbox(cb.x, cb.y);
 
-    // Fiziksel tıklama #1 — pasif et
-    await page.mouse.click(cb.x, cb.y);
-    await delay(1000, 1200);
-
-    // Fiziksel tıklama #2 — aktif et (1sn arayla, Angular algılar)
-    await page.mouse.click(cb.x, cb.y);
-    await delay(1000, 1200);
-
-    // Event'leri de tetikle
     await page.evaluate(({ x, y }) => {
       const el = document.elementFromPoint(x, y);
       if (!el) return;
-      const cb = el.closest('input[type="checkbox"]') || el.querySelector('input[type="checkbox"]');
-      if (cb) {
-        cb.dispatchEvent(new Event("input", { bubbles: true }));
-        cb.dispatchEvent(new Event("change", { bubbles: true }));
-        cb.dispatchEvent(new Event("blur", { bubbles: true }));
+      const input = el.closest('input[type="checkbox"]') || el.querySelector?.('input[type="checkbox"]');
+      if (input) {
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        input.dispatchEvent(new Event("blur", { bubbles: true }));
       }
-      // Mat-checkbox / role desteği
       const matBox = el.closest('mat-checkbox, .mat-checkbox, .mat-mdc-checkbox, [role="checkbox"]');
       if (matBox) {
         const inp = matBox.querySelector('input[type="checkbox"]');
@@ -2930,45 +3027,14 @@ async function tickAllCheckboxes(page) {
     await delay(400, 800);
   }
 
-  // 3. Form event tetikle
-  await page.evaluate(() => {
-    const formEl = document.querySelector("form");
-    if (formEl) {
-      formEl.dispatchEvent(new Event("input", { bubbles: true }));
-      formEl.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-  });
+  await emitFormEvents();
   await delay(500, 1000);
 
-  // 4. Submit durumunu kontrol et
-  const submitStatus = await page.evaluate(() => {
-    const submitKeywords = ["devam", "continue", "register", "create", "kayıt", "oluştur", "sign up"];
-    const btns = Array.from(document.querySelectorAll("button"));
-    const submitBtn = btns.find(b => {
-      const txt = (b.textContent || "").toLowerCase().trim();
-      return submitKeywords.some(k => txt.includes(k));
-    }) || document.querySelector('button[type="submit"]');
-
-    const allCbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-    const visibleCbs = allCbs.filter(cb => {
-      const rect = cb.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    });
-    const checkedCount = visibleCbs.filter(cb => cb.checked).length;
-
-    return {
-      submitDisabled: !!submitBtn?.disabled,
-      submitText: (submitBtn?.textContent || "").trim().substring(0, 30),
-      totalVisible: visibleCbs.length,
-      checkedCount,
-    };
-  });
-
+  let submitStatus = await getSubmitStatus();
   console.log(`  [REG] Checkbox sonucu: touched=${touched}, checked=${submitStatus.checkedCount}/${submitStatus.totalVisible}, submitDisabled=${submitStatus.submitDisabled}, submitText="${submitStatus.submitText}"`);
 
-  // 5. Submit hâlâ disabled ise — kalan unchecked olanları da zorla tıkla
   if (submitStatus.submitDisabled) {
-    console.log("  [REG] ⚠ Submit hâlâ disabled, kalan checkbox'ları zorla tıklıyorum...");
+    console.log("  [REG] ⚠ Submit hâlâ disabled, unchecked checkbox'lar tekrar pulse ediliyor...");
     const remaining = await page.evaluate(() => {
       const isVisible = (el) => {
         const rect = el.getBoundingClientRect();
@@ -2976,32 +3042,41 @@ async function tickAllCheckboxes(page) {
       };
       const skipText = /(cookie|tanımlama bilgisi|onetrust|preferences|allow all|accept all)/i;
       const unchecked = [];
+
       document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
         if (!isVisible(cb) || cb.checked) return;
-        const host = cb.closest("label, div") || cb.parentElement;
-        const meta = (host?.textContent || "").toLowerCase();
+        const host = cb.closest("label, div, mat-checkbox, .mat-checkbox, .mat-mdc-checkbox") || cb.parentElement;
+        const meta = `${cb.name || ""} ${cb.id || ""} ${host?.textContent || ""}`.toLowerCase();
         if (skipText.test(meta)) return;
         const rect = (host || cb).getBoundingClientRect();
         unchecked.push({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
       });
+
+      document.querySelectorAll('mat-checkbox, .mat-checkbox, .mat-mdc-checkbox, [role="checkbox"]').forEach(box => {
+        if (!isVisible(box)) return;
+        const input = box.querySelector('input[type="checkbox"]');
+        if (input) return;
+        const text = `${box.textContent || ""} ${box.getAttribute("aria-label") || ""}`.toLowerCase();
+        if (skipText.test(text)) return;
+        const ariaChecked = box.getAttribute("aria-checked") === "true";
+        const classChecked = box.classList.contains("mat-checkbox-checked") || box.classList.contains("mat-mdc-checkbox-checked") || box.classList.contains("mdc-checkbox--selected") || box.classList.contains("mdc-checkbox--checked");
+        if (ariaChecked || classChecked) return;
+        const rect = box.getBoundingClientRect();
+        unchecked.push({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+      });
+
       return unchecked;
     });
 
     for (const pos of remaining) {
-      await page.mouse.click(pos.x, pos.y);
-      await delay(1000, 1200);
-      await page.mouse.click(pos.x, pos.y);
-      await delay(1000, 1200);
+      await pulseCheckbox(pos.x, pos.y);
+      await delay(400, 800);
     }
 
-    // Form event tekrar
-    await page.evaluate(() => {
-      const formEl = document.querySelector("form");
-      if (formEl) {
-        formEl.dispatchEvent(new Event("input", { bubbles: true }));
-        formEl.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-    });
+    await emitFormEvents();
+    await delay(700, 1200);
+    submitStatus = await getSubmitStatus();
+    console.log(`  [REG] Fallback sonrası: checked=${submitStatus.checkedCount}/${submitStatus.totalVisible}, submitDisabled=${submitStatus.submitDisabled}, submitText="${submitStatus.submitText}"`);
   }
 
   return !submitStatus.submitDisabled;
