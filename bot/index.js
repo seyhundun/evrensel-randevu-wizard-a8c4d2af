@@ -3412,9 +3412,7 @@ async function registerVfsAccount(account) {
       if (snapshot) console.log("  [REG] 📸 Form timeout screenshot alındı");
       throw new Error(registrationFormResult.reason);
     }
-    await humanIdle(3000, 6000); // Formu inceliyormuş gibi
-    await humanScroll(page);
-    await humanMove(page);
+    await delay(1000, 2000); // Kısa form inceleme
 
     // ========== FORM DOLDURMA ==========
     console.log("  [REG 5/7] Form dolduruluyor...");
