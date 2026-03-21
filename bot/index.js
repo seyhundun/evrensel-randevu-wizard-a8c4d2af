@@ -1631,38 +1631,6 @@ async function _solve(page, context) {
 
 // ==================== APPLY FINGERPRINT ====================
 async function applyFingerprint(page, fp) {
-  // Playwright Firefox: bu methodlar page wrapper'da yönetiliyor
-  if (page._isPlaywright) {
-    // Firefox'ta UA, viewport, timezone context düzeyinde ayarlanıyor (launchBrowser'da)
-    // evaluateOnNewDocument yerine addInitScript kullanılacak
-    try {
-      await page.addInitScript((fp) => {
-        Object.defineProperty(navigator, "webdriver", { get: () => false });
-        Object.defineProperty(navigator, "platform", { get: () => fp.platform });
-        Object.defineProperty(navigator, "languages", { get: () => fp.languages });
-        Object.defineProperty(navigator, "language", { get: () => fp.languages[0] });
-        Object.defineProperty(navigator, "deviceMemory", { get: () => fp.deviceMemory });
-        Object.defineProperty(navigator, "hardwareConcurrency", { get: () => fp.hardwareConcurrency });
-        Object.defineProperty(screen, "colorDepth", { get: () => fp.screenDepth });
-        Object.defineProperty(screen, "pixelDepth", { get: () => fp.screenDepth });
-        Object.defineProperty(navigator, "maxTouchPoints", { get: () => fp.maxTouchPoints });
-        if (navigator.connection) {
-          Object.defineProperty(navigator.connection, "effectiveType", { get: () => "4g" });
-          Object.defineProperty(navigator.connection, "rtt", { get: () => Math.floor(Math.random() * 50 + 25) });
-          Object.defineProperty(navigator.connection, "downlink", { get: () => Math.random() * 5 + 5 });
-        }
-        if (navigator.getBattery) {
-          navigator.getBattery = () => Promise.resolve({
-            charging: true, chargingTime: 0, dischargingTime: Infinity, level: 1,
-            addEventListener: () => {}, removeEventListener: () => {},
-          });
-        }
-      }, fp);
-    } catch (e) { console.warn("  [FP] Playwright init script hatası:", e.message); }
-    console.log(`  [FP] Firefox | VP: ${fp.viewport.width}x${fp.viewport.height} | TZ: ${fp.timezone}`);
-    return;
-  }
-  // Puppeteer (Chromium) yolu — eski davranış korunuyor
   try { await page.emulateTimezone(fp.timezone); } catch {}
   await page.setUserAgent(fp.userAgent);
   await page.setViewport(fp.viewport);
@@ -1767,96 +1735,6 @@ async function applyFingerprint(page, fp) {
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const USE_FIREFOX = (process.env.VFS_BROWSER || "firefox").toLowerCase() === "firefox";
-
-// Playwright Firefox wrapper — Puppeteer uyumlu API yüzeyi sağlar
-function wrapPlaywrightPage(pwPage, pwBrowser, pwContext) {
-  // Puppeteer API uyumluluk katmanı
-  const wrapped = pwPage;
-  wrapped._isPlaywright = true;
-  wrapped._pwContext = pwContext;
-
-  // page.viewport() — Playwright'ta viewportSize()
-  if (!wrapped.viewport) {
-    wrapped.viewport = () => {
-      const vs = pwPage.viewportSize();
-      return vs || { width: 1920, height: 1080 };
-    };
-  }
-
-  // page.setViewport() → page.setViewportSize()
-  wrapped.setViewport = async (vp) => {
-    await pwPage.setViewportSize({ width: vp.width, height: vp.height });
-  };
-
-  // page.setUserAgent() — context düzeyinde set ediliyor, page düzeyinde no-op
-  wrapped.setUserAgent = async () => {};
-
-  // page.emulateTimezone() — context düzeyinde set ediliyor
-  wrapped.emulateTimezone = async () => {};
-
-  // page.evaluateOnNewDocument() → page.addInitScript()
-  wrapped.evaluateOnNewDocument = async (fn, ...args) => {
-    try { await pwPage.addInitScript(fn, ...args); } catch {}
-  };
-
-  // page.waitForNavigation() — waitUntil dönüşümü
-  const origWaitNav = pwPage.waitForNavigation?.bind(pwPage);
-  wrapped.waitForNavigation = async (opts = {}) => {
-    const pwOpts = { timeout: opts.timeout || 30000 };
-    if (opts.waitUntil === "networkidle2" || opts.waitUntil === "networkidle0") {
-      pwOpts.waitUntil = "networkidle";
-    } else if (opts.waitUntil) {
-      pwOpts.waitUntil = opts.waitUntil;
-    }
-    return origWaitNav ? origWaitNav(pwOpts) : pwPage.waitForLoadState(pwOpts.waitUntil || "networkidle", { timeout: pwOpts.timeout });
-  };
-
-  // page.goto() — waitUntil dönüşümü
-  const origGoto = pwPage.goto.bind(pwPage);
-  wrapped.goto = async (url, opts = {}) => {
-    const pwOpts = { timeout: opts.timeout || 30000 };
-    if (opts.waitUntil === "networkidle2" || opts.waitUntil === "networkidle0") {
-      pwOpts.waitUntil = "networkidle";
-    } else if (opts.waitUntil) {
-      pwOpts.waitUntil = opts.waitUntil;
-    }
-    return origGoto(url, pwOpts);
-  };
-
-  // page.screenshot() — encoding: "base64" desteği
-  const origScreenshot = pwPage.screenshot.bind(pwPage);
-  wrapped.screenshot = async (opts = {}) => {
-    const pwOpts = { fullPage: opts.fullPage || false };
-    const buffer = await origScreenshot(pwOpts);
-    if (opts.encoding === "base64") {
-      return buffer.toString("base64");
-    }
-    return buffer;
-  };
-
-  // page.authenticate() — Playwright'ta proxy auth context düzeyinde, no-op
-  wrapped.authenticate = async () => {};
-
-  // page.$() ve page.$$() — Playwright'ta zaten var
-  // page.evaluate() — Playwright'ta zaten var
-  // page.click(), page.type() — Playwright'ta zaten var
-  // page.mouse — Playwright'ta zaten var
-  // page.keyboard — Playwright'ta zaten var
-  // page.waitForSelector() — Playwright'ta zaten var
-  // page.url() — Playwright'ta zaten var
-  // page.on('dialog') — Playwright'ta zaten var
-
-  // browser.newPage() wrapper
-  const origBrowser = pwBrowser;
-  origBrowser._origNewPage = origBrowser.newPage;
-  origBrowser.newPage = async () => {
-    const newPwPage = await pwContext.newPage();
-    return wrapPlaywrightPage(newPwPage, origBrowser, pwContext);
-  };
-
-  return wrapped;
-}
 
 function createTempUserDataDir() {
   const dir = path.join(os.tmpdir(), `vfs-chrome-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -1903,69 +1781,10 @@ function getResidentialProxyUrl() {
 }
 
 async function launchBrowser(proxyIp = null) {
-  console.log(`  [BROWSER] DISPLAY=${process.env.DISPLAY || "yok"} | Motor: ${USE_FIREFOX ? "Firefox (Playwright)" : "Chromium (puppeteer-real-browser)"}`);
-
-  // ====== FIREFOX (Playwright) ======
-  if (USE_FIREFOX) {
-    const { firefox } = require("playwright");
-    const fp = generateFingerprint();
-    
-    const launchOptions = {
-      headless: false,
-      firefoxUserPrefs: {
-        "media.navigator.enabled": false,
-        "privacy.resistFingerprinting": false,
-        "dom.webdriver.enabled": false,
-        "useragentoverride": fp.userAgent,
-      },
-    };
-
-    // Proxy yapılandırması
-    let proxyAuth = null;
-    if (!PROXY_ENABLED) {
-      console.log(`  [BROWSER] 🔵 Proxy KAPALI — sunucu kendi IP'si ile çıkıyor`);
-    } else if (PROXY_MODE === "residential" && EVOMI_PROXY_USER) {
-      const rp = getResidentialProxyUrl();
-      launchOptions.proxy = {
-        server: `http://${rp.host}:${rp.port}`,
-        username: rp.user,
-        password: rp.pass,
-      };
-      proxyAuth = { username: rp.user, password: rp.pass };
-      console.log(`  [BROWSER] 🦊 Firefox + Residential proxy: ${rp.host}:${rp.port}`);
-    } else if (proxyIp) {
-      const proxyPort = 10800 + IP_LIST.indexOf(proxyIp);
-      launchOptions.proxy = {
-        server: `socks5://127.0.0.1:${proxyPort}`,
-      };
-      console.log(`  [BROWSER] 🦊 Firefox + SOCKS5: 127.0.0.1:${proxyPort}`);
-    }
-
-    const browser = await firefox.launch(launchOptions);
-    const context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent: fp.userAgent,
-      locale: fp.languages[0]?.replace("-", "_") || "tr_TR",
-      timezoneId: fp.timezone,
-      ignoreHTTPSErrors: true,
-    });
-
-    // Dialog'ları otomatik kabul et
-    context.on("page", (p) => {
-      p.on("dialog", async (d) => { try { await d.accept(); } catch {} });
-    });
-
-    const page = await context.newPage();
-    page.on("dialog", async (d) => { try { await d.accept(); } catch {} });
-    
-    const wrappedPage = wrapPlaywrightPage(page, browser, context);
-    
-    console.log(`  [BROWSER] ✅ Firefox başlatıldı (Playwright)`);
-    return { browser, page: wrappedPage, proxyAuth, proxyConfig: null };
-  }
-
-  // ====== CHROMIUM (puppeteer-real-browser) — eski yol ======
   const { connect } = require("puppeteer-real-browser");
+  console.log(`  [BROWSER] DISPLAY=${process.env.DISPLAY || "yok"}`);
+
+  // Sandbox flagleri sunucuda root olarak çalışmak için gerekli
   const args = [
     "--no-sandbox",
     "--disable-setuid-sandbox",
@@ -1981,8 +1800,16 @@ async function launchBrowser(proxyIp = null) {
     console.log(`  [BROWSER] 🔵 Proxy KAPALI — sunucu kendi IP'si ile çıkıyor`);
   } else if (PROXY_MODE === "residential" && EVOMI_PROXY_USER) {
     const rp = getResidentialProxyUrl();
-    proxyConfig = { host: rp.host, port: rp.port, username: rp.user, password: rp.pass };
-    proxyAuth = { username: rp.user, password: rp.pass };
+    proxyConfig = {
+      host: rp.host,
+      port: rp.port,
+      username: rp.user,
+      password: rp.pass,
+    };
+    proxyAuth = {
+      username: rp.user,
+      password: rp.pass,
+    };
     console.log(`  [BROWSER] 🏠 Residential proxy: ${rp.host}:${rp.port}`);
   } else if (proxyIp) {
     const proxyPort = 10800 + IP_LIST.indexOf(proxyIp);
@@ -1990,8 +1817,15 @@ async function launchBrowser(proxyIp = null) {
     console.log(`  [BROWSER] 🌐 Proxy: socks5://127.0.0.1:${proxyPort} (IP: ${proxyIp})`);
   }
   
-  const connectOptions = { headless: false, args, turnstile: true, disableXvfb: true };
-  if (proxyConfig) connectOptions.proxy = proxyConfig;
+  const connectOptions = {
+    headless: false,
+    args,
+    turnstile: true,
+    disableXvfb: true,
+  };
+  if (proxyConfig) {
+    connectOptions.proxy = proxyConfig;
+  }
 
   const { browser, page } = await connect(connectOptions);
   await page.setViewport({ width: 1920, height: 1080 });
@@ -1999,7 +1833,7 @@ async function launchBrowser(proxyIp = null) {
   const proxyInfo = PROXY_MODE === "residential" 
     ? "(residential proxy)" 
     : (proxyIp ? `(IP: ${proxyIp})` : "(proxy yok)");
-  console.log(`  [BROWSER] ✅ Chromium başlatıldı ${proxyInfo}`);
+  console.log(`  [BROWSER] ✅ Tarayıcı başlatıldı ${proxyInfo}`);
   return { browser, page, proxyAuth, proxyConfig };
 }
 
