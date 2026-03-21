@@ -274,7 +274,6 @@ const Index = () => {
                   />
                   <TrackingLogs configId={t.configId} />
                 </div>
-                </div>
               </ScrollArea>
             </main>
 
