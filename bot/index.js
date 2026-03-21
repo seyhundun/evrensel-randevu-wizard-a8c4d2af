@@ -686,6 +686,13 @@ async function waitForLoginFormAfterQueue(page, loginUrl) {
       pageState.body.includes("oturumunuzun süresi") ||
       (pageState.body.includes("oturum") && pageState.body.includes("geçersiz"));
 
+    // VFS 403 izin sorunları sayfası (tam sayfa hata)
+    const isPermissionDeniedPage =
+      pageState.body.includes("izin sorunları") ||
+      pageState.body.includes("izin sorunlari") ||
+      pageState.body.includes("yetki sorunu") ||
+      (pageState.body.includes("(403)") && pageState.body.includes("izin"));
+
     // VFS API JSON hata yanıtları (403201, 403102 vb.)
     const isApiError =
       pageState.body.includes('"code"') && (
@@ -695,9 +702,10 @@ async function waitForLoginFormAfterQueue(page, loginUrl) {
         pageState.body.includes("401")
       ) && pageState.body.length < 500; // JSON yanıt genelde kısa olur
 
-    if (notFoundLike || sessionExpiredLike || isApiError) {
+    if (notFoundLike || sessionExpiredLike || isApiError || isPermissionDeniedPage) {
       notFoundRecoveries += 1;
-      console.log(`  [QUEUE] ⚠ Not-found/session sayfasına düştü (${notFoundRecoveries}/3), login sayfasına dönülüyor...`);
+      const reason = isPermissionDeniedPage ? "İzin sorunları (403) sayfası" : "Not-found/session";
+      console.log(`  [QUEUE] ⚠ ${reason} algılandı (${notFoundRecoveries}/3), login sayfasına dönülüyor...`);
 
       if (Date.now() - lastScreenshotAt > 15000) {
         await postQueueScreenshot(page, "QUEUE", waitedSec, "Not-found/session algılandı, login sayfasına dönülüyor");
