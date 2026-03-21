@@ -164,6 +164,58 @@ export default function VfsAccounts() {
     toast.info("Hesap silindi");
   };
 
+  const bulkCreateAliasAccounts = async () => {
+    if (!bulkBaseEmail || !bulkBaseEmail.includes("@")) {
+      toast.error("Geçerli bir Gmail adresi girin");
+      return;
+    }
+    if (!bulkPhone) {
+      toast.error("Telefon numarası gerekli");
+      return;
+    }
+    if (bulkCount < 1 || bulkCount > 50) {
+      toast.error("1-50 arası hesap sayısı girin");
+      return;
+    }
+
+    setBulkCreating(true);
+    const [localPart, domain] = bulkBaseEmail.split("@");
+    // Remove existing + suffix if any
+    const cleanLocal = localPart.split("+")[0];
+    
+    // Find highest existing alias number
+    const existingAliases = accounts
+      .filter(a => a.email.startsWith(cleanLocal + "+vfs") && a.email.endsWith("@" + domain))
+      .map(a => {
+        const match = a.email.match(/\+vfs(\d+)@/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const startNum = existingAliases.length > 0 ? Math.max(...existingAliases) + 1 : 1;
+
+    let created = 0;
+    for (let i = 0; i < bulkCount; i++) {
+      const aliasEmail = `${cleanLocal}+vfs${startNum + i}@${domain}`;
+      const password = generateSecurePassword();
+      const { error } = await supabase.from("vfs_accounts").insert({
+        email: aliasEmail,
+        password,
+        phone: bulkPhone,
+        registration_status: "pending",
+        status: "active",
+        imap_host: "imap.gmail.com",
+        imap_password: bulkImapPassword || null,
+      } as any);
+      if (!error) created++;
+    }
+
+    if (created > 0) {
+      toast.success(`${created} Gmail alias hesabı oluşturuldu! Bot sırayla kayıt yapacak.`);
+    } else {
+      toast.error("Hesap oluşturulamadı");
+    }
+    setBulkCreating(false);
+  };
+
   const submitManualOtp = async (id: string) => {
     const code = smsOtpInputs[id]?.trim();
     if (!code) { toast.error("OTP kodu girin"); return; }
