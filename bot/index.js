@@ -1707,10 +1707,8 @@ async function checkAppointments(config, account) {
 
   let browser;
   try {
-    const fp = generateFingerprint();
     const { browser: br, page, proxyAuth } = await launchBrowser(activeIp);
     browser = br;
-    await applyFingerprint(page, fp);
     await humanMove(page);
 
     // IP doğrulama sayfası kaldırıldı; bazı proxy ürünlerinde gereksiz tunnel hatası üretiyor
