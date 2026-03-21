@@ -279,13 +279,13 @@ const Index = () => {
 
             {/* RIGHT SIDEBAR */}
             {!isMobile && (
-              <aside
+               <aside
                 className={`shrink-0 border-l border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
-                  rightSidebarOpen ? "w-[380px]" : "w-0 border-l-0"
+                  rightSidebarOpen ? "w-[440px]" : "w-0 border-l-0"
                 }`}
                 style={{ height: "calc(100vh - 105px)" }}
               >
-                <div className="w-[380px] h-full overflow-y-auto overflow-x-hidden">
+                <div className="w-[440px] h-full overflow-y-auto overflow-x-hidden">
                   <VfsRightSidebarContent t={t} />
                 </div>
               </aside>
