@@ -355,46 +355,8 @@ async function vfsClearCfBlocked(configId) {
 console.log(`🔐 CAPTCHA API key: ${CONFIG.CAPTCHA_API_KEY ? `var (${CONFIG.CAPTCHA_API_KEY.length} karakter)` : "yok"}`);
 
 // ==================== FINGERPRINT ====================
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-];
-const VIEWPORTS = [
-  { width: 1920, height: 1080 },
-];
-const TIMEZONES = ["Europe/Istanbul", "Europe/Berlin", "Europe/Paris", "Europe/London"];
-const LANGUAGES = [
-  ["tr-TR", "tr", "en-US", "en"], ["en-US", "en", "tr-TR", "tr"],
-  ["fr-FR", "fr", "en-US", "en"], ["de-DE", "de", "en-US", "en"],
-];
-const PLATFORMS = ["Win32", "MacIntel", "Linux x86_64"];
-const WEBGL_VENDORS = ["Google Inc. (NVIDIA)", "Google Inc. (Intel)", "Google Inc. (AMD)", "Intel Inc."];
-const WEBGL_RENDERERS = [
-  "ANGLE (NVIDIA, NVIDIA GeForce GTX 1060, OpenGL 4.5)",
-  "ANGLE (Intel, Intel(R) UHD Graphics 630, OpenGL 4.5)",
-  "ANGLE (AMD, AMD Radeon RX 580, OpenGL 4.5)",
-  "ANGLE (Intel, Intel(R) Iris(TM) Plus Graphics 640, OpenGL 4.1)",
-];
-
-function getRandomItem(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-
-function generateFingerprint() {
-  return {
-    userAgent: getRandomItem(USER_AGENTS),
-    viewport: getRandomItem(VIEWPORTS),
-    timezone: getRandomItem(TIMEZONES),
-    languages: getRandomItem(LANGUAGES),
-    platform: getRandomItem(PLATFORMS),
-    webglVendor: getRandomItem(WEBGL_VENDORS),
-    webglRenderer: getRandomItem(WEBGL_RENDERERS),
-    deviceMemory: getRandomItem([4, 8, 16]),
-    hardwareConcurrency: getRandomItem([4, 6, 8, 12, 16]),
-    screenDepth: getRandomItem([24, 32]),
-    maxTouchPoints: 0,
-  };
-}
+// puppeteer-real-browser kendi stealth/fingerprint'ini yönetir
+// Manuel override'lar CF tespitini tetikler — iDATA gibi temiz bırakıyoruz
 
 // ==================== HELPERS ====================
 const accountLastUsed = new Map();
@@ -1623,107 +1585,7 @@ async function _solve(page, context) {
   }
 }
 
-// ==================== APPLY FINGERPRINT ====================
-async function applyFingerprint(page, fp) {
-  try { await page.emulateTimezone(fp.timezone); } catch {}
-  await page.setUserAgent(fp.userAgent);
-  await page.setViewport(fp.viewport);
-  await page.evaluateOnNewDocument((fp) => {
-    // ===== ANTI-DETECTION: webdriver flag =====
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-    // Chrome runtime mock (headless detection bypass)
-    if (!window.chrome) window.chrome = {};
-    if (!window.chrome.runtime) window.chrome.runtime = { connect: () => {}, sendMessage: () => {}, id: "mhjfbmdgcfjbbpaeojofohoefgiehjai" };
-    // Permissions API override
-    const originalQuery = window.navigator.permissions?.query;
-    if (originalQuery) {
-      window.navigator.permissions.query = (parameters) => {
-        if (parameters.name === "notifications") {
-          return Promise.resolve({ state: Notification.permission });
-        }
-        return originalQuery(parameters);
-      };
-    }
-    // Plugin/MimeType mock (headless has 0 plugins)
-    Object.defineProperty(navigator, "plugins", {
-      get: () => {
-        const plugins = [
-          { name: "Chrome PDF Plugin", filename: "internal-pdf-viewer", description: "Portable Document Format" },
-          { name: "Chrome PDF Viewer", filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai", description: "" },
-          { name: "Native Client", filename: "internal-nacl-plugin", description: "" },
-        ];
-        plugins.item = (i) => plugins[i];
-        plugins.namedItem = (n) => plugins.find(p => p.name === n);
-        plugins.refresh = () => {};
-        return plugins;
-      }
-    });
-    Object.defineProperty(navigator, "mimeTypes", {
-      get: () => {
-        const mimes = [{ type: "application/pdf", suffixes: "pdf", description: "Portable Document Format" }];
-        mimes.item = (i) => mimes[i];
-        mimes.namedItem = (n) => mimes.find(m => m.type === n);
-        return mimes;
-      }
-    });
-
-    Object.defineProperty(navigator, "platform", { get: () => fp.platform });
-    Object.defineProperty(navigator, "languages", { get: () => fp.languages });
-    Object.defineProperty(navigator, "language", { get: () => fp.languages[0] });
-    Object.defineProperty(navigator, "deviceMemory", { get: () => fp.deviceMemory });
-    Object.defineProperty(navigator, "hardwareConcurrency", { get: () => fp.hardwareConcurrency });
-    Object.defineProperty(screen, "colorDepth", { get: () => fp.screenDepth });
-    Object.defineProperty(screen, "pixelDepth", { get: () => fp.screenDepth });
-    Object.defineProperty(navigator, "maxTouchPoints", { get: () => fp.maxTouchPoints });
-    const getParameterOrig = WebGLRenderingContext.prototype.getParameter;
-    WebGLRenderingContext.prototype.getParameter = function(param) {
-      if (param === 37445) return fp.webglVendor;
-      if (param === 37446) return fp.webglRenderer;
-      return getParameterOrig.call(this, param);
-    };
-    if (typeof WebGL2RenderingContext !== "undefined") {
-      const gp2 = WebGL2RenderingContext.prototype.getParameter;
-      WebGL2RenderingContext.prototype.getParameter = function(param) {
-        if (param === 37445) return fp.webglVendor;
-        if (param === 37446) return fp.webglRenderer;
-        return gp2.call(this, param);
-      };
-    }
-    const toDataURLOrig = HTMLCanvasElement.prototype.toDataURL;
-    HTMLCanvasElement.prototype.toDataURL = function(type) {
-      if (type === "image/png" || !type) {
-        const ctx = this.getContext("2d");
-        if (ctx) {
-          const noise = Math.random() * 0.01;
-          const imageData = ctx.getImageData(0, 0, this.width, this.height);
-          for (let i = 0; i < imageData.data.length; i += 4) {
-            imageData.data[i] = Math.min(255, imageData.data[i] + Math.floor(noise * 255));
-          }
-          ctx.putImageData(imageData, 0, 0);
-        }
-      }
-      return toDataURLOrig.call(this, type);
-    };
-    const origGetChannelData = AudioBuffer.prototype.getChannelData;
-    AudioBuffer.prototype.getChannelData = function(channel) {
-      const data = origGetChannelData.call(this, channel);
-      if (data.length > 100) { for (let i = 0; i < Math.min(10, data.length); i++) data[i] += Math.random() * 0.0001; }
-      return data;
-    };
-    if (navigator.connection) {
-      Object.defineProperty(navigator.connection, "effectiveType", { get: () => "4g" });
-      Object.defineProperty(navigator.connection, "rtt", { get: () => Math.floor(Math.random() * 50 + 25) });
-      Object.defineProperty(navigator.connection, "downlink", { get: () => Math.random() * 5 + 5 });
-    }
-    if (navigator.getBattery) {
-      navigator.getBattery = () => Promise.resolve({
-        charging: true, chargingTime: 0, dischargingTime: Infinity, level: 1,
-        addEventListener: () => {}, removeEventListener: () => {},
-      });
-    }
-  }, fp);
-  console.log(`  [FP] UA: ${fp.userAgent.substring(0, 50)}... | VP: ${fp.viewport.width}x${fp.viewport.height} | TZ: ${fp.timezone}`);
-}
+// puppeteer-real-browser kendi fingerprint'ini yönetir — manuel override kaldırıldı
 
 // ==================== BROWSER LAUNCH ====================
 const path = require("path");
@@ -1788,7 +1650,6 @@ async function launchBrowser(proxyIp = null) {
   ];
   
   let proxyConfig = undefined;
-  let proxyAuth = null;
 
   if (!PROXY_ENABLED) {
     console.log(`  [BROWSER] 🔵 Proxy KAPALI — sunucu kendi IP'si ile çıkıyor`);
@@ -1797,10 +1658,6 @@ async function launchBrowser(proxyIp = null) {
     proxyConfig = {
       host: rp.host,
       port: rp.port,
-      username: rp.user,
-      password: rp.pass,
-    };
-    proxyAuth = {
       username: rp.user,
       password: rp.pass,
     };
@@ -1828,7 +1685,7 @@ async function launchBrowser(proxyIp = null) {
     ? "(residential proxy)" 
     : (proxyIp ? `(IP: ${proxyIp})` : "(proxy yok)");
   console.log(`  [BROWSER] ✅ Tarayıcı başlatıldı ${proxyInfo}`);
-  return { browser, page, proxyAuth, proxyConfig };
+  return { browser, page };
 }
 
 // ==================== MAIN CHECK ====================
@@ -1845,10 +1702,8 @@ async function checkAppointments(config, account) {
 
   let browser;
   try {
-    const fp = generateFingerprint();
-    const { browser: br, page, proxyAuth } = await launchBrowser(activeIp);
+    const { browser: br, page } = await launchBrowser(activeIp);
     browser = br;
-    await applyFingerprint(page, fp);
     await humanMove(page);
 
     // IP doğrulama sayfası kaldırıldı; bazı proxy ürünlerinde gereksiz tunnel hatası üretiyor
@@ -3387,11 +3242,9 @@ async function registerVfsAccount(account) {
   let browser;
   let page;
   try {
-    const fp = generateFingerprint();
     const launched = await launchBrowser();
     browser = launched.browser;
     page = launched.page;
-    await applyFingerprint(page, fp);
     await humanMove(page);
 
     const regUrl = getVfsRegisterUrl(regCountry);
@@ -4214,9 +4067,7 @@ async function main() {
         if (config.screenshot_requested) {
           console.log(`\n📸 Screenshot talebi algılandı (${config.id.substring(0, 8)}...)`);
           try {
-            const fp = generateFingerprint();
             const { browser: ssBrowser, page: ssPage } = await launchBrowser();
-            await applyFingerprint(ssPage, fp);
             await ssPage.goto(getVfsLoginUrl(config.country), { waitUntil: "domcontentloaded", timeout: 60000 });
             await delay(3000, 5000);
             const ss = await takeScreenshotBase64(ssPage);
