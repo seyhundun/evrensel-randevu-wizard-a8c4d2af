@@ -285,7 +285,7 @@ const Index = () => {
                 }`}
                 style={{ height: "calc(100vh - 105px)" }}
               >
-                <div className="w-[440px] h-full overflow-y-auto overflow-x-hidden">
+                <div className="w-[500px] h-full overflow-y-auto overflow-x-hidden">
                   <VfsRightSidebarContent t={t} />
                 </div>
               </aside>
