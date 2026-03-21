@@ -110,7 +110,6 @@ function VfsRightSidebarContent({ t }: { t: ReturnType<typeof useTracking> }) {
         setPersonCount={t.setPersonCount}
       />
       <VfsAccounts />
-      <TrackingLogs configId={t.configId} />
     </div>
   );
 }
@@ -273,6 +272,7 @@ const Index = () => {
                     onSimulateFound={t.simulateFound}
                     configId={t.configId}
                   />
+                  <TrackingLogs configId={t.configId} />
                 </div>
               </ScrollArea>
             </main>
