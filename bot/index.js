@@ -4346,10 +4346,10 @@ async function main() {
           consecutiveErrors = 0;
         }
 
-        const baseInterval = Math.max(config.check_interval * 1000, CONFIG.BASE_INTERVAL_MS);
-        const backoffMultiplier = Math.min(Math.pow(1.5, consecutiveErrors), 5);
+        const baseInterval = config.check_interval * 1000;
+        const backoffMultiplier = consecutiveErrors > 0 ? Math.min(Math.pow(1.5, consecutiveErrors), 5) : 1;
         const interval = Math.min(baseInterval * backoffMultiplier, CONFIG.MAX_BACKOFF_MS);
-        const jitter = Math.floor(Math.random() * 60000) + 15000;
+        const jitter = Math.floor(Math.random() * Math.min(baseInterval * 0.2, 10000));
         const wait = Math.round(interval + jitter);
         console.log(`\n⏳ Sonraki: ${Math.round(wait / 1000)}s (backoff: x${backoffMultiplier.toFixed(1)}, errors: ${consecutiveErrors})`);
         await logStep(config.id, "bot_idle", `Sonraki kontrol: ${Math.round(wait / 1000)}s | IP: ${getCurrentIp() || "doğrudan"}`);
