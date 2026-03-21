@@ -2074,7 +2074,7 @@ async function checkAppointments(config, account) {
         isSessionExpiredPage: (body.includes("oturum") && body.includes("geçersiz")) || 
                               (body.includes("oturum süresi doldu") && body.includes("yeniden giriş yap")) ||
                               (body.includes("oturumunuzun süresi dolmuş") && body.includes("anasayfaya geri")),
-        isBanned: body.includes("engellenmiş") || body.includes("blocked") || body.includes("banned"),
+        isBanned: body.includes("engellenmiş") || body.includes("blocked") || body.includes("banned") || body.includes("yetkisiz etkinlik") || body.includes("429002") || body.includes("erişim reddedildi"),
         isApiError: isApiJsonError,
         isWaitingRoom: (document.title || "").toLowerCase().includes("waiting room"),
         isLoginPage: url.includes("/login"),
