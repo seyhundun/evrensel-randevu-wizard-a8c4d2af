@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Trash2, Eye, EyeOff, UserCheck, Ban, Clock, MessageSquare, Send, UserPlus, Mail, Phone, Loader2, RefreshCw, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Eye, EyeOff, UserCheck, Ban, Clock, MessageSquare, Send, UserPlus, Mail, Phone, Loader2, RefreshCw, ShieldAlert, CheckCircle2, Users } from "lucide-react";
 
 const VFS_PASSWORD_SPECIAL = "$@#!%*?";
 const VFS_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[$@#!%*?])[A-Za-z\d$@#!%*?]{8,15}$/;
@@ -83,8 +83,14 @@ export default function VfsAccounts() {
   const [loading, setLoading] = useState(false);
   const [smsOtpInputs, setSmsOtpInputs] = useState<Record<string, string>>({});
   const [regOtpInputs, setRegOtpInputs] = useState<Record<string, string>>({});
-  const [addMode, setAddMode] = useState<"existing" | "register">("existing");
+  const [addMode, setAddMode] = useState<"existing" | "register" | "bulk">("existing");
   const [editingImap, setEditingImap] = useState<Record<string, { host: string; password: string }>>({});
+  // Bulk Gmail alias state
+  const [bulkBaseEmail, setBulkBaseEmail] = useState("");
+  const [bulkPhone, setBulkPhone] = useState("");
+  const [bulkCount, setBulkCount] = useState(5);
+  const [bulkImapPassword, setBulkImapPassword] = useState("");
+  const [bulkCreating, setBulkCreating] = useState(false);
 
   useEffect(() => {
     loadAccounts();
@@ -156,6 +162,58 @@ export default function VfsAccounts() {
   const deleteAccount = async (id: string) => {
     await supabase.from("vfs_accounts").delete().eq("id", id);
     toast.info("Hesap silindi");
+  };
+
+  const bulkCreateAliasAccounts = async () => {
+    if (!bulkBaseEmail || !bulkBaseEmail.includes("@")) {
+      toast.error("Geçerli bir Gmail adresi girin");
+      return;
+    }
+    if (!bulkPhone) {
+      toast.error("Telefon numarası gerekli");
+      return;
+    }
+    if (bulkCount < 1 || bulkCount > 50) {
+      toast.error("1-50 arası hesap sayısı girin");
+      return;
+    }
+
+    setBulkCreating(true);
+    const [localPart, domain] = bulkBaseEmail.split("@");
+    // Remove existing + suffix if any
+    const cleanLocal = localPart.split("+")[0];
+    
+    // Find highest existing alias number
+    const existingAliases = accounts
+      .filter(a => a.email.startsWith(cleanLocal + "+vfs") && a.email.endsWith("@" + domain))
+      .map(a => {
+        const match = a.email.match(/\+vfs(\d+)@/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const startNum = existingAliases.length > 0 ? Math.max(...existingAliases) + 1 : 1;
+
+    let created = 0;
+    for (let i = 0; i < bulkCount; i++) {
+      const aliasEmail = `${cleanLocal}+vfs${startNum + i}@${domain}`;
+      const password = generateSecurePassword();
+      const { error } = await supabase.from("vfs_accounts").insert({
+        email: aliasEmail,
+        password,
+        phone: bulkPhone,
+        registration_status: "pending",
+        status: "active",
+        imap_host: "imap.gmail.com",
+        imap_password: bulkImapPassword || null,
+      } as any);
+      if (!error) created++;
+    }
+
+    if (created > 0) {
+      toast.success(`${created} Gmail alias hesabı oluşturuldu! Bot sırayla kayıt yapacak.`);
+    } else {
+      toast.error("Hesap oluşturulamadı");
+    }
+    setBulkCreating(false);
   };
 
   const submitManualOtp = async (id: string) => {
@@ -288,8 +346,74 @@ export default function VfsAccounts() {
           >
             <UserPlus className="w-3.5 h-3.5" /> Yeni Kayıt
           </Button>
+          <Button
+            size="sm"
+            variant={addMode === "bulk" ? "default" : "outline"}
+            onClick={() => setAddMode("bulk")}
+            className="gap-1"
+          >
+            <Users className="w-3.5 h-3.5" /> Toplu Gmail Alias
+          </Button>
         </div>
 
+        {addMode === "bulk" ? (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Gmail +alias ile toplu hesap oluşturun. Örn: <code>user@gmail.com</code> → <code>user+vfs1@gmail.com</code>, <code>user+vfs2@gmail.com</code>...
+              Tüm mailler aynı Gmail kutusuna düşer.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Gmail Adresi</Label>
+                <Input
+                  type="email"
+                  placeholder="kullanici@gmail.com"
+                  value={bulkBaseEmail}
+                  onChange={(e) => setBulkBaseEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Telefon Numarası</Label>
+                <Input
+                  type="tel"
+                  placeholder="5xxxxxxxxx"
+                  value={bulkPhone}
+                  onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, "");
+                    val = val.replace(/^90/, "").replace(/^0+/, "");
+                    setBulkPhone(val);
+                  }}
+                  maxLength={10}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Hesap Sayısı</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={bulkCount}
+                  onChange={(e) => setBulkCount(parseInt(e.target.value) || 1)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Gmail Uygulama Şifresi (IMAP)</Label>
+                <Input
+                  type="password"
+                  placeholder="xxxx xxxx xxxx xxxx"
+                  value={bulkImapPassword}
+                  onChange={(e) => setBulkImapPassword(e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground mt-0.5">OTP otomatik okuma için gerekli</p>
+              </div>
+            </div>
+            <Button onClick={bulkCreateAliasAccounts} disabled={bulkCreating} size="sm" className="gap-1.5">
+              {bulkCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+              {bulkCreating ? "Oluşturuluyor..." : `${bulkCount} Hesap Oluştur`}
+            </Button>
+          </div>
+        ) : (
+        <>
         <div className={`grid grid-cols-1 ${addMode === "register" ? "sm:grid-cols-3" : "sm:grid-cols-2"} gap-3`}>
           <div>
             <Label className="text-xs">VFS Email</Label>
@@ -340,7 +464,6 @@ export default function VfsAccounts() {
                 placeholder="5xxxxxxxxx"
                 value={newPhone}
                 onChange={(e) => {
-                  // Sadece rakam kabul et, başındaki 0 ve +90'ı otomatik kaldır
                   let val = e.target.value.replace(/\D/g, "");
                   val = val.replace(/^90/, "").replace(/^0+/, "");
                   setNewPhone(val);
@@ -360,6 +483,8 @@ export default function VfsAccounts() {
           {addMode === "register" ? <UserPlus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           {addMode === "register" ? "Kayıt Talebi Oluştur" : "Hesap Ekle"}
         </Button>
+        </>
+        )}
       </Card>
 
       {/* Account list */}
