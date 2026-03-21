@@ -71,6 +71,7 @@ interface VfsAccount {
   registration_otp: string | null;
   captcha_waiting_at: string | null;
   captcha_manual_approved: boolean;
+  booking_enabled: boolean;
 }
 
 export default function VfsAccounts() {
