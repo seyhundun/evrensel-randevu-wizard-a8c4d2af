@@ -4346,12 +4346,23 @@ async function main() {
           consecutiveErrors = 0;
         }
 
-        const baseInterval = config.check_interval * 1000;
-        const backoffMultiplier = consecutiveErrors > 0 ? Math.min(Math.pow(1.5, consecutiveErrors), 5) : 1;
+        // Her döngüde güncel check_interval'i DB'den oku
+        let currentInterval = config.check_interval;
+        try {
+          const freshData = await apiGet("check_config_active");
+          const activeConfig = (freshData.configs || []).find(c => c.id === config.id);
+          if (activeConfig && activeConfig.check_interval) {
+            currentInterval = activeConfig.check_interval;
+            config.check_interval = currentInterval;
+          }
+        } catch {}
+
+        const baseInterval = currentInterval * 1000;
+        const backoffMultiplier = consecutiveErrors > 0 ? Math.min(Math.pow(1.3, consecutiveErrors), 3) : 1;
         const interval = Math.min(baseInterval * backoffMultiplier, CONFIG.MAX_BACKOFF_MS);
-        const jitter = Math.floor(Math.random() * Math.min(baseInterval * 0.2, 10000));
+        const jitter = Math.floor(Math.random() * Math.min(baseInterval * 0.1, 3000));
         const wait = Math.round(interval + jitter);
-        console.log(`\n⏳ Sonraki: ${Math.round(wait / 1000)}s (backoff: x${backoffMultiplier.toFixed(1)}, errors: ${consecutiveErrors})`);
+        console.log(`\n⏳ Sonraki: ${Math.round(wait / 1000)}s (interval: ${currentInterval}s, backoff: x${backoffMultiplier.toFixed(1)}, errors: ${consecutiveErrors})`);
         await logStep(config.id, "bot_idle", `Sonraki kontrol: ${Math.round(wait / 1000)}s | IP: ${getCurrentIp() || "doğrudan"}`);
         await new Promise((r) => setTimeout(r, wait));
       }
