@@ -1878,24 +1878,34 @@ async function checkAppointments(config, account) {
     await humanScroll(page);
     await humanMove(page);
 
-    // STEP 2: Cookie banner
+    // STEP 2: Cookie banner — sayfa yüklenince hemen kabul et
     await logStep(id, "page_load", "Sayfa yüklendi, cookie banner kontrol ediliyor...");
-    console.log("  [2/6] Cookie banner...");
+    console.log("  [2/6] Cookie banner bekleniyor...");
     try {
-      const cookieBtn = await page.evaluateHandle(() => {
-        const btns = [...document.querySelectorAll("button")];
-        return btns.find((b) => {
-          const txt = b.textContent.toLowerCase();
-          return txt.includes("accept all") || txt.includes("kabul") || txt.includes("tümünü kabul");
-        }) || null;
-      });
-      if (cookieBtn && cookieBtn.asElement()) {
-        await delay(500, 1500);
-        await cookieBtn.asElement().click();
-        console.log("  [2/6] ✅ Cookie kabul edildi.");
-        await delay(1000, 2000);
+      let cookieClicked = false;
+      for (let attempt = 0; attempt < 8 && !cookieClicked; attempt++) {
+        cookieClicked = await page.evaluate(() => {
+          const onetrust = document.getElementById('onetrust-accept-btn-handler');
+          if (onetrust && onetrust.offsetParent !== null) { onetrust.click(); return true; }
+          const btns = [...document.querySelectorAll("button, a")];
+          const match = btns.find(b => {
+            const txt = (b.textContent || "").toLowerCase();
+            return (txt.includes("accept all") || txt.includes("kabul") || txt.includes("tümünü kabul") || txt.includes("tüm tanımlama") || txt.includes("tüm çerezleri kabul")) && b.offsetParent !== null;
+          });
+          if (match) { match.click(); return true; }
+          return false;
+        });
+        if (!cookieClicked) await delay(1000, 1000);
       }
-    } catch (e) {}
+      if (cookieClicked) {
+        console.log("  [2/6] ✅ Cookie kabul edildi.");
+        await delay(1000, 1500);
+      } else {
+        console.log("  [2/6] ⚠ Cookie banner bulunamadı, devam ediliyor");
+      }
+    } catch (e) {
+      console.log("  [2/6] Cookie hatası:", e.message);
+    }
 
     // STEP 3: CAPTCHA + Queue
     console.log("  [3/6] CAPTCHA + sıra kontrol...");
