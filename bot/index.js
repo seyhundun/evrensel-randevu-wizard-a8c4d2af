@@ -1793,8 +1793,12 @@ async function launchBrowser(proxyIp = null) {
     console.log(`  [BROWSER] 🔵 Proxy KAPALI — sunucu kendi IP'si ile çıkıyor`);
   } else if (PROXY_MODE === "residential" && EVOMI_PROXY_USER) {
     const rp = getResidentialProxyUrl();
-    args.push(`--proxy-server=http://${rp.host}:${rp.port}`);
-    proxyConfig = rp;
+    proxyConfig = {
+      host: rp.host,
+      port: rp.port,
+      username: rp.user,
+      password: rp.pass,
+    };
     proxyAuth = {
       username: rp.user,
       password: rp.pass,
@@ -1812,11 +1816,11 @@ async function launchBrowser(proxyIp = null) {
     turnstile: true,
     disableXvfb: true,
   };
+  if (proxyConfig) {
+    connectOptions.proxy = proxyConfig;
+  }
 
   const { browser, page } = await connect(connectOptions);
-  if (proxyAuth) {
-    await page.authenticate(proxyAuth);
-  }
   await page.setViewport({ width: 1920, height: 1080 });
   
   const proxyInfo = PROXY_MODE === "residential" 
