@@ -315,23 +315,10 @@ const Index = () => {
               <ScrollArea className="h-full">
                 <div className="p-3 md:p-6 space-y-4 md:space-y-6">
                   <IdataAccounts />
+                  <IdataTrackingLogs />
                 </div>
               </ScrollArea>
             </main>
-
-            {/* RIGHT SIDEBAR */}
-            {!isMobile && (
-              <aside
-                className={`shrink-0 border-l border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
-                  rightSidebarOpen ? "w-[380px]" : "w-0 border-l-0"
-                }`}
-                style={{ height: "calc(100vh - 105px)" }}
-              >
-                <div className="w-[380px] h-full overflow-y-auto overflow-x-hidden">
-                  <IdataRightSidebarContent />
-                </div>
-              </aside>
-            )}
           </div>
         </TabsContent>
       </Tabs>
