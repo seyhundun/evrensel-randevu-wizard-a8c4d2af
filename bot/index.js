@@ -2753,66 +2753,172 @@ async function selectTurkeyDialCode(page) {
           if (txt.includes('90') || val === '90' || val === '+90') return 'already:' + txt;
         }
       }
+      // mat-select kontrol
+      const matSelects = Array.from(document.querySelectorAll('mat-select .mat-mdc-select-value, mat-select .mat-select-value, .mat-mdc-select-min-line'));
+      for (const ms of matSelects) {
+        const txt = (ms.textContent || '').trim();
+        if (txt.includes('90') || txt.includes('Turkey') || txt.includes('Türkiye')) return 'mat-already:' + txt;
+      }
       return null;
     });
     if (alreadySelected) { console.log(`  [REG] ✅ Dial code zaten 90 (${alreadySelected})`); return true; }
   } catch {}
 
-  for (let attempt = 1; attempt <= 6; attempt++) {
-    const result = await page.evaluate((attemptNo) => {
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    console.log(`  [REG] Dial code seçme denemesi ${attempt}/8...`);
+
+    // 1. Dropdown'u fiziksel tıkla ile aç
+    const triggerInfo = await page.evaluate(() => {
       const isVisible = (el) => {
         if (!el) return false;
         const rect = el.getBoundingClientRect();
         const style = window.getComputedStyle(el);
-        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
       };
-      const isTurkey = (txt) => /turkey|türkiye|turkiye|\(90\)|\+90|(^|\D)90(\D|$)/i.test(String(txt || "").toLowerCase());
 
-      // Custom dropdown option
-      const visibleOptions = Array.from(document.querySelectorAll('[role="option"], mat-option, .mat-mdc-option, .mat-option, .ng-option, li[role="option"]')).filter(isVisible);
-      const turkeyOption = visibleOptions.find((opt) => isTurkey(opt.textContent || ""));
-      if (turkeyOption) { turkeyOption.click(); return { ok: true, method: "custom-option", detail: (turkeyOption.textContent || "").trim() }; }
-
-      // Trigger açma
-      const labels = Array.from(document.querySelectorAll("label, span, div, p")).filter((el) => {
-        const t = (el.textContent || "").toLowerCase();
-        return t.includes("arama kodu") || t.includes("dial code") || t.includes("country code");
+      // "Arama Kodu" label'ını bul ve yakınındaki dropdown trigger'ı tıkla
+      const allLabels = Array.from(document.querySelectorAll('label, span, div, p, mat-label'));
+      const dialLabel = allLabels.find(el => {
+        const t = (el.textContent || '').toLowerCase().trim();
+        return isVisible(el) && (t.includes('arama kodu') || t.includes('dial code') || t.includes('country code') || t === 'arama kodu *');
       });
-      for (const label of labels) {
-        const scope = label.closest("mat-form-field, .mat-mdc-form-field, .form-group, .row, .col, div") || label.parentElement;
-        if (!scope) continue;
-        const trigger = scope.querySelector('mat-select, [role="combobox"], .mat-mdc-select-trigger, .mat-select-trigger, .ng-select-container, [aria-haspopup="listbox"]');
-        if (trigger && isVisible(trigger)) { trigger.click(); return { ok: false, method: "custom-open", detail: "trigger-click" }; }
+
+      if (dialLabel) {
+        const scope = dialLabel.closest('mat-form-field, .mat-mdc-form-field, .form-group, .row, .col') || dialLabel.parentElement?.parentElement || dialLabel.parentElement;
+        if (scope) {
+          // mat-select trigger
+          const matSelect = scope.querySelector('mat-select, [role="combobox"], .mat-mdc-select, .mat-select');
+          if (matSelect && isVisible(matSelect)) {
+            const rect = matSelect.getBoundingClientRect();
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, type: 'mat-select' };
+          }
+          // mat-select-trigger
+          const trigger = scope.querySelector('.mat-mdc-select-trigger, .mat-select-trigger');
+          if (trigger && isVisible(trigger)) {
+            const rect = trigger.getBoundingClientRect();
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, type: 'trigger' };
+          }
+          // Native select
+          const sel = scope.querySelector('select');
+          if (sel && isVisible(sel)) {
+            return { native: true, selectIndex: Array.from(document.querySelectorAll('select')).indexOf(sel) };
+          }
+        }
       }
 
-      // Native select
-      const selects = Array.from(document.querySelectorAll("select")).filter(isVisible);
-      for (const sel of selects) {
+      // Fallback: tüm mat-select'leri bul, phone ile ilişkili olanı seç
+      const matSelects = Array.from(document.querySelectorAll('mat-select, [role="combobox"]')).filter(isVisible);
+      for (const ms of matSelects) {
+        const parent = ms.closest('mat-form-field, .mat-mdc-form-field');
+        const parentText = (parent?.textContent || ms.getAttribute('aria-label') || '').toLowerCase();
+        if (parentText.includes('arama') || parentText.includes('dial') || parentText.includes('code') || parentText.includes('country')) {
+          const rect = ms.getBoundingClientRect();
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, type: 'fallback-mat' };
+        }
+      }
+
+      return null;
+    });
+
+    if (triggerInfo && triggerInfo.native) {
+      // Native select — doğrudan value set et
+      const ok = await page.evaluate((idx) => {
+        const sel = document.querySelectorAll('select')[idx];
+        if (!sel) return false;
         const opts = Array.from(sel.options || []);
-        const idx = opts.findIndex((o) => isTurkey(`${o.textContent || ""} ${o.value || ""}`));
-        if (idx === -1) continue;
-        const opt = opts[idx];
-        sel.selectedIndex = idx;
-        sel.value = opt.value;
-        opt.selected = true;
-        sel.dispatchEvent(new Event("input", { bubbles: true }));
-        sel.dispatchEvent(new Event("change", { bubbles: true }));
-        const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
-        if (nativeSetter) { nativeSetter.call(sel, opt.value); sel.dispatchEvent(new Event("change", { bubbles: true })); }
-        return { ok: true, method: "native-select", detail: (opt.textContent || opt.value || "").trim() };
-      }
-
-      return { ok: false, method: "none", detail: `attempt-${attemptNo}` };
-    }, attempt);
-
-    if (result.ok) {
-      console.log(`  [REG] ✅ Dial code seçildi (${result.method}: ${result.detail})`);
-      await delay(350, 900);
-      return true;
+        const turkeyIdx = opts.findIndex(o => {
+          const t = `${o.textContent || ''} ${o.value || ''}`.toLowerCase();
+          return /turkey|türkiye|turkiye|\(90\)|\+90|(^|\D)90(\D|$)/i.test(t);
+        });
+        if (turkeyIdx === -1) return false;
+        sel.selectedIndex = turkeyIdx;
+        sel.value = opts[turkeyIdx].value;
+        opts[turkeyIdx].selected = true;
+        sel.dispatchEvent(new Event('input', { bubbles: true }));
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+        if (setter) { setter.call(sel, opts[turkeyIdx].value); sel.dispatchEvent(new Event('change', { bubbles: true })); }
+        return true;
+      }, triggerInfo.selectIndex);
+      if (ok) { console.log('  [REG] ✅ Dial code native select ile seçildi'); return true; }
     }
 
-    if (attempt === 1 || attempt === 3) await humanMove(page);
-    await delay(300, 800);
+    if (triggerInfo && triggerInfo.x) {
+      // Fiziksel tıkla ile dropdown aç
+      await page.mouse.click(triggerInfo.x, triggerInfo.y);
+      console.log(`  [REG] Dropdown trigger tıklandı (${triggerInfo.type}) @ ${Math.round(triggerInfo.x)},${Math.round(triggerInfo.y)}`);
+      await delay(800, 1500);
+
+      // 2. Açılan panelde Turkey'i bul ve tıkla
+      const selected = await page.evaluate(() => {
+        const isVisible = (el) => {
+          if (!el) return false;
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        };
+        const isTurkey = (txt) => /turkey|türkiye|turkiye|\(90\)|\+90/i.test(String(txt || ''));
+
+        // mat-option veya role="option" ara
+        const options = Array.from(document.querySelectorAll('mat-option, .mat-mdc-option, .mat-option, [role="option"], .ng-option, li.option')).filter(isVisible);
+        const turkeyOpt = options.find(o => isTurkey(o.textContent || ''));
+        if (turkeyOpt) {
+          turkeyOpt.scrollIntoView({ block: 'center' });
+          turkeyOpt.click();
+          return { ok: true, text: (turkeyOpt.textContent || '').trim().substring(0, 60) };
+        }
+
+        // Overlay panel scroll
+        const panels = Array.from(document.querySelectorAll('.cdk-overlay-pane, .mat-mdc-select-panel, .mat-select-panel, [role="listbox"]')).filter(isVisible);
+        for (const panel of panels) {
+          const allOpts = Array.from(panel.querySelectorAll('mat-option, [role="option"]'));
+          const tOpt = allOpts.find(o => isTurkey(o.textContent || ''));
+          if (tOpt) {
+            tOpt.scrollIntoView({ block: 'center' });
+            tOpt.click();
+            return { ok: true, text: (tOpt.textContent || '').trim().substring(0, 60) };
+          }
+        }
+
+        return { ok: false, optionCount: options.length };
+      });
+
+      if (selected.ok) {
+        console.log(`  [REG] ✅ Dial code seçildi: ${selected.text}`);
+        await delay(300, 600);
+        return true;
+      }
+
+      console.log(`  [REG] Turkey bulunamadı, ${selected.optionCount || 0} option görüldü`);
+
+      // Panel açıksa scroll ile Turkey'i aramayı dene
+      if (selected.optionCount > 0) {
+        // Keyboard ile "tur" yaz — arama destekleniyorsa
+        await page.keyboard.type('tur', { delay: 100 });
+        await delay(500, 800);
+
+        const afterType = await page.evaluate(() => {
+          const options = Array.from(document.querySelectorAll('mat-option, [role="option"]')).filter(el => {
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          });
+          const isTurkey = (txt) => /turkey|türkiye|turkiye|\(90\)|\+90/i.test(String(txt || ''));
+          const tOpt = options.find(o => isTurkey(o.textContent || ''));
+          if (tOpt) { tOpt.click(); return true; }
+          return false;
+        });
+        if (afterType) { console.log('  [REG] ✅ Dial code type+click ile seçildi'); return true; }
+      }
+
+      // Paneli kapat (Escape)
+      await page.keyboard.press('Escape');
+      await delay(300, 500);
+    }
+
+    if (!triggerInfo) {
+      console.log('  [REG] Dial code trigger bulunamadı, sayfa scroll...');
+      await page.evaluate(() => window.scrollBy(0, 200));
+    }
+    await delay(500, 1000);
   }
 
   console.log("  [REG] ⚠ Dial code seçilemedi, devam ediliyor (90 varsayılan olabilir)");
