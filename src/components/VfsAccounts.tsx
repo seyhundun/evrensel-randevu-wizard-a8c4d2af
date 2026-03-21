@@ -83,8 +83,14 @@ export default function VfsAccounts() {
   const [loading, setLoading] = useState(false);
   const [smsOtpInputs, setSmsOtpInputs] = useState<Record<string, string>>({});
   const [regOtpInputs, setRegOtpInputs] = useState<Record<string, string>>({});
-  const [addMode, setAddMode] = useState<"existing" | "register">("existing");
+  const [addMode, setAddMode] = useState<"existing" | "register" | "bulk">("existing");
   const [editingImap, setEditingImap] = useState<Record<string, { host: string; password: string }>>({});
+  // Bulk Gmail alias state
+  const [bulkBaseEmail, setBulkBaseEmail] = useState("");
+  const [bulkPhone, setBulkPhone] = useState("");
+  const [bulkCount, setBulkCount] = useState(5);
+  const [bulkImapPassword, setBulkImapPassword] = useState("");
+  const [bulkCreating, setBulkCreating] = useState(false);
 
   useEffect(() => {
     loadAccounts();
