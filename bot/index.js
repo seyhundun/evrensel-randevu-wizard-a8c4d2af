@@ -3422,6 +3422,26 @@ async function registerVfsAccount(account) {
     await solveTurnstile(page);
     await humanIdle(3000, 6000);
 
+    // CF challenge sonrası cookie banner tekrar çıkabilir — yakala
+    console.log("  [REG 3.5/7] CF sonrası cookie banner kontrol...");
+    try {
+      const cookieAfterCF = await page.evaluate(() => {
+        const onetrust = document.getElementById('onetrust-accept-btn-handler');
+        if (onetrust && onetrust.offsetParent !== null) { onetrust.click(); return true; }
+        const btns = [...document.querySelectorAll("button, a")];
+        const match = btns.find(b => {
+          const txt = (b.textContent || "").toLowerCase();
+          return (txt.includes("accept all") || txt.includes("kabul") || txt.includes("tümünü kabul") || txt.includes("tüm tanımlama") || txt.includes("tüm çerezleri kabul")) && b.offsetParent !== null;
+        });
+        if (match) { match.click(); return true; }
+        return false;
+      });
+      if (cookieAfterCF) {
+        console.log("  [REG 3.5/7] ✅ CF sonrası cookie banner kabul edildi");
+        await delay(1000, 1500);
+      }
+    } catch {}
+
     // Form yüklenmesini bekle
     console.log("  [REG 4/7] Form bekleniyor...");
     const registrationFormResult = await waitForRegistrationFormAfterQueue(page, regUrl);
