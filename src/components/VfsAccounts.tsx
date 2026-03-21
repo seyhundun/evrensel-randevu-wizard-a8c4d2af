@@ -466,14 +466,22 @@ export default function VfsAccounts() {
                 </span>
               )}
 
-              {/* Login OTP input */}
+              {/* Login OTP input — iDATA tarzı belirgin kutu */}
               {!isRegistering(acc) && acc.otp_requested_at && !acc.manual_otp && (
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-3.5 h-3.5 text-orange-500 animate-pulse" />
-                  <span className="text-xs font-medium text-orange-600">SMS/Email OTP bekleniyor!</span>
+                <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-2.5 animate-pulse">
+                  <MessageSquare className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">Giriş OTP kodu bekleniyor!</span>
+                    <p className="text-[10px] text-amber-600/70 dark:text-amber-400/70">
+                      E-posta veya SMS ile gelen kodu girin
+                      {acc.otp_requested_at && (
+                        <span className="ml-1">({new Date(acc.otp_requested_at).toLocaleTimeString("tr-TR")})</span>
+                      )}
+                    </p>
+                  </div>
                   <Input
                     type="text"
-                    placeholder="Kodu girin"
+                    placeholder="OTP kodu"
                     maxLength={8}
                     className="h-7 w-24 text-xs font-mono"
                     value={smsOtpInputs[acc.id] || ""}
@@ -486,9 +494,10 @@ export default function VfsAccounts() {
                 </div>
               )}
               {!isRegistering(acc) && acc.manual_otp && (
-                <span className="text-xs text-emerald-600 flex items-center gap-1">
-                  <MessageSquare className="w-3 h-3" /> OTP gönderildi: {acc.manual_otp}
-                </span>
+                <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span className="text-xs font-medium text-emerald-600">OTP gönderildi: <span className="font-mono">{acc.manual_otp}</span></span>
+                </div>
               )}
 
               {/* IMAP OTP Ayarları */}
