@@ -1857,19 +1857,12 @@ async function checkAppointments(config, account) {
     await applyFingerprint(page, fp);
     await humanMove(page);
 
-    // Gerçek IP'yi kontrol et ve logla
-    let realIp = "bilinmiyor";
-    try {
-      const ipPage = await browser.newPage();
-      if (proxyAuth) {
-        await ipPage.authenticate(proxyAuth);
-      }
-      await ipPage.goto("https://ip.evomi.com/s", { waitUntil: "networkidle2", timeout: 10000 });
-      realIp = (await ipPage.evaluate(() => document.body.innerText)).trim();
-      await ipPage.close();
-    } catch (e) { console.warn("  [IP] IP kontrolü başarısız:", e.message); }
-    console.log(`  [IP] 🌐 Gerçek IP: ${realIp}`);
-    await logStep(id, "ip_change", `Aktif IP: ${realIp} | Hesap: ${account.email} | Ülke: ${countryLabel}`);
+    // IP doğrulama sayfası kaldırıldı; bazı proxy ürünlerinde gereksiz tunnel hatası üretiyor
+    const realIp = PROXY_MODE === "residential"
+      ? `${EVOMI_PROXY_HOST}:${EVOMI_PROXY_PORT}`
+      : (activeIp || "doğrudan");
+    console.log(`  [IP] 🌐 Aktif çıkış: ${realIp}`);
+    await logStep(id, "ip_change", `Aktif çıkış: ${realIp} | Hesap: ${account.email} | Ülke: ${countryLabel}`);
 
     // STEP 1: Giriş sayfası
     console.log("  [1/6] Giriş sayfası...");
