@@ -175,7 +175,7 @@ export default function StatusPanel({
           <p className="body-text text-muted-foreground mt-2">{c.subtitle}</p>
 
           {status === "searching" && (
-            <div className="mt-6 flex items-center justify-center gap-6">
+            <div className="mt-6 flex items-center justify-center gap-3 md:gap-6 flex-wrap">
               <div className="text-center">
                 <p className="text-2xl font-bold tabular-nums text-foreground">
                   {formatTime(elapsedSeconds)}

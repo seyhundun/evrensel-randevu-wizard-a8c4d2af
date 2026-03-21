@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { LogOut, Clock, PanelLeftClose, PanelLeft, Network, Globe, Settings, BookOpen, Monitor } from "lucide-react";
+import { LogOut, Clock, PanelLeftClose, PanelLeft, Network, Globe, Settings, BookOpen, Monitor, Menu } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 import ControlPanel from "@/components/ControlPanel";
 import ModuleStatus from "@/components/ModuleStatus";
 import BotActions from "@/components/BotActions";
@@ -51,109 +53,151 @@ function SidebarSection({ icon, title, defaultOpen = false, children }: { icon: 
   );
 }
 
+function VfsSidebarContent({ t }: { t: ReturnType<typeof useTracking> }) {
+  return (
+    <div className="p-3 space-y-1">
+      <SidebarSection icon={<Network className="w-3.5 h-3.5" />} title="Proxy & Durum" defaultOpen>
+        <ProxySettings configId={t.configId} />
+      </SidebarSection>
+      <SidebarSection icon={<Globe className="w-3.5 h-3.5" />} title="Randevu Ayarları" defaultOpen>
+        <ControlPanel
+          country={t.country}
+          setCountry={t.setCountry}
+          city={t.city}
+          setCity={t.setCity}
+          visaCategory={t.visaCategory}
+          setVisaCategory={t.setVisaCategory}
+          visaSubcategory={t.visaSubcategory}
+          setVisaSubcategory={t.setVisaSubcategory}
+          personCount={t.personCount}
+          setPersonCount={t.setPersonCount}
+          interval={t.interval}
+          setIntervalValue={t.setIntervalValue}
+          keepAlive={t.keepAlive}
+          setKeepAlive={t.setKeepAlive}
+          status={t.status}
+          onStart={t.startTracking}
+          onStop={t.stopTracking}
+        />
+      </SidebarSection>
+      <SidebarSection icon={<Settings className="w-3.5 h-3.5" />} title="Bot & Ülke Ayarları">
+        <BotSettingsPanel />
+      </SidebarSection>
+    </div>
+  );
+}
+
+function IdataSidebarContent() {
+  return (
+    <div className="p-3 space-y-1">
+      <SidebarSection icon={<Settings className="w-3.5 h-3.5" />} title="iDATA Kontrol Paneli" defaultOpen>
+        <IdataControlPanel />
+      </SidebarSection>
+      <SidebarSection icon={<Globe className="w-3.5 h-3.5" />} title="Bot & Ülke Ayarları">
+        <BotSettingsPanel />
+      </SidebarSection>
+    </div>
+  );
+}
+
 const Index = () => {
   const t = useTracking();
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const [activeTab, setActiveTab] = useState("vfs");
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="border-b border-border bg-card px-4 py-2.5 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
-            {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
-          </Button>
-          <h1 className="text-base font-bold tracking-tight">🛂 Randevu Takip Sistemi</h1>
-          <LiveClock />
+      <header className="border-b border-border bg-card px-3 md:px-4 py-2.5 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
+          {isMobile ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setMobileSheetOpen(true)}
+            >
+              <Menu className="w-4 h-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+            </Button>
+          )}
+          <h1 className="text-sm md:text-base font-bold tracking-tight truncate">🛂 Randevu Takip</h1>
+          <span className="hidden sm:flex"><LiveClock /></span>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/guide")} className="gap-1.5 text-muted-foreground text-xs">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/guide")} className="gap-1.5 text-muted-foreground text-xs hidden sm:flex">
             <BookOpen className="w-3.5 h-3.5" />
             Kılavuz
           </Button>
           <Button variant="ghost" size="sm" onClick={signOut} className="gap-1.5 text-muted-foreground text-xs">
             <LogOut className="w-3.5 h-3.5" />
-            Çıkış
+            <span className="hidden sm:inline">Çıkış</span>
           </Button>
         </div>
       </header>
 
-      <Tabs defaultValue="vfs" className="flex-1 flex flex-col min-h-0">
-        <div className="border-b border-border bg-card px-4 shrink-0">
-          <TabsList className="h-10 bg-transparent p-0 gap-4">
-            <TabsTrigger value="vfs" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-sm">
-              🌍 VFS Global
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+        <div className="border-b border-border bg-card px-3 md:px-4 shrink-0">
+          <TabsList className="h-10 bg-transparent p-0 gap-2 md:gap-4">
+            <TabsTrigger value="vfs" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
+              🌍 VFS
             </TabsTrigger>
-            <TabsTrigger value="idata" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-sm">
-              🇮🇹 iDATA İtalya
+            <TabsTrigger value="idata" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
+              🇮🇹 iDATA
             </TabsTrigger>
           </TabsList>
         </div>
 
+        {/* Mobile Sidebar Sheet */}
+        {isMobile && (
+          <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
+            <SheetContent side="left" className="w-[320px] p-0 overflow-y-auto">
+              {activeTab === "vfs" ? <VfsSidebarContent t={t} /> : <IdataSidebarContent />}
+            </SheetContent>
+          </Sheet>
+        )}
+
         {/* ========== VFS TAB ========== */}
         <TabsContent value="vfs" className="mt-0 flex-1 min-h-0">
           <div className="flex h-[calc(100vh-105px)]">
-            {/* LEFT SIDEBAR — Settings */}
-            <aside
-              className={`shrink-0 border-r border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
-                sidebarOpen ? "w-[340px]" : "w-0 border-r-0"
-              }`}
-              style={{ height: "calc(100vh - 105px)" }}
-            >
-              <div className="w-[340px] h-full overflow-y-auto overflow-x-hidden">
-                <div className="p-3 space-y-1">
-                  <SidebarSection icon={<Network className="w-3.5 h-3.5" />} title="Proxy & Durum" defaultOpen>
-                    <ProxySettings configId={t.configId} />
-                  </SidebarSection>
-
-                  <SidebarSection icon={<Globe className="w-3.5 h-3.5" />} title="Randevu Ayarları" defaultOpen>
-                    <ControlPanel
-                      country={t.country}
-                      setCountry={t.setCountry}
-                      city={t.city}
-                      setCity={t.setCity}
-                      visaCategory={t.visaCategory}
-                      setVisaCategory={t.setVisaCategory}
-                      visaSubcategory={t.visaSubcategory}
-                      setVisaSubcategory={t.setVisaSubcategory}
-                      personCount={t.personCount}
-                      setPersonCount={t.setPersonCount}
-                      interval={t.interval}
-                      setIntervalValue={t.setIntervalValue}
-                      keepAlive={t.keepAlive}
-                      setKeepAlive={t.setKeepAlive}
-                      status={t.status}
-                      onStart={t.startTracking}
-                      onStop={t.stopTracking}
-                    />
-                  </SidebarSection>
-
-                  <SidebarSection icon={<Settings className="w-3.5 h-3.5" />} title="Bot & Ülke Ayarları">
-                    <BotSettingsPanel />
-                  </SidebarSection>
+            {/* LEFT SIDEBAR — Desktop only */}
+            {!isMobile && (
+              <aside
+                className={`shrink-0 border-r border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
+                  sidebarOpen ? "w-[340px]" : "w-0 border-r-0"
+                }`}
+                style={{ height: "calc(100vh - 105px)" }}
+              >
+                <div className="w-[340px] h-full overflow-y-auto overflow-x-hidden">
+                  <VfsSidebarContent t={t} />
                 </div>
-              </div>
-            </aside>
+              </aside>
+            )}
 
             {/* MAIN CONTENT */}
             <main className="flex-1 min-w-0">
               <ScrollArea className="h-full">
-                <div className="p-4 md:p-6 space-y-5 max-w-[1400px]">
+                <div className="p-3 md:p-6 space-y-4 md:space-y-5 max-w-[1400px]">
                   {/* VNC Canlı Ekranlar */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                     <VncViewer title="🌍 VFS Bot Ekranı" pathPrefix="/vfs" />
                     <VncViewer title="🇮🇹 iDATA Bot Ekranı" pathPrefix="/idata" />
                   </div>
 
                   {/* Top cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                     <ModuleStatus
                       status={t.status}
                       configId={t.configId}
@@ -197,29 +241,24 @@ const Index = () => {
         {/* ========== iDATA TAB ========== */}
         <TabsContent value="idata" className="mt-0 flex-1 min-h-0">
           <div className="flex h-[calc(100vh-105px)]">
-            {/* LEFT SIDEBAR */}
-            <aside
-              className={`shrink-0 border-r border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
-                sidebarOpen ? "w-[340px]" : "w-0 border-r-0"
-              }`}
-              style={{ height: "calc(100vh - 105px)" }}
-            >
-              <div className="w-[340px] h-full overflow-y-auto overflow-x-hidden">
-                <div className="p-3 space-y-1">
-                  <SidebarSection icon={<Settings className="w-3.5 h-3.5" />} title="iDATA Kontrol Paneli" defaultOpen>
-                    <IdataControlPanel />
-                  </SidebarSection>
-                  <SidebarSection icon={<Globe className="w-3.5 h-3.5" />} title="Bot & Ülke Ayarları">
-                    <BotSettingsPanel />
-                  </SidebarSection>
+            {/* LEFT SIDEBAR — Desktop only */}
+            {!isMobile && (
+              <aside
+                className={`shrink-0 border-r border-border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out ${
+                  sidebarOpen ? "w-[340px]" : "w-0 border-r-0"
+                }`}
+                style={{ height: "calc(100vh - 105px)" }}
+              >
+                <div className="w-[340px] h-full overflow-y-auto overflow-x-hidden">
+                  <IdataSidebarContent />
                 </div>
-              </div>
-            </aside>
+              </aside>
+            )}
 
             {/* MAIN CONTENT */}
             <main className="flex-1 min-w-0">
               <ScrollArea className="h-full">
-                <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-6xl">
+                <div className="p-3 md:p-6 space-y-4 md:space-y-6 max-w-6xl">
                   <IdataAccounts />
                   <IdataTrackingLogs />
                 </div>

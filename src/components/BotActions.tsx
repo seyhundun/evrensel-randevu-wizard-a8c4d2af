@@ -112,7 +112,7 @@ export default function BotActions({
   return (
     <Card className="p-4 space-y-3">
       <h3 className="text-sm font-semibold text-foreground">Bot İşlemleri</h3>
-      <div className="grid grid-cols-1 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
         {actions.map((action) => (
           <Button
             key={action.label}
