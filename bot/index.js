@@ -2989,9 +2989,9 @@ async function tickAllCheckboxes(page) {
 
     for (const pos of remaining) {
       await page.mouse.click(pos.x, pos.y);
-      await delay(400, 700);
+      await delay(1000, 1200);
       await page.mouse.click(pos.x, pos.y);
-      await delay(400, 700);
+      await delay(1000, 1200);
     }
 
     // Form event tekrar
