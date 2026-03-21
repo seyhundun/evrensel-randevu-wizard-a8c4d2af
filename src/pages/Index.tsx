@@ -103,6 +103,12 @@ function IdataSidebarContent() {
 function VfsRightSidebarContent({ t }: { t: ReturnType<typeof useTracking> }) {
   return (
     <div className="p-3 space-y-3">
+      <ApplicantList
+        applicants={t.applicants}
+        onUpdate={t.updateApplicant}
+        personCount={t.personCount}
+        setPersonCount={t.setPersonCount}
+      />
       <VfsAccounts />
       <TrackingLogs configId={t.configId} />
     </div>
@@ -266,12 +272,6 @@ const Index = () => {
                     checksCount={t.checksCount}
                     onSimulateFound={t.simulateFound}
                     configId={t.configId}
-                  />
-                  <ApplicantList
-                    applicants={t.applicants}
-                    onUpdate={t.updateApplicant}
-                    personCount={t.personCount}
-                    setPersonCount={t.setPersonCount}
                   />
                 </div>
               </ScrollArea>
