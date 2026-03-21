@@ -208,6 +208,29 @@ export default function VfsAccounts() {
     }
   };
 
+  const toggleBooking = async (id: string, enabled: boolean) => {
+    const { error } = await supabase
+      .from("vfs_accounts")
+      .update({ booking_enabled: enabled } as any)
+      .eq("id", id);
+    if (error) toast.error("Güncelleme hatası: " + error.message);
+    else toast.success(enabled ? "Hesap aktif edildi" : "Hesap pasif edildi");
+  };
+
+  const saveImapSettings = async (id: string) => {
+    const imap = editingImap[id];
+    if (!imap) return;
+    const { error } = await supabase
+      .from("vfs_accounts")
+      .update({ imap_host: imap.host || null, imap_password: imap.password || null } as any)
+      .eq("id", id);
+    if (error) toast.error("IMAP kayıt hatası: " + error.message);
+    else {
+      toast.success("IMAP ayarları kaydedildi");
+      setEditingImap((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    }
+  };
+
   const togglePassword = (id: string) => {
     setShowPasswords((prev) => ({ ...prev, [id]: !prev[id] }));
   };
