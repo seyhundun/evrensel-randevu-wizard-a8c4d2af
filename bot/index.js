@@ -4368,7 +4368,7 @@ async function checkManualBrowserRequest() {
 }
 
 async function openManualBrowser() {
-  console.log("\n🖥 MANUEL TARAYICI AÇILIYOR (Puppeteer KAPALI, tam kontrol)...");
+  console.log("\n🖥 MANUEL TARAYICI AÇILIYOR (sayfa açık kalacak)...");
   await loadProxySettingsFromDB();
   
   const activeIp = (PROXY_MODE !== "residential" && IP_LIST.length > 0) ? getNextIp() : null;
@@ -4378,7 +4378,7 @@ async function openManualBrowser() {
   try {
     const loginUrl = "https://visa.vfsglobal.com/tur/tr/fra/login";
     
-    // Puppeteer ile proxy auth'u geçir, sonra CDP bağlantısını kes
+    // Proxy/auth akışını geçmek için tarayıcıyı bot açar, sonra tamamen idle kalır.
     const { browser, page } = await launchBrowser(activeIp);
     const browserProcess = typeof browser.process === "function" ? browser.process() : null;
     
@@ -4392,24 +4392,9 @@ async function openManualBrowser() {
       await waitForCloudflareChallengeResolve(page, 60000);
     }
     
-    console.log("  [MANUAL] ✅ Sayfa yüklendi, Puppeteer bağlantısı kesiliyor...");
-    
-    // Tüm Puppeteer event listener'larını temizle — input müdahalesini durdur
-    try {
-      const cdp = await page.target().createCDPSession();
-      // Input domain'lerini devre dışı bırak
-      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 0, y: 0 }).catch(() => {});
-      await cdp.detach().catch(() => {});
-    } catch {}
-    
-    // Puppeteer CDP bağlantısını tamamen kopar
-    // Bu, proxy auth'u korurken input kontrolünü kullanıcıya verir
-    try {
-      browser.disconnect();
-    } catch {}
-    
-    console.log("  [MANUAL] ✅ TAM KONTROL SİZDE! Tıklama, yazma, her şey sizde.");
-    console.log("  [MANUAL] ⏳ Chrome'u kapattığınızda bot normal çalışmaya dönecek.\n");
+    console.log("  [MANUAL] ✅ Sayfa yüklendi. Tarayıcı açık bırakılıyor.");
+    console.log("  [MANUAL] ✅ TAM KONTROL SİZDE! Bot yeni komut göndermeyecek.");
+    console.log("  [MANUAL] ⏳ Siz pencereyi kapatana kadar bu oturum açık kalacak.\n");
 
     // Log to dashboard
     let logConfigId = null;
@@ -4418,15 +4403,26 @@ async function openManualBrowser() {
       if (configs.length > 0) logConfigId = configs[0].id;
     } catch {}
     if (logConfigId) {
-      await logStep(logConfigId, "manual_browser", `Manuel tarayıcı açıldı (CDP bağlantısı kesildi) | Proxy: ${proxyLabel}`);
+      await logStep(logConfigId, "manual_browser", `Manuel tarayıcı açıldı ve açık bırakıldı | Proxy: ${proxyLabel}`);
     }
 
-    // Chrome kapanana kadar bekle
+    // Chrome'u kullanıcı kapatana kadar bekle
     await new Promise((resolve) => {
-      if (!browserProcess) return resolve();
-      if (browserProcess.exitCode !== null) return resolve();
-      browserProcess.once("close", resolve);
-      browserProcess.once("exit", resolve);
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+
+      try {
+        browser.once("disconnected", finish);
+      } catch {}
+
+      if (!browserProcess) return;
+      if (browserProcess.exitCode !== null) return finish();
+      browserProcess.once("close", finish);
+      browserProcess.once("exit", finish);
     });
 
     console.log("  [MANUAL] 🔚 Tarayıcı kapatıldı, bot normal çalışmaya dönüyor.\n");
