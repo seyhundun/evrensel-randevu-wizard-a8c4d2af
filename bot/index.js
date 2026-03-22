@@ -4431,6 +4431,13 @@ async function main() {
       // DB'den güncel proxy ayarlarını yükle
       await loadProxySettingsFromDB();
 
+      // Manuel tarayıcı isteği kontrol et
+      const manualRequested = await checkManualBrowserRequest();
+      if (manualRequested) {
+        await openManualBrowser();
+        continue; // Manuel tarayıcı kapatıldıktan sonra normal döngüye dön
+      }
+
       // Bekleyen kayıtları kontrol et — başarısız olanları IP değiştirerek tekrar dene
       const pendingRegs = await fetchPendingRegistrations();
       if (pendingRegs.length > 0) {
