@@ -4376,33 +4376,18 @@ async function openManualBrowser() {
   console.log(`  [MANUAL] Proxy: ${proxyLabel}`);
   
   try {
-    // puppeteer-real-browser ile aç — proxy auth otomatik + turnstile desteği
+    // Proxy auth için tarayıcıyı bot açar, sonra bağlantıyı tamamen bırakır
     const { browser, page } = await launchBrowser(activeIp);
-    
+    const browserProcess = typeof browser.process === "function" ? browser.process() : null;
+
     const loginUrl = "https://visa.vfsglobal.com/tur/tr/fra/login";
     console.log(`  [MANUAL] VFS giriş sayfası açılıyor: ${loginUrl}`);
     await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
-    
-    // Puppeteer listener'larını kaldır — kullanıcıya tam kontrol ver
-    await page.evaluate(() => {
-      // Input interception'ları temizle
-      document.querySelectorAll("input, select, textarea, button").forEach(el => {
-        const clone = el.cloneNode(true);
-        el.parentNode?.replaceChild(clone, el);
-      });
-    }).catch(() => {});
-    
-    // CDP session'ı kapat — puppeteer artık sayfaya müdahale etmez
-    try {
-      const client = await page.target().createCDPSession();
-      await client.send("Input.setInterceptDrags", { enabled: false }).catch(() => {});
-      await client.detach().catch(() => {});
-    } catch {}
-    
+
     console.log("  [MANUAL] ✅ Sayfa açıldı — TAM KONTROL SİZDE!");
-    console.log("  [MANUAL] ✅ Yazı yazma, tıklama, form doldurma — her şey sizin elinizde.");
+    console.log("  [MANUAL] ✅ Bot tarayıcı bağlantısını bırakıyor; yazı yazma ve tıklama artık sizde.");
     console.log("  [MANUAL] ⏳ Tarayıcıyı kapattığınızda bot normal çalışmaya dönecek.\n");
-    
+
     // Log to dashboard
     let logConfigId = null;
     try {
@@ -4412,12 +4397,21 @@ async function openManualBrowser() {
     if (logConfigId) {
       await logStep(logConfigId, "manual_browser", `Manuel tarayıcı açıldı (tam kontrol) | Proxy: ${proxyLabel}`);
     }
-    
-    // Tarayıcı kapatılana kadar bekle
+
+    // En kritik nokta: Puppeteer bağlantısını tamamen kopar
+    try {
+      await page.bringToFront().catch(() => {});
+      browser.disconnect();
+    } catch {}
+
+    // Chrome açık kalır, kullanıcı kapatana kadar beklenir
     await new Promise((resolve) => {
-      browser.on("disconnected", resolve);
+      if (!browserProcess) return resolve();
+      if (browserProcess.exitCode !== null) return resolve();
+      browserProcess.once("close", resolve);
+      browserProcess.once("exit", resolve);
     });
-    
+
     console.log("  [MANUAL] 🔚 Tarayıcı kapatıldı, bot normal çalışmaya dönüyor.\n");
   } catch (err) {
     console.error("  [MANUAL] Hata:", err.message);
