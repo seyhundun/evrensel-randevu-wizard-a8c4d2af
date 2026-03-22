@@ -4368,7 +4368,7 @@ async function checkManualBrowserRequest() {
 }
 
 async function openManualBrowser() {
-  console.log("\n🖥 MANUEL TARAYICI AÇILIYOR (tam kontrol)...");
+  console.log("\n🖥 MANUEL TARAYICI AÇILIYOR (Puppeteer KAPALI, tam kontrol)...");
   await loadProxySettingsFromDB();
   
   const activeIp = (PROXY_MODE !== "residential" && IP_LIST.length > 0) ? getNextIp() : null;
@@ -4376,17 +4376,86 @@ async function openManualBrowser() {
   console.log(`  [MANUAL] Proxy: ${proxyLabel}`);
   
   try {
-    // Proxy/IP bot tarafından hazırlanır, sonra tarayıcı kullanıcıya bırakılır
-    const { browser, page } = await launchBrowser(activeIp);
-    const browserProcess = typeof browser.process === "function" ? browser.process() : null;
-
+    const { spawn } = require("child_process");
     const loginUrl = "https://visa.vfsglobal.com/tur/tr/fra/login";
+    
+    // Chrome yolunu bul
+    const chromePaths = [
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/google-chrome",
+      "/usr/bin/chromium-browser",
+      "/usr/bin/chromium",
+      "/snap/bin/chromium",
+    ];
+    let chromePath = null;
+    for (const p of chromePaths) {
+      if (fs.existsSync(p)) { chromePath = p; break; }
+    }
+    if (!chromePath) {
+      try {
+        const puppeteer = require("puppeteer");
+        chromePath = puppeteer.executablePath();
+      } catch {}
+    }
+    if (!chromePath) {
+      console.error("  [MANUAL] ❌ Chrome bulunamadı!");
+      return;
+    }
+    console.log(`  [MANUAL] Chrome: ${chromePath}`);
+    
+    const userDataDir = createTempUserDataDir();
+    
+    // Chrome argümanları — otomasyon bayrakları YOK, saf Chrome
+    const chromeArgs = [
+      `--user-data-dir=${userDataDir}`,
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--window-size=1920,1080",
+      "--start-maximized",
+      "--disable-blink-features=AutomationControlled",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-infobars",
+    ];
+    
+    // Proxy ayarla
+    if (PROXY_ENABLED) {
+      if (PROXY_MODE === "residential" && EVOMI_PROXY_USER) {
+        const rp = getResidentialProxyUrl();
+        chromeArgs.push(`--proxy-server=http://${rp.host}:${rp.port}`);
+        // Proxy auth için minimal Chrome extension
+        const extDir = path.join(os.tmpdir(), `proxy-auth-${Date.now()}`);
+        fs.mkdirSync(extDir, { recursive: true });
+        fs.writeFileSync(path.join(extDir, "manifest.json"), JSON.stringify({
+          version: "1.0.0", manifest_version: 2, name: "Proxy Auth",
+          permissions: ["proxy","tabs","unlimitedStorage","storage","webRequest","webRequestBlocking","<all_urls>"],
+          background: { scripts: ["background.js"] },
+        }));
+        const escapedPass = rp.pass.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        fs.writeFileSync(path.join(extDir, "background.js"),
+          `chrome.webRequest.onAuthRequired.addListener(function(d){return{authCredentials:{username:"${rp.user}",password:"${escapedPass}"}};},{urls:["<all_urls>"]},["blocking"]);`
+        );
+        chromeArgs.push(`--load-extension=${extDir}`);
+        console.log(`  [MANUAL] 🏠 Residential proxy extension yüklendi`);
+      } else if (activeIp) {
+        const proxyPort = 10800 + IP_LIST.indexOf(activeIp);
+        chromeArgs.push(`--proxy-server=socks5://127.0.0.1:${proxyPort}`);
+      }
+    }
+    
+    chromeArgs.push(loginUrl);
+    
     console.log(`  [MANUAL] VFS giriş sayfası açılıyor: ${loginUrl}`);
-    await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
-
-    console.log("  [MANUAL] ✅ Sayfa açıldı — TAM KONTROL SİZDE!");
-    console.log("  [MANUAL] ✅ Bot manuel oturumu izlemeye geçti; tıklama ve yazma sizde.");
-    console.log("  [MANUAL] ⏳ Tarayıcıyı kapattığınızda bot normal çalışmaya dönecek.\n");
+    const chromeProcess = spawn(chromePath, chromeArgs, {
+      detached: false,
+      stdio: "ignore",
+      env: { ...process.env, DISPLAY: process.env.DISPLAY || ":99" },
+    });
+    
+    console.log(`  [MANUAL] ✅ Chrome açıldı — TAM KONTROL SİZDE! (PID: ${chromeProcess.pid})`);
+    console.log("  [MANUAL] ✅ Puppeteer DEVRE DIŞI — tıklama, yazma, her şey sizde.");
+    console.log("  [MANUAL] ⏳ Chrome'u kapattığınızda bot normal çalışmaya dönecek.\n");
 
     // Log to dashboard
     let logConfigId = null;
@@ -4395,31 +4464,16 @@ async function openManualBrowser() {
       if (configs.length > 0) logConfigId = configs[0].id;
     } catch {}
     if (logConfigId) {
-      await logStep(logConfigId, "manual_browser", `Manuel tarayıcı açıldı (tam kontrol) | Proxy: ${proxyLabel}`);
+      await logStep(logConfigId, "manual_browser", `Manuel tarayıcı açıldı (Puppeteer KAPALI) | Proxy: ${proxyLabel}`);
     }
 
-    await page.bringToFront().catch(() => {});
-
-    // Tarayıcıyı kapatma; kullanıcı manuel olarak kapatana kadar sadece bekle.
+    // Chrome kapanana kadar bekle
     await new Promise((resolve) => {
-      let resolved = false;
-      const done = () => {
-        if (resolved) return;
-        resolved = true;
-        resolve();
-      };
-
-      if (browserProcess) {
-        if (browserProcess.exitCode !== null) return done();
-        browserProcess.once("close", done);
-        browserProcess.once("exit", done);
-      }
-
-      try {
-        browser.once("disconnected", done);
-      } catch {}
+      chromeProcess.once("close", resolve);
+      chromeProcess.once("exit", resolve);
     });
-
+    
+    cleanupUserDataDir(userDataDir);
     console.log("  [MANUAL] 🔚 Tarayıcı kapatıldı, bot normal çalışmaya dönüyor.\n");
   } catch (err) {
     console.error("  [MANUAL] Hata:", err.message);
