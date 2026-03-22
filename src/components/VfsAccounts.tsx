@@ -341,7 +341,19 @@ export default function VfsAccounts() {
         <UserCheck className="w-5 h-5 text-primary" />
         VFS Hesapları
       </h2>
-      <p className="helper-text">Bot bu hesapları sırayla kullanır. Yeni hesap kaydı için "Yeni Kayıt" seçin.</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="helper-text flex-1">Bot bu hesapları sırayla kullanır. Yeni hesap kaydı için "Yeni Kayıt" seçin.</p>
+        <Button 
+          size="sm" 
+          variant="outline" 
+          onClick={requestManualBrowser} 
+          disabled={manualBrowserLoading}
+          className="gap-1.5 border-primary/30 hover:bg-primary/10"
+        >
+          {manualBrowserLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+          Manuel Giriş (Yeni IP)
+        </Button>
+      </div>
 
       {/* Add new account */}
       <Card className="p-4 space-y-3">
