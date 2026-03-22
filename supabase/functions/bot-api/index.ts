@@ -367,6 +367,39 @@ Deno.serve(async (req) => {
             { headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+
+        // Request manual browser launch
+        if (body.action === "request_manual_browser") {
+          await supabase
+            .from("bot_settings")
+            .update({ value: "true" })
+            .eq("key", "manual_browser_requested");
+          return new Response(
+            JSON.stringify({ ok: true, message: "Manuel tarayıcı isteği gönderildi" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Check if manual browser is requested (bot polls this)
+        if (body.action === "check_manual_browser") {
+          const { data } = await supabase
+            .from("bot_settings")
+            .select("value")
+            .eq("key", "manual_browser_requested")
+            .single();
+          const requested = data?.value === "true";
+          if (requested) {
+            // Clear the flag
+            await supabase
+              .from("bot_settings")
+              .update({ value: "false" })
+              .eq("key", "manual_browser_requested");
+          }
+          return new Response(
+            JSON.stringify({ ok: true, requested }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
         
         // Regular log posting (JSON)
         let config_id = body.config_id;
