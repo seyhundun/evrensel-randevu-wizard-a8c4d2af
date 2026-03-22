@@ -294,6 +294,21 @@ export default function VfsAccounts() {
     setShowPasswords((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const requestManualBrowser = async () => {
+    setManualBrowserLoading(true);
+    try {
+      const { error } = await supabase.functions.invoke("bot-api", {
+        body: { action: "request_manual_browser" },
+      });
+      if (error) throw error;
+      toast.success("Manuel tarayıcı açma isteği gönderildi! Bot yeni IP ile VFS sayfasını açacak.");
+    } catch (err: any) {
+      toast.error("İstek gönderilemedi: " + (err?.message || "Bilinmeyen hata"));
+    } finally {
+      setManualBrowserLoading(false);
+    }
+  };
+
   const statusBadge = (account: VfsAccount) => {
     if (account.registration_status === "pending") {
       return <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Kayıt Bekliyor</Badge>;
