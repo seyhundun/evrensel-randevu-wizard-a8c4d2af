@@ -85,6 +85,7 @@ export default function VfsAccounts() {
   const [regOtpInputs, setRegOtpInputs] = useState<Record<string, string>>({});
   const [addMode, setAddMode] = useState<"existing" | "register" | "bulk">("existing");
   const [editingImap, setEditingImap] = useState<Record<string, { host: string; password: string }>>({});
+  const [manualBrowserLoading, setManualBrowserLoading] = useState(false);
   // Bulk Gmail alias state
   const [bulkBaseEmail, setBulkBaseEmail] = useState("");
   const [bulkPhone, setBulkPhone] = useState("");
