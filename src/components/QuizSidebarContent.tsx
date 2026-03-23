@@ -12,7 +12,7 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   Network, Globe, Wifi, MapPin, Activity, Shield, Loader2,
-  Clock, RefreshCw, Save
+  Clock, RefreshCw, Save, Eye, EyeOff, Key
 } from "lucide-react";
 
 function timeAgo(dateStr: string): string {
