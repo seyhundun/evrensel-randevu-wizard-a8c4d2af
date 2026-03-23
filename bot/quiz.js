@@ -1008,42 +1008,92 @@ async function handlePostLoginOnboarding(page) {
 
 async function processQuiz(url) {
   var browser, page;
+  var TARGET_URL = url; // Hedef URL - bot SADECE buraya odaklanacak
   try {
-    // 1) Chrome aç - HER ZAMAN önce tarayıcıyı aç
+    // 1) Chrome aç
     var result = await launchBrowser();
     browser = result.browser; page = result.page;
 
-    // 2) Sayfaya git
-    console.log("Sayfaya gidiliyor: " + url);
-    await supabaseInsertLog("Sayfaya gidiliyor: " + url, "info");
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+    // 2) SADECE hedef URL'ye git
+    console.log("Hedef sayfaya gidiliyor: " + TARGET_URL);
+    await supabaseInsertLog("Hedef sayfaya gidiliyor: " + TARGET_URL, "info");
+    await page.goto(TARGET_URL, { waitUntil: "networkidle2", timeout: 30000 });
     await randomDelay(2000, 4000);
     await forceDesktopWindow(page);
-    page = await reopenInFreshTabIfNeeded(browser, page, url);
+    page = await reopenInFreshTabIfNeeded(browser, page, TARGET_URL);
 
     // 3) Cookie popup kapat
     await dismissCookies(page);
 
     // 4) Login gerekiyorsa yap
-    var loginOk = await handleEmailLogin(page);
-    if (!loginOk) {
-      console.log("Email giris basarisiz - VNC uzerinden manuel giris yapabilirsiniz");
-      await supabaseInsertLog("Email giris basarisiz - manuel giris gerekli", "warning");
+    var needsLogin = await page.evaluate(function() {
+      var loginIndicators = ["log in", "sign in", "login", "signin", "s'identifier", "s'inscrire"];
+      var text = (document.body.textContent || "").toLowerCase();
+      var hasLoginButton = false;
+      var buttons = document.querySelectorAll("button, a");
+      for (var i = 0; i < buttons.length; i++) {
+        var btnText = (buttons[i].textContent || "").toLowerCase().trim();
+        for (var j = 0; j < loginIndicators.length; j++) {
+          if (btnText === loginIndicators[j] || btnText.indexOf(loginIndicators[j]) !== -1) {
+            hasLoginButton = true; break;
+          }
+        }
+        if (hasLoginButton) break;
+      }
+      var hasEmailInput = !!document.querySelector('input[type="email"], input[name="email"], input[type="password"]');
+      return hasLoginButton || hasEmailInput;
+    });
+
+    if (needsLogin) {
+      console.log("Login gerekli, giris yapiliyor...");
+      var loginOk = await handleEmailLogin(page);
+      if (!loginOk) {
+        console.log("Email giris basarisiz - VNC uzerinden manuel giris yapabilirsiniz");
+        await supabaseInsertLog("Email giris basarisiz - manuel giris gerekli", "warning");
+      } else {
+        // Login sonrası HEDEF URL'ye geri dön (bot başka yere gitmesin)
+        await randomDelay(2000, 3000);
+        var currentUrl = (await page.url()) || "";
+        if (currentUrl.indexOf(new URL(TARGET_URL).pathname) === -1) {
+          console.log("Login sonrasi hedef URL'ye geri donuluyor: " + TARGET_URL);
+          await supabaseInsertLog("Hedef URL'ye geri donuluyor", "info");
+          await page.goto(TARGET_URL, { waitUntil: "networkidle2", timeout: 30000 });
+          await randomDelay(2000, 3000);
+          await dismissCookies(page);
+        }
+      }
+    } else {
+      console.log("Login gerekli degil, devam ediliyor...");
     }
 
-    // 5) Sayfanın yüklenmesini bekle
-    await randomDelay(3000, 5000);
+    // 5) SADECE bu sayfadaki quizi çöz
+    await randomDelay(2000, 3000);
     await dismissCookies(page);
 
-    // 5.5) Login sonrasi onboarding varsa gec
-    await handlePostLoginOnboarding(page);
-    await randomDelay(2000, 3500);
-    await dismissCookies(page);
+    console.log("=== Hedef sayfada quiz cozuluyor ===");
+    await supabaseInsertLog("Hedef sayfada quiz analiz ediliyor: " + TARGET_URL, "info");
 
-    // 6) Anket arama ve çözme döngüsü
-    await findAndSolveSurveys(page);
+    var currentPageUrl = await page.url();
+    var ai = await analyzeWithAI(currentPageUrl);
 
-    console.log("Tarayici acik kaliyor - VNC den kontrol edebilirsiniz.");
+    if (ai.questions.length > 0) {
+      var fillResult = await fillAnswers(page, ai.questions);
+      var msg = "Quiz tamamlandi: " + fillResult.filled + "/" + ai.questions.length + " soru dolduruldu";
+      console.log(msg);
+      await supabaseInsertLog(msg, fillResult.failed > 0 ? "warning" : "success");
+
+      // Submit butonu varsa tıkla
+      await randomDelay(1000, 2000);
+      await agentStep(page, "'Submit', 'Gonder', 'Complete', 'Finish', 'Done', 'Next' gibi anketi tamamlayan bir buton varsa tikla.", "Anket sorulari dolduruldu, simdi gonderilecek.");
+      await randomDelay(2000, 3000);
+    } else {
+      console.log("Bu sayfada soru bulunamadi");
+      await supabaseInsertLog("Hedef sayfada soru bulunamadi - VNC ile kontrol edin", "warning");
+    }
+
+    // 6) Tarayıcıyı açık bırak - BAŞKA SAYFAYA GİTME
+    console.log("Gorev tamamlandi. Tarayici acik kaliyor - VNC den kontrol edebilirsiniz.");
+    await supabaseInsertLog("Gorev tamamlandi, tarayici acik", "success");
     await new Promise(function(resolve) { browser.on("disconnected", resolve); });
   } catch (err) {
     console.error("Quiz hatasi:", err.message);
