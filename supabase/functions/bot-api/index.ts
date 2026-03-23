@@ -39,7 +39,6 @@ Deno.serve(async (req) => {
         })
       );
 
-      // Get available VFS accounts (active or cooldown expired)
       const now = new Date().toISOString();
       const { data: accounts } = await supabase
         .from("vfs_accounts")
@@ -78,7 +77,6 @@ Deno.serve(async (req) => {
     if (req.method === "POST") {
       const contentType = req.headers.get("content-type") || "";
       
-      // Check if this is an account status update
       if (contentType.includes("application/json")) {
         const bodyText = await req.text();
         const body = JSON.parse(bodyText);
@@ -110,7 +108,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Get manual OTP for account
         if (body.action === "get_account_otp") {
           const { account_id } = body;
           if (!account_id) {
@@ -130,7 +127,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Clear manual OTP after use
         if (body.action === "clear_account_otp") {
           const { account_id } = body;
           await supabase
@@ -143,7 +139,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Set OTP requested (bot signals it needs OTP)
         if (body.action === "set_otp_requested") {
           const { account_id } = body;
           await supabase
@@ -156,7 +151,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Get accounts pending registration
         if (body.action === "get_pending_registrations") {
           const { data } = await supabase
             .from("vfs_accounts")
@@ -168,7 +162,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Bot signals it needs registration OTP (email or sms)
         if (body.action === "set_registration_otp_needed") {
           const { account_id, otp_type } = body;
           await supabase
@@ -181,7 +174,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Get registration OTP entered by user
         if (body.action === "get_registration_otp") {
           const { account_id } = body;
           const { data } = await supabase
@@ -196,7 +188,6 @@ Deno.serve(async (req) => {
         }
 
         // ===== iDATA LOGIN OTP ENDPOINTS =====
-        // Bot signals it needs login OTP
         if (body.action === "idata_set_login_otp_requested") {
           const { account_id } = body;
           await supabase
@@ -209,7 +200,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Bot polls for login OTP
         if (body.action === "idata_get_login_otp") {
           const { account_id } = body;
           const { data } = await supabase
@@ -223,7 +213,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Bot clears login OTP after use
         if (body.action === "idata_clear_login_otp") {
           const { account_id } = body;
           await supabase
@@ -237,7 +226,6 @@ Deno.serve(async (req) => {
         }
 
         // ===== iDATA ENDPOINTS =====
-        // Get iDATA accounts pending registration
         if (body.action === "get_idata_pending_registrations") {
           const { data } = await supabase
             .from("idata_accounts")
@@ -249,7 +237,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Bot logs iDATA activity
         if (body.action === "idata_log") {
           const { status: logStatus, message, screenshot_base64 } = body;
           let screenshot_url: string | null = null;
@@ -273,18 +260,17 @@ Deno.serve(async (req) => {
             .insert({ status: logStatus || "info", message, screenshot_url });
           if (logErr) throw logErr;
 
-          // Send SMS for appointment-related statuses
           if (["appt_found", "appt_booked", "appt_payment_page"].includes(logStatus)) {
             try {
               const funcUrl = `${supabaseUrl}/functions/v1/send-sms`;
               const loginUrl = "https://it-tr-appointment.idata.com.tr/tr/membership/login";
               let smsText = "";
               if (logStatus === "appt_booked") {
-                smsText = `🎉 iDATA Randevu Alındı!\n${message || ""}\n\nGiriş: ${loginUrl}`;
+                smsText = `🎉 iDATA Randevu Alındı!\\n${message || ""}\\n\\nGiriş: ${loginUrl}`;
               } else if (logStatus === "appt_payment_page") {
-                smsText = `💳 iDATA Ödeme Sayfası!\n${message || ""}\n\nGiriş: ${loginUrl}`;
+                smsText = `💳 iDATA Ödeme Sayfası!\\n${message || ""}\\n\\nGiriş: ${loginUrl}`;
               } else {
-                smsText = `🎉 iDATA Randevu Açıldı!\n${message || ""}\n\nHemen giriş yapın: ${loginUrl}`;
+                smsText = `🎉 iDATA Randevu Açıldı!\\n${message || ""}\\n\\nHemen giriş yapın: ${loginUrl}`;
               }
               await fetch(funcUrl, {
                 method: "POST",
@@ -300,9 +286,8 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Bot syncs scraped city→office mappings
         if (body.action === "sync_idata_city_offices") {
-          const { mappings } = body; // [{city, office_name, office_value}]
+          const { mappings } = body;
           if (Array.isArray(mappings) && mappings.length > 0) {
             for (const m of mappings) {
               await supabase
@@ -319,7 +304,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Bot marks iDATA registration complete or failed
         if (body.action === "complete_idata_registration") {
           const { account_id, success } = body;
           await supabase
@@ -335,7 +319,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Bot marks registration complete or failed
         if (body.action === "complete_registration") {
           const { account_id, success } = body;
           await supabase
@@ -353,7 +336,6 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Clear screenshot_requested flag after bot takes screenshot
         if (body.action === "clear_screenshot_requested") {
           const { config_id: cfgId } = body;
           if (cfgId) {
@@ -368,7 +350,7 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Request manual browser launch
+        // Request manual browser launch (with proxy via bot)
         if (body.action === "request_manual_browser") {
           await supabase
             .from("bot_settings")
@@ -376,6 +358,49 @@ Deno.serve(async (req) => {
             .eq("key", "manual_browser_requested");
           return new Response(
             JSON.stringify({ ok: true, message: "Manuel tarayıcı isteği gönderildi" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Request manual browser launch WITHOUT proxy (clean Chrome on DISPLAY=:99)
+        if (body.action === "request_manual_noproxy") {
+          const { data: existing } = await supabase
+            .from("bot_settings")
+            .select("id")
+            .eq("key", "manual_noproxy_requested")
+            .single();
+          if (existing) {
+            await supabase
+              .from("bot_settings")
+              .update({ value: "true" })
+              .eq("key", "manual_noproxy_requested");
+          } else {
+            await supabase
+              .from("bot_settings")
+              .insert({ key: "manual_noproxy_requested", value: "true", label: "Manuel proxy'siz tarayıcı isteği" });
+          }
+          return new Response(
+            JSON.stringify({ ok: true, message: "Proxy'siz manuel tarayıcı isteği gönderildi" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Check if manual noproxy browser is requested (bot polls this)
+        if (body.action === "check_manual_noproxy") {
+          const { data } = await supabase
+            .from("bot_settings")
+            .select("value")
+            .eq("key", "manual_noproxy_requested")
+            .single();
+          const requested = data?.value === "true";
+          if (requested) {
+            await supabase
+              .from("bot_settings")
+              .update({ value: "false" })
+              .eq("key", "manual_noproxy_requested");
+          }
+          return new Response(
+            JSON.stringify({ ok: true, requested }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
@@ -389,7 +414,6 @@ Deno.serve(async (req) => {
             .single();
           const requested = data?.value === "true";
           if (requested) {
-            // Clear the flag
             await supabase
               .from("bot_settings")
               .update({ value: "false" })
@@ -436,13 +460,12 @@ Deno.serve(async (req) => {
 
         if (status === "found") {
           await supabase.from("tracking_configs").update({ is_active: false }).eq("id", config_id);
-          // Send SMS notification
           try {
             const funcUrl = `${supabaseUrl}/functions/v1/send-sms`;
             await fetch(funcUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseKey}` },
-              body: JSON.stringify({ message: `🎉 VFS Randevu Bulundu!\n${message || "Hemen kontrol edin!"}` }),
+              body: JSON.stringify({ message: `🎉 VFS Randevu Bulundu!\\n${message || "Hemen kontrol edin!"}` }),
             });
           } catch (smsErr) { console.error("SMS gönderim hatası:", smsErr); }
         }
