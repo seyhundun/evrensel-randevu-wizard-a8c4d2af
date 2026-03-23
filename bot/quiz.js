@@ -677,6 +677,47 @@ async function fillTextInput(page, q) {
   return false;
 }
 
+async function handlePostLoginOnboarding(page) {
+  try {
+    var currentUrl = (await page.url()) || "";
+    if (currentUrl.toLowerCase().indexOf("onboarding") === -1) return false;
+
+    console.log("Post-login onboarding ekrani algilandi, devam ediliyor...");
+    await supabaseInsertLog("Post-login onboarding algilandi", "info");
+    await dismissCookies(page);
+
+    var step = await agentStep(
+      page,
+      "Onboarding ekranindasin. Survey/profil tamamlama adimini devam ettir. 'Complete Your Profile' karti, 'Continue', 'Start', 'Take Survey', 'Go to homepage', 'Explore on my own' gibi quiz veya anasayfaya geciren guvenli bir link/buton varsa tikla. Email verification bekleyen alanlara takilma.",
+      "Amac quiz/survey akisini devam ettirmek. Email verify zorunluysa homepage veya survey tarafina gecis seceneklerini tercih et."
+    );
+
+    if (step.status === "found") {
+      await randomDelay(2500, 4500);
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+      await dismissCookies(page);
+      await supabaseInsertLog("Onboarding ekrani gecildi", "success");
+      return true;
+    }
+
+    var fallbackClicked = await clickByText(page, "button, a, div[role='button'], input[type='submit']", [
+      "take me to the homepage", "explore on my own", "continue", "start", "take survey", "complete your profile"
+    ], ["verify email", "google", "apple", "facebook"]);
+
+    if (fallbackClicked) {
+      await randomDelay(2500, 4500);
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+      await dismissCookies(page);
+      await supabaseInsertLog("Onboarding fallback ile gecildi", "success");
+      return true;
+    }
+  } catch (err) {
+    await supabaseInsertLog("Onboarding gecis hatasi: " + err.message, "warning");
+  }
+
+  return false;
+}
+
 // ==================== ANA İŞLEM ====================
 
 async function processQuiz(url) {
@@ -706,6 +747,11 @@ async function processQuiz(url) {
 
     // 5) Sayfanın yüklenmesini bekle
     await randomDelay(3000, 5000);
+    await dismissCookies(page);
+
+    // 5.5) Login sonrasi onboarding varsa gec
+    await handlePostLoginOnboarding(page);
+    await randomDelay(2000, 3500);
     await dismissCookies(page);
 
     // 6) AI Analiz (login sonrası sayfa içeriği daha doğru analiz edilir)
