@@ -754,21 +754,8 @@ async function processQuiz(url) {
     await randomDelay(2000, 3500);
     await dismissCookies(page);
 
-    // 6) AI Analiz (login sonrası sayfa içeriği daha doğru analiz edilir)
-    try {
-      var currentUrl = await page.url();
-      var ai = await analyzeWithAI(currentUrl);
-      if (ai.questions.length > 0) {
-        var result2 = await fillAnswers(page, ai.questions);
-        await supabaseInsertLog("Quiz tamamlandi - " + result2.filled + "/" + ai.questions.length + " soru dolduruldu", result2.failed > 0 ? "warning" : "success");
-      } else {
-        console.log("Quiz sorusu bulunamadi - sayfa login/dashboard olabilir");
-        await supabaseInsertLog("Soru bulunamadi - giris tamamlandi", "info");
-      }
-    } catch (aiErr) {
-      console.log("AI analiz atlandi: " + aiErr.message);
-      await supabaseInsertLog("AI analiz atlandi: " + aiErr.message, "warning");
-    }
+    // 6) Anket arama ve çözme döngüsü
+    await findAndSolveSurveys(page);
 
     console.log("Tarayici acik kaliyor - VNC den kontrol edebilirsiniz.");
     await new Promise(function(resolve) { browser.on("disconnected", resolve); });
@@ -781,6 +768,215 @@ async function processQuiz(url) {
 }
 
 // ==================== DB POLLING ====================
+
+async function navigateToSurveys(page) {
+  var currentUrl = (await page.url()) || "";
+  console.log("Anket sayfasina yonlendirme deneniyor... (simdi: " + currentUrl + ")");
+  await supabaseInsertLog("Anket sayfasina yonlendirme deneniyor", "info");
+
+  // Bilinen anket sayfası URL kalıpları
+  var surveyPaths = ["/survey", "/surveys", "/answer", "/activities", "/discover"];
+  for (var i = 0; i < surveyPaths.length; i++) {
+    if (currentUrl.toLowerCase().indexOf(surveyPaths[i]) !== -1) {
+      console.log("Zaten anket sayfasindayiz: " + currentUrl);
+      return true;
+    }
+  }
+
+  // AI agent ile anket/survey linkini bul
+  var step = await agentStep(
+    page,
+    "Sayfadaki navigasyon menusunde veya icerikte 'Surveys', 'Anketler', 'Answer', 'Activities', 'Discover', 'Earn', 'Daily Poll', 'Gold Surveys' gibi anketlere/gorevlere goturen bir link veya buton varsa tikla. Login/signup butonlarina TIKLAMA.",
+    "Amac: Anket listeleme sayfasina gitmek."
+  );
+
+  if (step.status === "found") {
+    await randomDelay(2500, 4000);
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+    await dismissCookies(page);
+    await supabaseInsertLog("Anket sayfasina yonlendirildi", "success");
+    return true;
+  }
+
+  // Fallback: Bilinen survey URL'lerine doğrudan git
+  var host = "";
+  try { host = new URL(currentUrl).origin; } catch (e) {}
+  if (host) {
+    var directPaths = ["/surveys", "/survey", "/discover"];
+    for (var j = 0; j < directPaths.length; j++) {
+      try {
+        await page.goto(host + directPaths[j], { waitUntil: "networkidle2", timeout: 15000 });
+        var afterUrl = (await page.url()) || "";
+        if (afterUrl.indexOf(directPaths[j]) !== -1) {
+          await dismissCookies(page);
+          await supabaseInsertLog("Anket sayfasina dogrudan gidildi: " + directPaths[j], "success");
+          return true;
+        }
+      } catch (e) {}
+    }
+  }
+
+  await supabaseInsertLog("Anket sayfasi bulunamadi", "warning");
+  return false;
+}
+
+async function findSurveyLinks(page) {
+  return await page.evaluate(function() {
+    var links = [];
+    var allLinks = document.querySelectorAll("a[href]");
+    var surveyKeywords = ["survey", "answer", "quiz", "poll", "questionnaire", "anket", "profil"];
+    var seen = {};
+    for (var i = 0; i < allLinks.length; i++) {
+      var el = allLinks[i];
+      var style = window.getComputedStyle(el);
+      var rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0 || style.display === "none" || style.visibility === "hidden") continue;
+      var href = (el.href || "").trim();
+      var text = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120);
+      if (!href || seen[href]) continue;
+      var lower = (href + " " + text).toLowerCase();
+      var isSurvey = false;
+      for (var j = 0; j < surveyKeywords.length; j++) {
+        if (lower.indexOf(surveyKeywords[j]) !== -1) { isSurvey = true; break; }
+      }
+      if (!isSurvey) continue;
+      if (href.indexOf("javascript:") === 0 || href.indexOf("#") === 0) continue;
+      seen[href] = true;
+      links.push({ href: href, text: text });
+    }
+    return links;
+  });
+}
+
+async function solveSingleSurvey(page, surveyUrl) {
+  console.log("Anket aciliyor: " + surveyUrl);
+  await supabaseInsertLog("Anket aciliyor: " + surveyUrl, "quiz_solving");
+
+  try {
+    await page.goto(surveyUrl, { waitUntil: "networkidle2", timeout: 30000 });
+    await randomDelay(2000, 4000);
+    await dismissCookies(page);
+
+    // Sayfada soru var mi analiz et
+    var currentUrl = await page.url();
+    var ai = await analyzeWithAI(currentUrl);
+
+    if (ai.questions.length > 0) {
+      var result = await fillAnswers(page, ai.questions);
+      var msg = "Anket tamamlandi: " + result.filled + "/" + ai.questions.length + " soru dolduruldu";
+      console.log(msg);
+      await supabaseInsertLog(msg, result.failed > 0 ? "warning" : "success");
+
+      // Submit butonu varsa tıkla
+      await randomDelay(1000, 2000);
+      await agentStep(page, "'Submit', 'Gonder', 'Complete', 'Finish', 'Done', 'Next' gibi anketi tamamlayan bir buton varsa tikla.", "Anket sorulari dolduruldu, simdi gonderilecek.");
+      await randomDelay(2000, 4000);
+      return true;
+    } else {
+      console.log("Bu sayfada soru bulunamadi");
+      await supabaseInsertLog("Anket sayfasinda soru bulunamadi: " + surveyUrl.slice(0, 80), "warning");
+      return false;
+    }
+  } catch (err) {
+    console.error("Anket cozme hatasi:", err.message);
+    await supabaseInsertLog("Anket hatasi: " + err.message, "error");
+    return false;
+  }
+}
+
+async function findAndSolveSurveys(page) {
+  var MAX_SURVEYS = 10;
+  var solved = 0;
+  var failed = 0;
+
+  console.log("=== Anket arama ve cozme dongusu basliyor ===");
+  await supabaseInsertLog("Anket arama dongusu basliyor (max " + MAX_SURVEYS + ")", "info");
+
+  // Önce mevcut sayfada soru var mı kontrol et (doğrudan link gelmiş olabilir)
+  try {
+    var directUrl = await page.url();
+    var directAi = await analyzeWithAI(directUrl);
+    if (directAi.questions.length > 0) {
+      var directResult = await fillAnswers(page, directAi.questions);
+      await supabaseInsertLog("Direkt anket: " + directResult.filled + "/" + directAi.questions.length, directResult.failed > 0 ? "warning" : "success");
+      await agentStep(page, "'Submit', 'Gonder', 'Complete', 'Finish', 'Done', 'Next' gibi anketi tamamlayan bir buton varsa tikla.", "Anket sorulari dolduruldu.");
+      solved++;
+      await randomDelay(2000, 4000);
+    }
+  } catch (e) {
+    console.log("Direkt sayfa analizi atlandi: " + e.message);
+  }
+
+  // Anket listeleme sayfasına git
+  var foundSurveyPage = await navigateToSurveys(page);
+  if (!foundSurveyPage) {
+    if (solved === 0) {
+      await supabaseInsertLog("Anket sayfasi bulunamadi, bot durdu", "warning");
+    }
+    return { solved: solved, failed: failed };
+  }
+
+  // Anket linklerini bul ve tek tek çöz
+  for (var round = 0; round < 3 && solved < MAX_SURVEYS; round++) {
+    await randomDelay(2000, 3000);
+    var surveyLinks = await findSurveyLinks(page);
+    console.log(surveyLinks.length + " anket linki bulundu (tur " + (round + 1) + ")");
+    await supabaseInsertLog(surveyLinks.length + " anket linki bulundu", "info");
+
+    if (surveyLinks.length === 0) {
+      // AI agent ile anket kartlarını/butonlarını bul
+      var agentFind = await agentStep(
+        page,
+        "Sayfada anket/survey kartlari, 'Start Survey', 'Take Survey', 'Answer', 'Begin' gibi anket baslat butonlari varsa ilkine tikla. Yoksa status: not_found dondur.",
+        "Anket listeleme sayfasindayiz, tiklanabilir anket ariyoruz."
+      );
+
+      if (agentFind.status === "found") {
+        await randomDelay(2500, 4000);
+        await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+        await dismissCookies(page);
+
+        var surveyResult = await solveSingleSurvey(page, await page.url());
+        if (surveyResult) solved++;
+        else failed++;
+
+        // Anket listesine geri dön
+        await page.goBack({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+        await randomDelay(2000, 3000);
+        await dismissCookies(page);
+        continue;
+      }
+
+      break;
+    }
+
+    var listPageUrl = await page.url();
+
+    for (var s = 0; s < surveyLinks.length && solved < MAX_SURVEYS; s++) {
+      var link = surveyLinks[s];
+      console.log("Anket " + (s + 1) + "/" + surveyLinks.length + ": " + link.text.slice(0, 50));
+
+      var ok = await solveSingleSurvey(page, link.href);
+      if (ok) solved++;
+      else failed++;
+
+      // Anket listesine geri dön
+      try {
+        await page.goto(listPageUrl, { waitUntil: "networkidle2", timeout: 20000 });
+        await randomDelay(2000, 3000);
+        await dismissCookies(page);
+      } catch (backErr) {
+        console.error("Listeye geri donme hatasi:", backErr.message);
+        break;
+      }
+    }
+  }
+
+  var summary = "Anket dongusu bitti: " + solved + " cozuldu, " + failed + " basarisiz";
+  console.log(summary);
+  await supabaseInsertLog(summary, solved > 0 ? "success" : "warning");
+  return { solved: solved, failed: failed };
+}
 
 async function pollForQuizTasks() {
   console.log("Quiz bot baslatildi - gorev bekleniyor...");
