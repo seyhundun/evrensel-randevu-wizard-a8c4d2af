@@ -40,6 +40,106 @@ async function supabaseInsertLog(message, status) {
   });
 }
 
+// ==================== AI AJAN ====================
+
+async function extractPageElements(page) {
+  return await page.evaluate(function() {
+    var results = [];
+    var selectors = 'button, a, input, select, textarea, div[role="button"], label, [onclick]';
+    var nodes = document.querySelectorAll(selectors);
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var style = window.getComputedStyle(el);
+      var rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0 || style.display === "none" || style.visibility === "hidden" || style.opacity === "0") continue;
+      var cookieParent = el.closest('[id*="cookie" i], [class*="cookie" i], [id*="consent" i], [class*="consent" i], [role="dialog"], [aria-modal="true"], [class*="gdpr" i], [id*="gdpr" i]');
+      results.push({
+        index: results.length,
+        tag: el.tagName.toLowerCase(),
+        type: el.type || null,
+        text: (el.textContent || el.value || "").replace(/\s+/g, " ").trim().slice(0, 100),
+        id: el.id || null,
+        name: el.name || null,
+        className: (el.className || "").toString().slice(0, 100),
+        href: el.href ? el.href.slice(0, 150) : null,
+        placeholder: el.placeholder || null,
+        ariaLabel: el.getAttribute("aria-label") || null,
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+        isInCookieBanner: !!cookieParent
+      });
+    }
+    return results;
+  });
+}
+
+async function askAgent(task, elements, context) {
+  var fetch = (await import("node-fetch")).default;
+  var res = await fetch(SUPABASE_URL + "/functions/v1/dom-agent", {
+    method: "POST",
+    headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ elements: elements, task: task, context: context || null }),
+  });
+  if (!res.ok) {
+    var errText = await res.text();
+    throw new Error("Agent hatasi (" + res.status + "): " + errText);
+  }
+  return await res.json();
+}
+
+async function executeAgentActions(page, actions) {
+  var allElements = await page.$$('button, a, input, select, textarea, div[role="button"], label, [onclick]');
+  var visibleElements = [];
+  for (var i = 0; i < allElements.length; i++) {
+    var visible = await page.evaluate(function(el) {
+      var style = window.getComputedStyle(el);
+      var rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    }, allElements[i]);
+    if (visible) visibleElements.push(allElements[i]);
+  }
+
+  for (var j = 0; j < actions.length; j++) {
+    var action = actions[j];
+    console.log("  Agent action: " + action.type + " [" + action.elementIndex + "] - " + action.reason);
+    await supabaseInsertLog("Agent: " + action.type + " - " + action.reason, "info");
+
+    if (action.type === "none" || action.type === "wait") { await randomDelay(1000, 2000); continue; }
+
+    var targetEl = visibleElements[action.elementIndex];
+    if (!targetEl) { console.log("  Element bulunamadi: index " + action.elementIndex); continue; }
+
+    await targetEl.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
+    await randomDelay(300, 600);
+
+    if (action.type === "click") {
+      await humanClick(page, targetEl);
+      await randomDelay(500, 1500);
+    } else if (action.type === "type" && action.value) {
+      await humanClick(page, targetEl);
+      await randomDelay(200, 400);
+      await page.keyboard.down("Control").catch(function() {});
+      await page.keyboard.press("A").catch(function() {});
+      await page.keyboard.up("Control").catch(function() {});
+      await page.keyboard.press("Backspace").catch(function() {});
+      for (var k = 0; k < action.value.length; k++) {
+        await page.keyboard.type(action.value[k], { delay: 40 + Math.random() * 60 });
+      }
+      await randomDelay(300, 600);
+    }
+  }
+}
+
+async function agentStep(page, task, context) {
+  var elements = await extractPageElements(page);
+  console.log("  " + elements.length + " element tespit edildi, AI'a soruluyor...");
+  var result = await askAgent(task, elements, context);
+  console.log("  Agent cevabi: " + result.status + " - " + result.message);
+  if (result.status === "found" && result.actions && result.actions.length > 0) {
+    await executeAgentActions(page, result.actions);
+  }
+  return result;
+}
+
 // ==================== AI ANALİZ ====================
 
 async function analyzeWithAI(url) {
@@ -313,8 +413,7 @@ async function getLoginAccount() {
 }
 
 async function handleEmailLogin(page) {
-  console.log("Login ekrani kontrol ediliyor...");
-
+  console.log("Login: AI agent ile kontrol ediliyor...");
   var account = await getLoginAccount();
   if (!account) return false;
 
@@ -324,143 +423,85 @@ async function handleEmailLogin(page) {
   try {
     // ===== ADIM 1: ÇEREZLERİ KABUL ET =====
     console.log("  Adim 1: Cerezleri kabul ediliyor...");
-    for (var cookieTry = 0; cookieTry < 5; cookieTry++) {
-      await recoverFromSocialPopup(page);
-      var cookieDismissed = await dismissCookies(page);
-      if (cookieDismissed) break;
-      await randomDelay(1000, 1500);
-    }
+    await recoverFromSocialPopup(page);
+    await dismissCookies(page);
     await randomDelay(1500, 2500);
 
-    // ===== ADIM 2: LOGIN SAYFASINA GİT =====
-    // Eğer login formu yoksa, "Log In" butonunu ara ve tıkla
-    var emailSelector = 'input[type="email"], input[name="email"], input[name="username"], input[name="login"], input[id*="email"], input[id*="user"], input[autocomplete="username"], input[placeholder*="mail" i], input[placeholder*="email" i]';
-    var passwordSelector = 'input[type="password"], input[name="password"], input[id*="password"], input[autocomplete="current-password"]';
-    var emailInput = await page.$(emailSelector);
-
-    if (!emailInput) {
-      console.log("  Adim 2: Login sayfasi araniyor...");
-      // Önce sayfada "Log In" / "Sign In" navigasyon butonu ara (header vb.)
-      var navLoginClicked = await page.evaluate(function() {
-        var links = document.querySelectorAll('a, button');
-        for (var i = 0; i < links.length; i++) {
-          var el = links[i];
-          var text = (el.textContent || "").trim().toLowerCase();
-          var href = (el.href || "").toLowerCase();
-          var style = window.getComputedStyle(el);
-          var rect = el.getBoundingClientRect();
-          if (rect.width === 0 || rect.height === 0 || style.display === "none" || style.visibility === "hidden") continue;
-          // Sadece kısa "Log In" / "Sign In" navigasyon butonları (kayıt butonları değil)
-          if ((text === "log in" || text === "login" || text === "sign in" || text === "giriş" || text === "giriş yap") && text.length < 15) {
-            // Google/Apple içermediğinden emin ol
-            if (text.indexOf("google") !== -1 || text.indexOf("apple") !== -1) continue;
-            el.click();
-            return true;
-          }
-          if (href.indexOf("/login") !== -1 || href.indexOf("/signin") !== -1 || href.indexOf("/sign-in") !== -1) {
-            if (text.indexOf("google") !== -1 || text.indexOf("apple") !== -1) continue;
-            el.click();
-            return true;
-          }
-        }
-        return false;
-      });
-
-      if (navLoginClicked) {
-        console.log("  Log In butonu tiklandi, sayfa yukleniyor...");
-        await supabaseInsertLog("Log In navigasyon butonu tiklandi", "info");
-        await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
-        await randomDelay(2000, 3000);
-        await recoverFromSocialPopup(page);
-        await dismissCookies(page);
-        emailInput = await page.$(emailSelector);
-      }
-    }
-
-    // ===== ADIM 3: "CONTINUE WITH EMAIL" BUTONUNA TIKLA =====
-    if (!emailInput) {
-      console.log("  Adim 3: Continue with Email butonu araniyor...");
+    // ===== ADIM 2: AI AGENT İLE LOGIN SAYFASINI BUL =====
+    console.log("  Adim 2: Login sayfasi araniyor (AI agent)...");
+    await supabaseInsertLog("Agent: Login sayfasi araniyor", "info");
+    var step1 = await agentStep(page, "Sayfada 'Log In', 'Sign In', 'Giris Yap' gibi bir navigasyon butonu veya linki varsa tikla. Email/kullanici adi input alani zaten gorunuyorsa status: already_done dondur. Google/Apple/Facebook butonlarina TIKLAMA.", null);
+    if (step1.status === "found") {
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+      await randomDelay(2000, 3000);
       await recoverFromSocialPopup(page);
       await dismissCookies(page);
-      var emailBtnClicked = await clickSwagbucksEmailButton(page);
-
-      if (emailBtnClicked) {
-        console.log("  Continue with Email tiklandi");
-        await supabaseInsertLog("Continue with Email tiklandi", "info");
-        await randomDelay(2500, 4000);
-        await recoverFromSocialPopup(page);
-        await dismissCookies(page);
-        emailInput = await page.$(emailSelector);
-      }
     }
 
-    // Son fallback: herhangi bir text/email input
-    if (!emailInput) {
-      emailInput = await page.$('input[type="text"], input[type="email"]');
+    // ===== ADIM 3: CONTINUE WITH EMAIL (AI Agent) =====
+    console.log("  Adim 3: Continue with Email araniyor (AI agent)...");
+    var step2 = await agentStep(page, "Sayfada 'Continue with Email', 'Email ile devam et' gibi bir buton varsa tikla. Email/kullanici input alani zaten gorunuyorsa status: already_done dondur. Google/Apple/Facebook butonlarina TIKLAMA.", null);
+    if (step2.status === "found") {
+      await randomDelay(2500, 4000);
+      await recoverFromSocialPopup(page);
+      await dismissCookies(page);
     }
 
-    if (!emailInput) {
-      console.log("  Email alani bulunamadi");
-      await supabaseInsertLog("Email alani bulunamadi", "warning");
+    // ===== ADIM 4: EMAIL GİR (AI Agent) =====
+    console.log("  Adim 4: Email giriliyor (AI agent)...");
+    await supabaseInsertLog("Agent: Email giriliyor", "info");
+    var step3 = await agentStep(page, "Email veya kullanici adi input alanini bul ve su degeri yaz: " + account.email, "Bu bir login formu. Email alanina yazi yazilacak.");
+    if (step3.status !== "found") {
+      console.log("  Agent: Email alani bulunamadi");
+      await supabaseInsertLog("Agent: Email alani bulunamadi", "warning");
       return false;
-    }
-
-    // ===== ADIM 4: EMAIL GİR =====
-    console.log("  Adim 4: Email giriliyor...");
-    await emailInput.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
-    await randomDelay(300, 500);
-    await humanClick(page, emailInput);
-    await randomDelay(300, 600);
-    await page.keyboard.down("Control").catch(function() {});
-    await page.keyboard.press("A").catch(function() {});
-    await page.keyboard.up("Control").catch(function() {});
-    await page.keyboard.press("Backspace").catch(function() {});
-    for (var j = 0; j < account.email.length; j++) {
-      await page.keyboard.type(account.email[j], { delay: 40 + Math.random() * 60 });
     }
     await supabaseInsertLog("Email dolduruldu", "info");
     await randomDelay(500, 1000);
 
-    // ===== ADIM 5: ŞİFRE GİR =====
-    var passwordInput = await page.$(passwordSelector);
-    if (!passwordInput) {
+    // ===== ADIM 5: ŞİFRE GİR (AI Agent) =====
+    console.log("  Adim 5: Sifre giriliyor (AI agent)...");
+    var step4 = await agentStep(page, "Sifre (password) input alanini bul ve su degeri yaz: " + account.password + ". Sifre alani yoksa 'Next', 'Continue', 'Devam' gibi ilerleme butonuna tikla.", "Login formu, email zaten girildi.");
+    if (step4.status === "found" && step4.actions) {
+      var hasPassword = false;
+      for (var a = 0; a < step4.actions.length; a++) {
+        if (step4.actions[a].type === "type") hasPassword = true;
+      }
+      if (!hasPassword) {
+        // Next/Continue'a tıklandı, şifre alanı henüz yok
+        await randomDelay(2000, 4000);
+        await recoverFromSocialPopup(page);
+        await dismissCookies(page);
+        console.log("  Adim 5b: Sifre alani tekrar araniyor...");
+        await agentStep(page, "Sifre (password) input alanini bul ve su degeri yaz: " + account.password, "Login formu ikinci adim, email girildi, simdi sifre girilecek.");
+      }
+    } else if (step4.status !== "found") {
+      // Fallback: Eski yöntemle şifre alanı ara
+      var passwordSelector = 'input[type="password"], input[name="password"], input[id*="password"]';
       await recoverFromSocialPopup(page);
-      // Devam / Next butonuna bas
       await clickByText(page, "button, a, div[role='button'], input[type='submit']", [
         "next", "continue", "devam", "ileri", "sonraki", "proceed", "submit"
       ], ["google", "apple", "facebook"]);
       await randomDelay(2000, 4000);
-      await recoverFromSocialPopup(page);
-      await dismissCookies(page);
       await page.waitForSelector(passwordSelector, { timeout: 10000 }).catch(function() {});
-      passwordInput = await page.$(passwordSelector);
-    }
-
-    if (!passwordInput) {
-      console.log("  Sifre alani bulunamadi");
-      await supabaseInsertLog("Sifre alani bulunamadi", "warning");
-      return false;
-    }
-
-    console.log("  Adim 5: Sifre giriliyor...");
-    await passwordInput.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
-    await humanClick(page, passwordInput);
-    await randomDelay(300, 600);
-    for (var m = 0; m < account.password.length; m++) {
-      await page.keyboard.type(account.password[m], { delay: 40 + Math.random() * 60 });
+      var passwordInput = await page.$(passwordSelector);
+      if (passwordInput) {
+        await humanClick(page, passwordInput);
+        await randomDelay(300, 600);
+        for (var m = 0; m < account.password.length; m++) {
+          await page.keyboard.type(account.password[m], { delay: 40 + Math.random() * 60 });
+        }
+      }
     }
     await supabaseInsertLog("Sifre dolduruldu", "info");
     await randomDelay(500, 1000);
 
-    // ===== ADIM 6: GİRİŞ YAP =====
-    console.log("  Adim 6: Giris yapiliyor...");
-    await recoverFromSocialPopup(page);
-    await dismissCookies(page);
-    await clickByText(page, "button, a, div[role='button'], input[type='submit']", [
-      "log in", "sign in", "login", "giriş", "oturum aç", "submit", "gönder"
-    ], ["google", "apple", "facebook", "create", "register", "kayıt", "join"]);
-    await randomDelay(3000, 6000);
+    // ===== ADIM 6: GİRİŞ YAP (AI Agent) =====
+    console.log("  Adim 6: Giris butonu araniyor (AI agent)...");
+    await supabaseInsertLog("Agent: Giris butonuna tiklaniyor", "info");
+    await agentStep(page, "'Log In', 'Sign In', 'Login', 'Giris Yap', 'Submit' gibi giris butonuna tikla. Google/Apple/Facebook/Create/Register butonlarina TIKLAMA.", "Login formu, email ve sifre girildi, simdi submit edilecek.");
 
+    await randomDelay(3000, 6000);
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
     await recoverFromSocialPopup(page);
     await dismissCookies(page);
@@ -478,95 +519,20 @@ async function handleEmailLogin(page) {
 // ==================== COOKIE POPUP KAPATMA ====================
 
 async function dismissCookies(page) {
-  for (var attempt = 0; attempt < 8; attempt++) {
-    try {
-      var dismissed = await page.evaluate(function() {
-        function isVisible(el) {
-          if (!el) return false;
-          var style = window.getComputedStyle(el);
-          var rect = el.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-        }
-
-        var keywords = [
-          "accept all", "accept", "allow all", "allow", "agree", "i agree", "got it", "ok", "okay",
-          "kabul", "kabul et", "hepsini kabul et", "tamam", "anladım", "çerezleri kabul et", "cookie kabul"
-        ];
-        var rejectWords = ["reject", "reject all", "more choices", "manage", "preferences", "ayar", "reddet", "tercih"];
-
-        var selectors = [
-          "button",
-          "a",
-          "div[role='button']",
-          "input[type='button']",
-          "input[type='submit']"
-        ];
-
-        var nodes = document.querySelectorAll(selectors.join(","));
-        var bestNode = null;
-        var bestScore = -9999;
-        for (var i = 0; i < nodes.length; i++) {
-          var node = nodes[i];
-          if (!isVisible(node)) continue;
-          var text = (node.textContent || node.value || "").toLowerCase().replace(/\s+/g, " ").trim();
-          if (!text) continue;
-          var lowered = text.toLowerCase();
-          var blocked = false;
-          for (var r = 0; r < rejectWords.length; r++) {
-            if (lowered.indexOf(rejectWords[r]) !== -1) { blocked = true; break; }
-          }
-          if (blocked) continue;
-          var rect = node.getBoundingClientRect();
-          var score = 0;
-          var cookieParent = node.closest('[id*="cookie" i], [class*="cookie" i], [aria-label*="cookie" i], [data-testid*="cookie" i], [id*="consent" i], [class*="consent" i], [aria-label*="consent" i], [data-testid*="consent" i], [role="dialog"], [aria-modal="true"]');
-          if (cookieParent) score += 120;
-          if (rect.top > window.innerHeight * 0.55) score += 80;
-          for (var j = 0; j < keywords.length; j++) {
-            if (text === keywords[j]) score += 200;
-            else if (text.indexOf(keywords[j]) !== -1) score += 120;
-          }
-          if (score > bestScore) {
-            bestScore = score;
-            bestNode = node;
-          }
-        }
-
-        if (bestNode && bestScore > 0) {
-          bestNode.scrollIntoView({ block: "center", behavior: "instant" });
-          bestNode.click();
-          return true;
-        }
-
-        var cookieContainers = document.querySelectorAll('[id*="cookie" i], [class*="cookie" i], [aria-label*="cookie" i], [data-testid*="cookie" i], [role="dialog"], [aria-modal="true"]');
-        for (var k = 0; k < cookieContainers.length; k++) {
-          var container = cookieContainers[k];
-          if (!isVisible(container)) continue;
-          var btns = container.querySelectorAll("button, a, div[role='button'], input[type='button'], input[type='submit']");
-          for (var m = 0; m < btns.length; m++) {
-            var btnText = (btns[m].textContent || btns[m].value || "").toLowerCase().replace(/\s+/g, " ").trim();
-            for (var n = 0; n < keywords.length; n++) {
-              if (btnText === keywords[n] || btnText.indexOf(keywords[n]) !== -1) {
-                btns[m].scrollIntoView({ block: "center", behavior: "instant" });
-                btns[m].click();
-                return true;
-              }
-            }
-          }
-        }
-
-        return false;
-      });
-      if (dismissed) {
-        console.log("Cookie popup kapatildi");
-        await randomDelay(700, 1200);
-        return true;
-      }
-    } catch (e) {}
-
-    await page.evaluate(function() { window.scrollTo(0, document.body.scrollHeight); }).catch(function() {});
-    await randomDelay(400, 800);
-    await page.evaluate(function() { window.scrollTo(0, 0); }).catch(function() {});
-    await randomDelay(400, 800);
+  try {
+    console.log("  Cookie: AI agent ile deneniyor...");
+    var agentResult = await agentStep(page, "Sayfadaki cookie/cerez kabul popup'ini kapat. 'Accept All', 'Kabul Et', 'Accept', 'Allow All', 'I Agree', 'Got it' gibi KABUL butonuna tikla. 'Reject', 'Manage', 'Preferences' gibi butonlara TIKLAMA. isInCookieBanner: true olan elementlere oncelik ver.", null);
+    if (agentResult.status === "found") {
+      console.log("  Cookie popup AI agent ile kapatildi");
+      await randomDelay(700, 1200);
+      return true;
+    }
+    if (agentResult.status === "already_done" || agentResult.status === "not_found") {
+      console.log("  Cookie popup bulunamadi veya zaten yok");
+      return false;
+    }
+  } catch (agentErr) {
+    console.log("  AI agent cookie hatasi: " + agentErr.message);
   }
   return false;
 }
