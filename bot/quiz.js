@@ -115,11 +115,11 @@ async function humanClick(page, element) {
 
 // ==================== GOOGLE LOGIN ====================
 
-async function getGoogleAccount() {
-  var accounts = await supabaseGet("quiz_accounts", "status=eq.active&platform=eq.google&order=last_used_at.asc.nullsfirst&limit=1");
+async function getLoginAccount() {
+  var accounts = await supabaseGet("quiz_accounts", "status=eq.active&order=last_used_at.asc.nullsfirst&limit=1");
   if (!accounts || accounts.length === 0) {
-    console.log("Aktif Google hesabi bulunamadi!");
-    await supabaseInsertLog("Aktif Google hesabi bulunamadi", "error");
+    console.log("Aktif giris hesabi bulunamadi!");
+    await supabaseInsertLog("Aktif giris hesabi bulunamadi", "error");
     return null;
   }
   var acc = accounts[0];
@@ -127,69 +127,68 @@ async function getGoogleAccount() {
   return acc;
 }
 
-async function handleGoogleLogin(page) {
-  console.log("Google login ekrani kontrol ediliyor...");
+async function handleEmailLogin(page) {
+  console.log("Login ekrani kontrol ediliyor...");
 
-  // Check if we're on a Google login page
-  var isGoogleLogin = await page.evaluate(function() {
-    var url = window.location.href;
-    return url.indexOf("accounts.google.com") !== -1 || url.indexOf("signin") !== -1;
-  });
+  var account = await getLoginAccount();
+  if (!account) return false;
 
-  if (!isGoogleLogin) {
-    // Check if there's a Google Sign In button on the page
-    var googleBtn = await page.$('button[data-provider="google"], a[href*="accounts.google.com"], button:has(img[alt*="Google"]), [data-action="google-login"], .google-sign-in, #google-signin-btn');
-    if (!googleBtn) {
-      // Try text-based search
-      var buttons = await page.$$("button, a");
+  console.log("Email ile giris yapiliyor: " + account.email);
+  await supabaseInsertLog("Email giris: " + account.email, "info");
+
+  try {
+    // Look for email input field
+    var emailInput = await page.$('input[type="email"], input[name="email"], input[name="username"], input[name="login"], input[id*="email"], input[id*="user"], input[placeholder*="mail"], input[placeholder*="email"]');
+    
+    if (!emailInput) {
+      // Try to find and click "Continue with Email" or login button first
+      var loginBtn = null;
+      var buttons = await page.$$("button, a, div[role='button']");
       for (var i = 0; i < buttons.length; i++) {
         var text = await page.evaluate(function(el) { return (el.textContent || "").toLowerCase(); }, buttons[i]);
-        if (text.indexOf("google") !== -1 || text.indexOf("sign in with") !== -1 || text.indexOf("log in with") !== -1) {
-          googleBtn = buttons[i];
+        if (text.indexOf("email") !== -1 || text.indexOf("e-posta") !== -1 || text.indexOf("sign in") !== -1 || text.indexOf("log in") !== -1 || text.indexOf("giriş") !== -1) {
+          loginBtn = buttons[i];
           break;
         }
       }
-    }
-    if (googleBtn) {
-      console.log("Google login butonu bulundu, tiklaniyor...");
-      await supabaseInsertLog("Google login butonu bulundu", "info");
-      await humanClick(page, googleBtn);
-      await randomDelay(3000, 5000);
-      // Wait for Google login page to load
-      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
-    } else {
-      console.log("Google login gerekmiyor veya buton bulunamadi");
-      return true; // No login needed
-    }
-  }
-
-  // Now we should be on Google login page
-  var account = await getGoogleAccount();
-  if (!account) return false;
-
-  console.log("Google hesabiyla giris yapiliyor: " + account.email);
-  await supabaseInsertLog("Google giris: " + account.email, "info");
-
-  try {
-    // Wait for email input
-    await page.waitForSelector('input[type="email"], input[name="identifier"]', { timeout: 10000 });
-    var emailInput = await page.$('input[type="email"], input[name="identifier"]');
-    if (emailInput) {
-      await humanClick(page, emailInput);
-      await randomDelay(300, 600);
-      // Type email
-      for (var j = 0; j < account.email.length; j++) {
-        await page.type('input[type="email"], input[name="identifier"]', account.email[j], { delay: 40 + Math.random() * 60 });
+      if (loginBtn) {
+        console.log("Login butonu bulundu, tiklaniyor...");
+        await humanClick(page, loginBtn);
+        await randomDelay(2000, 4000);
+        emailInput = await page.$('input[type="email"], input[name="email"], input[name="username"], input[name="login"], input[id*="email"], input[id*="user"], input[placeholder*="mail"], input[placeholder*="email"]');
       }
-      await randomDelay(500, 1000);
+    }
 
-      // Click Next
-      var nextBtn = await page.$('#identifierNext, button[type="submit"]');
+    if (!emailInput) {
+      // Fallback: first visible text/email input
+      emailInput = await page.$('input[type="text"], input[type="email"]');
+    }
+
+    if (!emailInput) {
+      console.log("Email alani bulunamadi - login gerekmiyor olabilir");
+      return true;
+    }
+
+    // Type email
+    await humanClick(page, emailInput);
+    await randomDelay(300, 600);
+    await page.evaluate(function(el) { el.value = ''; }, emailInput);
+    for (var j = 0; j < account.email.length; j++) {
+      await emailInput.type(account.email[j], { delay: 40 + Math.random() * 60 });
+    }
+    await randomDelay(500, 1000);
+
+    // Look for password field (might be on same page or next page)
+    var passwordInput = await page.$('input[type="password"]');
+    
+    if (!passwordInput) {
+      // Click Next/Continue button to go to password page
+      var nextBtn = await page.$('button[type="submit"], input[type="submit"]');
       if (!nextBtn) {
-        var allBtns = await page.$$("button, div[role='button']");
+        var allBtns = await page.$$("button, div[role='button'], a");
         for (var k = 0; k < allBtns.length; k++) {
           var btnText = await page.evaluate(function(el) { return (el.textContent || "").toLowerCase().trim(); }, allBtns[k]);
-          if (btnText === "next" || btnText === "ileri" || btnText === "sonraki" || btnText === "devam") {
+          if (btnText === "next" || btnText === "continue" || btnText === "devam" || btnText === "ileri" || btnText === "sonraki" || btnText === "giriş" || btnText === "sign in" || btnText === "log in") {
             nextBtn = allBtns[k];
             break;
           }
@@ -199,47 +198,44 @@ async function handleGoogleLogin(page) {
         await humanClick(page, nextBtn);
         await randomDelay(3000, 5000);
       }
+      await page.waitForSelector('input[type="password"]', { timeout: 10000 }).catch(function() {});
+      passwordInput = await page.$('input[type="password"]');
     }
 
-    // Wait for password input
-    await page.waitForSelector('input[type="password"]', { timeout: 15000 });
-    await randomDelay(500, 1000);
-    var passwordInput = await page.$('input[type="password"]');
     if (passwordInput) {
       await humanClick(page, passwordInput);
       await randomDelay(300, 600);
       for (var m = 0; m < account.password.length; m++) {
-        await page.type('input[type="password"]', account.password[m], { delay: 40 + Math.random() * 60 });
+        await passwordInput.type(account.password[m], { delay: 40 + Math.random() * 60 });
       }
       await randomDelay(500, 1000);
 
-      // Click Next/Sign in
-      var passNext = await page.$('#passwordNext, button[type="submit"]');
-      if (!passNext) {
+      // Click submit/login button
+      var submitBtn = await page.$('button[type="submit"], input[type="submit"]');
+      if (!submitBtn) {
         var allBtns2 = await page.$$("button, div[role='button']");
         for (var n = 0; n < allBtns2.length; n++) {
           var btnText2 = await page.evaluate(function(el) { return (el.textContent || "").toLowerCase().trim(); }, allBtns2[n]);
-          if (btnText2 === "next" || btnText2 === "sign in" || btnText2 === "giris" || btnText2 === "oturum ac") {
-            passNext = allBtns2[n];
+          if (btnText2 === "sign in" || btnText2 === "log in" || btnText2 === "login" || btnText2 === "giriş" || btnText2 === "oturum aç" || btnText2 === "submit" || btnText2 === "gönder") {
+            submitBtn = allBtns2[n];
             break;
           }
         }
       }
-      if (passNext) {
-        await humanClick(page, passNext);
-        await randomDelay(5000, 8000);
+      if (submitBtn) {
+        await humanClick(page, submitBtn);
+        await randomDelay(3000, 6000);
       }
     }
 
-    // Wait for redirect back to original site
-    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }).catch(function() {});
-    console.log("Google giris tamamlandi!");
-    await supabaseInsertLog("Google giris basarili: " + account.email, "success");
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+    console.log("Email giris tamamlandi!");
+    await supabaseInsertLog("Email giris basarili: " + account.email, "success");
     return true;
   } catch (err) {
-    console.error("Google giris hatasi:", err.message);
-    await supabaseInsertLog("Google giris hatasi: " + err.message, "error");
-    await supabaseUpdate("quiz_accounts", account.id, { fail_count: account.fail_count + 1 });
+    console.error("Email giris hatasi:", err.message);
+    await supabaseInsertLog("Email giris hatasi: " + err.message, "error");
+    await supabaseUpdate("quiz_accounts", account.id, { fail_count: (account.fail_count || 0) + 1 });
     return false;
   }
 }
@@ -372,10 +368,10 @@ async function processQuiz(url) {
     await dismissCookies(page);
 
     // 5) Google login gerekiyorsa yap
-    var loginOk = await handleGoogleLogin(page);
+    var loginOk = await handleEmailLogin(page);
     if (!loginOk) {
-      console.log("Google giris basarisiz - VNC uzerinden manuel giris yapabilirsiniz");
-      await supabaseInsertLog("Google giris basarisiz - manuel giris gerekli", "warning");
+      console.log("Email giris basarisiz - VNC uzerinden manuel giris yapabilirsiniz");
+      await supabaseInsertLog("Email giris basarisiz - manuel giris gerekli", "warning");
     }
 
     // 6) Sayfanin yuklenmesini bekle
