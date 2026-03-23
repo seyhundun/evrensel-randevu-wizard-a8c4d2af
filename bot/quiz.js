@@ -33,7 +33,7 @@ async function supabaseUpdate(table, id, data) {
 async function supabaseInsertLog(message, status) {
   status = status || "info";
   var fetch = (await import("node-fetch")).default;
-  await fetch(SUPABASE_URL + "/rest/v1/idata_tracking_logs", {
+  await fetch(SUPABASE_URL + "/rest/v1/quiz_tracking_logs", {
     method: "POST",
     headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({ message: "[QUIZ] " + message, status: status }),
