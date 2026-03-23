@@ -79,31 +79,40 @@ async function runGeminiEngine(url, account, settings) {
   if (!geminiApiKey) throw new Error("Gemini API key bulunamadı! bot_settings'e gemini_api_key ekleyin.");
 
   var proxyArgs = [];
-  if (settings.quiz_proxy_enabled !== "false") {
+  var proxyUser = "";
+  var proxyPass = "";
+  var useProxy = settings.quiz_proxy_enabled !== "false";
+
+  if (useProxy) {
     var proxyHost = settings.proxy_host || "core-residential.evomi-proxy.com";
     var proxyPort = settings.proxy_port || "1000";
-    proxyArgs = ["--proxy-server=" + proxyHost + ":" + proxyPort];
+    proxyArgs = ["--proxy-server=http://" + proxyHost + ":" + proxyPort];
+
+    proxyUser = settings.proxy_username || process.env.PROXY_USERNAME || "";
+    proxyPass = settings.proxy_password || process.env.PROXY_PASSWORD || "";
+
+    // Evomi proxy: ülke/şehir/session bilgilerini password'a ekle
+    if (proxyPass) {
+      var country = (settings.quiz_proxy_country || settings.proxy_country || "US").toLowerCase();
+      var region = settings.quiz_proxy_region || "";
+      var sessionId = "quiz" + Math.random().toString(36).slice(2, 10);
+      
+      var suffix = "_country-" + country;
+      if (region) suffix += "_city-" + region;
+      suffix += "_session-" + sessionId;
+      
+      proxyPass = proxyPass.split("_country-")[0].split("_session-")[0].split("_city-")[0];
+      proxyPass = proxyPass + suffix;
+    }
+
+    console.log("[GEMINI] Proxy: " + proxyHost + ":" + proxyPort + " | Ülke: " + (settings.quiz_proxy_country || "US"));
+    await supabaseInsertLog("Proxy aktif: " + proxyHost + " | Ülke: " + (settings.quiz_proxy_country || "US"), "info");
   }
 
-  console.log("[GEMINI] Tarayıcı açılıyor...");
-  await supabaseInsertLog("Gemini Motor: Tarayıcı açılıyor...", "info");
-
-  var browser = await puppeteer.launch({
-    headless: false,
-    defaultViewport: { width: 1920, height: 1080 },
-    args: [
-      "--no-sandbox", "--disable-setuid-sandbox",
-      "--display=" + (process.env.DISPLAY || ":99"),
-      ...proxyArgs,
-    ],
-    executablePath: process.env.CHROME_PATH || "/usr/bin/google-chrome-stable",
-  });
-
-  var page = await browser.newPage();
-
-  // Proxy auth
-  if (settings.quiz_proxy_enabled !== "false" && settings.proxy_username && settings.proxy_password) {
-    await page.authenticate({ username: settings.proxy_username, password: settings.proxy_password });
+  // Proxy auth — page.goto'dan ÖNCE çağrılmalı
+  if (useProxy && proxyUser && proxyPass) {
+    await page.authenticate({ username: proxyUser, password: proxyPass });
+    console.log("[GEMINI] Proxy auth ayarlandı: " + proxyUser);
   }
 
   try {
