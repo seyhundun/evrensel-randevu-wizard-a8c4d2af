@@ -1,6 +1,7 @@
 /**
- * Quiz/Anket Çözücü Bot v3.0 — Browser Use Cloud API
- * Puppeteer yerine Browser Use API kullanır
+ * Quiz/Anket Çözücü Bot v4.0 — Dual Engine
+ * Motor 1: Local Puppeteer + Gemini Vision (varsayılan, ücretsiz)
+ * Motor 2: Browser Use Cloud API (alternatif, ücretli)
  * Kullanım: node quiz.js [URL]
  */
 require("dotenv").config();
@@ -9,7 +10,6 @@ const SUPABASE_URL = process.env.SUPABASE_URL || "https://ocrpzwrsyiprfuzsyivf.s
 const SUPABASE_KEY = process.env.SUPABASE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jcnB6d3JzeWlwcmZ1enN5aXZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMDQ1NzksImV4cCI6MjA4ODg4MDU3OX0.5MzKGm6byd1zLxjgxaXyQq5VfPFo_CE2MhcXijIRarc";
 
 const BROWSER_USE_API = "https://api.browser-use.com/api/v2";
-const BROWSER_USE_API_KEY = process.env.BROWSER_USE_API_KEY || "";
 
 // ==================== SUPABASE HELPERS ====================
 
@@ -31,182 +31,24 @@ async function supabaseUpdate(table, id, data) {
   });
 }
 
-async function supabaseInsertLog(message, status) {
+async function supabaseInsertLog(message, status, screenshotUrl) {
   status = status || "info";
   var fetch = (await import("node-fetch")).default;
+  var body = { message: "[QUIZ] " + message, status: status };
+  if (screenshotUrl) body.screenshot_url = screenshotUrl;
   await fetch(SUPABASE_URL + "/rest/v1/quiz_tracking_logs", {
     method: "POST",
     headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify({ message: "[QUIZ] " + message, status: status }),
-  });
-}
-
-// ==================== BROWSER USE API ====================
-
-async function getBrowserUseApiKey() {
-  // Önce bot_settings'ten dene
-  try {
-    var settings = await supabaseGet("bot_settings", "key=eq.browser_use_api_key&limit=1");
-    if (settings && settings.length > 0 && settings[0].value) return settings[0].value;
-  } catch (e) {}
-  // Sonra env variable
-  if (BROWSER_USE_API_KEY) return BROWSER_USE_API_KEY;
-  // Son olarak Supabase edge function secrets'tan (sunucu tarafında)
-  return null;
-}
-
-async function getProxyCountry() {
-  try {
-    var settings = await supabaseGet("bot_settings", "select=key,value");
-    if (!settings || !Array.isArray(settings)) return "us";
-    var map = {};
-    for (var i = 0; i < settings.length; i++) map[settings[i].key] = settings[i].value;
-    if (map.quiz_proxy_enabled === "false") return null;
-    return (map.quiz_proxy_country || map.proxy_country || "US").toLowerCase();
-  } catch (e) {
-    return "us";
-  }
-}
-
-async function createBrowserUseTask(taskPrompt, startUrl, proxyCountry) {
-  var fetch = (await import("node-fetch")).default;
-  var apiKey = await getBrowserUseApiKey();
-  if (!apiKey) {
-    throw new Error("Browser Use API key bulunamadi! bot_settings veya .env dosyasinda BROWSER_USE_API_KEY tanimlayin.");
-  }
-
-  var body = {
-    task: taskPrompt,
-    llm: "gemini-2.5-flash",
-    startUrl: startUrl,
-    maxSteps: 100,
-    vision: true,
-    highlightElements: true,
-    sessionSettings: {
-      browserScreenWidth: 1920,
-      browserScreenHeight: 1080,
-    },
-  };
-
-  // Proxy ülke ayarı
-  if (proxyCountry) {
-    body.sessionSettings.proxyCountryCode = proxyCountry;
-  }
-
-  console.log("Browser Use task olusturuluyor...");
-  console.log("  Start URL: " + startUrl);
-  console.log("  Proxy: " + (proxyCountry || "yok"));
-  await supabaseInsertLog("Browser Use task olusturuluyor: " + startUrl, "info");
-
-  var res = await fetch(BROWSER_USE_API + "/tasks", {
-    method: "POST",
-    headers: {
-      "X-Browser-Use-API-Key": apiKey,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify(body),
   });
-
-  if (!res.ok) {
-    var errText = await res.text();
-    throw new Error("Browser Use task olusturulamadi (" + res.status + "): " + errText);
-  }
-
-  var data = await res.json();
-  console.log("Task olusturuldu: " + data.id);
-  await supabaseInsertLog("Browser Use task olusturuldu: " + data.id, "success");
-  return data;
 }
 
-async function pollTaskStatus(taskId) {
-  var fetch = (await import("node-fetch")).default;
-  var apiKey = await getBrowserUseApiKey();
-
-  var res = await fetch(BROWSER_USE_API + "/tasks/" + taskId + "/status", {
-    method: "GET",
-    headers: { "X-Browser-Use-API-Key": apiKey },
-  });
-
-  if (!res.ok) {
-    var errText = await res.text();
-    throw new Error("Task status alinamadi (" + res.status + "): " + errText);
-  }
-
-  return await res.json();
-}
-
-async function getTaskLogs(taskId) {
-  var fetch = (await import("node-fetch")).default;
-  var apiKey = await getBrowserUseApiKey();
-
-  var res = await fetch(BROWSER_USE_API + "/tasks/" + taskId + "/logs", {
-    method: "GET",
-    headers: { "X-Browser-Use-API-Key": apiKey },
-  });
-
-  if (!res.ok) return [];
-  var data = await res.json();
-  return data || [];
-}
-
-async function waitForTaskCompletion(taskId, maxWaitMs) {
-  maxWaitMs = maxWaitMs || 300000; // 5 dakika
-  var startTime = Date.now();
-  var lastLogCount = 0;
-
-  while (Date.now() - startTime < maxWaitMs) {
-    try {
-      var status = await pollTaskStatus(taskId);
-
-      // Log'ları al ve yenilerini göster
-      try {
-        var logs = await getTaskLogs(taskId);
-        if (Array.isArray(logs) && logs.length > lastLogCount) {
-          for (var i = lastLogCount; i < logs.length; i++) {
-            var log = logs[i];
-            var logMsg = (typeof log === "string") ? log : (log.message || log.step || JSON.stringify(log)).slice(0, 200);
-            console.log("  [BU] " + logMsg);
-            await supabaseInsertLog("Agent: " + logMsg.slice(0, 150), "info");
-          }
-          lastLogCount = logs.length;
-        }
-      } catch (logErr) {
-        // Log alma hatası kritik değil
-      }
-
-      if (status.status === "finished") {
-        console.log("Task tamamlandi!");
-        console.log("  Basarili: " + status.isSuccess);
-        console.log("  Maliyet: $" + (status.cost || "?"));
-        if (status.output) {
-          console.log("  Sonuc: " + (status.output || "").slice(0, 500));
-        }
-        await supabaseInsertLog(
-          "Task tamamlandi | Basarili: " + status.isSuccess + " | Maliyet: $" + (status.cost || "?"),
-          status.isSuccess ? "success" : "warning"
-        );
-        return status;
-      }
-
-      if (status.status === "stopped") {
-        console.log("Task durduruldu!");
-        await supabaseInsertLog("Task durduruldu", "warning");
-        return status;
-      }
-
-      // Hâlâ çalışıyor
-      console.log("  Task durumu: " + status.status + " (" + Math.round((Date.now() - startTime) / 1000) + "sn)");
-    } catch (pollErr) {
-      console.error("  Polling hatasi: " + pollErr.message);
-    }
-
-    // 5 saniye bekle
-    await new Promise(function(r) { setTimeout(r, 5000); });
-  }
-
-  console.log("Task zaman asimi (" + Math.round(maxWaitMs / 1000) + "sn)");
-  await supabaseInsertLog("Task zaman asimi", "error");
-  return { status: "timeout", isSuccess: false };
+async function getSettings() {
+  var settings = await supabaseGet("bot_settings", "select=key,value");
+  if (!settings || !Array.isArray(settings)) return {};
+  var map = {};
+  for (var i = 0; i < settings.length; i++) map[settings[i].key] = settings[i].value;
+  return map;
 }
 
 // ==================== HESAP YÖNETİMİ ====================
@@ -223,190 +65,419 @@ async function getLoginAccount() {
   return acc;
 }
 
+// ==================== MOTOR 1: PUPPETEER + GEMINI VISION ====================
+
+async function runGeminiEngine(url, account, settings) {
+  var puppeteer;
+  try { puppeteer = require("puppeteer"); } catch (e) {
+    try { puppeteer = require("puppeteer-core"); } catch (e2) {
+      throw new Error("Puppeteer yüklü değil! npm install puppeteer");
+    }
+  }
+
+  var geminiApiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || "";
+  if (!geminiApiKey) throw new Error("Gemini API key bulunamadı! bot_settings'e gemini_api_key ekleyin.");
+
+  var proxyArgs = [];
+  if (settings.quiz_proxy_enabled !== "false") {
+    var proxyHost = settings.proxy_host || "core-residential.evomi-proxy.com";
+    var proxyPort = settings.proxy_port || "1000";
+    proxyArgs = ["--proxy-server=" + proxyHost + ":" + proxyPort];
+  }
+
+  console.log("[GEMINI] Tarayıcı açılıyor...");
+  await supabaseInsertLog("Gemini Motor: Tarayıcı açılıyor...", "info");
+
+  var browser = await puppeteer.launch({
+    headless: false,
+    defaultViewport: { width: 1920, height: 1080 },
+    args: [
+      "--no-sandbox", "--disable-setuid-sandbox",
+      "--display=" + (process.env.DISPLAY || ":99"),
+      ...proxyArgs,
+    ],
+    executablePath: process.env.CHROME_PATH || "/usr/bin/google-chrome-stable",
+  });
+
+  var page = await browser.newPage();
+
+  // Proxy auth
+  if (settings.quiz_proxy_enabled !== "false" && settings.proxy_username && settings.proxy_password) {
+    await page.authenticate({ username: settings.proxy_username, password: settings.proxy_password });
+  }
+
+  try {
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+    await supabaseInsertLog("Sayfa yüklendi: " + url, "info");
+
+    var maxSteps = 30;
+    var stepCount = 0;
+
+    while (stepCount < maxSteps) {
+      stepCount++;
+      console.log("[GEMINI] Adım " + stepCount + "/" + maxSteps);
+
+      // Ekran görüntüsü al
+      var screenshot = await page.screenshot({ encoding: "base64", type: "jpeg", quality: 70 });
+      var currentUrl = page.url();
+
+      // Gemini'ye gönder
+      var action = await askGeminiVision(geminiApiKey, screenshot, currentUrl, account, stepCount);
+      
+      if (!action) {
+        console.log("[GEMINI] Gemini cevap vermedi, durduruluyor");
+        await supabaseInsertLog("Gemini cevap vermedi, durduruluyor", "warning");
+        break;
+      }
+
+      await supabaseInsertLog("Adım " + stepCount + ": " + action.description, "info");
+
+      if (action.done) {
+        console.log("[GEMINI] Görev tamamlandı: " + action.description);
+        await supabaseInsertLog("Görev tamamlandı: " + action.description, "success");
+        break;
+      }
+
+      // Aksiyonu uygula
+      try {
+        await executeAction(page, action);
+        await page.waitForTimeout(1500);
+      } catch (actionErr) {
+        console.error("[GEMINI] Aksiyon hatası:", actionErr.message);
+        await supabaseInsertLog("Aksiyon hatası: " + actionErr.message, "warning");
+      }
+    }
+
+    // Son ekran görüntüsü
+    var finalScreenshot = await page.screenshot({ encoding: "base64", type: "jpeg", quality: 70 });
+    await supabaseInsertLog("Quiz tamamlandı - " + stepCount + " adım", "success", "data:image/jpeg;base64," + finalScreenshot);
+
+  } catch (err) {
+    console.error("[GEMINI] Hata:", err.message);
+    await supabaseInsertLog("Hata: " + err.message, "error");
+    throw err;
+  } finally {
+    // Tarayıcıyı açık bırak VNC izleme için
+    console.log("[GEMINI] Tarayıcı açık bırakıldı (VNC)");
+    await supabaseInsertLog("Tarayıcı açık bırakıldı (VNC izleme)", "info");
+  }
+}
+
+async function askGeminiVision(apiKey, screenshotBase64, currentUrl, account, step) {
+  var fetch = (await import("node-fetch")).default;
+
+  var systemPrompt = `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip TEK BİR aksiyon belirle.
+
+GÖREV: Anket sitesine gir, giriş yap, anketleri bul ve çöz.
+
+HESAP BİLGİLERİ:
+- Email: ${account.email}
+- Şifre: ${account.password}
+
+KURALLAR:
+1. Çerez popup varsa → kabul et
+2. Giriş gerekiyorsa → email/şifre ile giriş yap (Google/Facebook KULLANMA)
+3. Anket sayfasını bul → "Surveys", "Answer", "Earn" menülerine tıkla
+4. Soruları çöz → mantıklı cevaplar ver
+5. "Next", "Continue" ile ilerle
+6. Tamamlandıysa done: true döndür
+
+JSON formatında SADECE BİR aksiyon döndür:
+{
+  "action": "click" | "type" | "scroll" | "wait" | "navigate",
+  "selector": "CSS selector veya metin açıklaması",
+  "value": "type için yazılacak metin",
+  "description": "ne yapıyorsun kısa açıklama",
+  "done": false
+}
+
+Örnekler:
+- Çerez kabul: {"action":"click","selector":"Accept All butonuna tıkla","description":"Çerez popup kabul ediliyor","done":false}
+- Metin yaz: {"action":"type","selector":"input[type=email]","value":"test@test.com","description":"Email giriliyor","done":false}
+- Tamamlandı: {"action":"wait","selector":"","description":"Anket başarıyla tamamlandı","done":true}`;
+
+  var body = {
+    contents: [{
+      parts: [
+        { text: "Mevcut URL: " + currentUrl + "\nAdım: " + step + "\n\nEkran görüntüsünü analiz et ve bir sonraki aksiyonu belirle." },
+        { inlineData: { mimeType: "image/jpeg", data: screenshotBase64 } }
+      ]
+    }],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 500,
+      responseMimeType: "application/json"
+    }
+  };
+
+  try {
+    var res = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+
+    if (!res.ok) {
+      var errText = await res.text();
+      console.error("[GEMINI] API hata:", res.status, errText);
+      throw new Error("Gemini API hata: " + res.status);
+    }
+
+    var data = await res.json();
+    var text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    
+    // JSON parse
+    var jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return null;
+  } catch (err) {
+    console.error("[GEMINI] Vision hata:", err.message);
+    return null;
+  }
+}
+
+async function executeAction(page, action) {
+  switch (action.action) {
+    case "click":
+      // Önce CSS selector dene
+      try {
+        if (action.selector && !action.selector.includes(" ")) {
+          await page.click(action.selector);
+          return;
+        }
+      } catch (e) {}
+      // Metin bazlı tıklama
+      var text = action.selector || action.description;
+      var clicked = await page.evaluate(function(searchText) {
+        var elements = document.querySelectorAll("button, a, input[type=submit], input[type=button], [role=button], label, span, div[onclick]");
+        for (var i = 0; i < elements.length; i++) {
+          var el = elements[i];
+          var elText = (el.textContent || el.value || "").trim().toLowerCase();
+          if (elText.includes(searchText.toLowerCase())) {
+            el.click();
+            return true;
+          }
+        }
+        return false;
+      }, text);
+      if (!clicked) {
+        console.log("  Metin bulunamadı, koordinat tıklama deneniyor...");
+      }
+      break;
+
+    case "type":
+      try {
+        // Önce alanı temizle
+        await page.click(action.selector);
+        await page.evaluate(function(sel) {
+          var el = document.querySelector(sel);
+          if (el) el.value = "";
+        }, action.selector);
+        // İnsan gibi yaz
+        for (var c = 0; c < action.value.length; c++) {
+          await page.keyboard.type(action.value[c]);
+          await page.waitForTimeout(30 + Math.random() * 70);
+        }
+      } catch (typeErr) {
+        // Fallback: Tüm input'ları dene
+        await page.evaluate(function(val, desc) {
+          var inputs = document.querySelectorAll("input, textarea");
+          for (var i = 0; i < inputs.length; i++) {
+            var inp = inputs[i];
+            var placeholder = (inp.placeholder || "").toLowerCase();
+            var label = (inp.getAttribute("aria-label") || "").toLowerCase();
+            var type = (inp.type || "").toLowerCase();
+            if (desc.toLowerCase().includes("email") && (type === "email" || placeholder.includes("email"))) {
+              inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
+            }
+            if (desc.toLowerCase().includes("password") && type === "password") {
+              inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
+            }
+          }
+        }, action.value, action.description);
+      }
+      break;
+
+    case "scroll":
+      await page.evaluate(function() { window.scrollBy(0, 400); });
+      break;
+
+    case "navigate":
+      if (action.value) await page.goto(action.value, { waitUntil: "networkidle2", timeout: 20000 });
+      break;
+
+    case "wait":
+      await page.waitForTimeout(2000);
+      break;
+  }
+}
+
+// ==================== MOTOR 2: BROWSER USE CLOUD ====================
+
+async function runBrowserUseEngine(url, account, settings) {
+  var fetch = (await import("node-fetch")).default;
+  var apiKey = settings.browser_use_api_key || process.env.BROWSER_USE_API_KEY || "";
+  if (!apiKey) throw new Error("Browser Use API key bulunamadı!");
+
+  var proxyCountry = null;
+  if (settings.quiz_proxy_enabled !== "false") {
+    proxyCountry = (settings.quiz_proxy_country || settings.proxy_country || "US").toLowerCase();
+  }
+
+  var taskPrompt = buildTaskPrompt(url, account);
+  await supabaseInsertLog("Browser Use task oluşturuluyor: " + url, "info");
+
+  var body = {
+    task: taskPrompt,
+    llm: "gemini-2.5-flash",
+    startUrl: url,
+    maxSteps: 100,
+    vision: true,
+    highlightElements: true,
+    sessionSettings: { browserScreenWidth: 1920, browserScreenHeight: 1080 },
+  };
+  if (proxyCountry) body.sessionSettings.proxyCountryCode = proxyCountry;
+
+  var res = await fetch(BROWSER_USE_API + "/tasks", {
+    method: "POST",
+    headers: { "X-Browser-Use-API-Key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    var errText = await res.text();
+    throw new Error("Browser Use task oluşturulamadı (" + res.status + "): " + errText);
+  }
+
+  var data = await res.json();
+  await supabaseInsertLog("Browser Use task oluşturuldu: " + data.id, "success");
+
+  // Poll
+  var startTime = Date.now();
+  var maxWait = 600000;
+  while (Date.now() - startTime < maxWait) {
+    var statusRes = await fetch(BROWSER_USE_API + "/tasks/" + data.id + "/status", {
+      headers: { "X-Browser-Use-API-Key": apiKey },
+    });
+    if (statusRes.ok) {
+      var status = await statusRes.json();
+      if (status.status === "finished") {
+        await supabaseInsertLog("Task tamamlandı | Başarılı: " + status.isSuccess + " | Maliyet: $" + (status.cost || "?"), status.isSuccess ? "success" : "warning");
+        return status;
+      }
+      if (status.status === "stopped") {
+        await supabaseInsertLog("Task durduruldu", "warning");
+        return status;
+      }
+    }
+    await new Promise(function(r) { setTimeout(r, 5000); });
+  }
+  await supabaseInsertLog("Task zaman aşımı", "error");
+  return { status: "timeout", isSuccess: false };
+}
+
+function buildTaskPrompt(url, account) {
+  var host = "";
+  try { host = new URL(url).hostname; } catch (e) {}
+
+  return `Sen bir anket çözücü botsun. Adımlar:
+1. Çerez popup varsa "Accept All" tıkla
+2. Giriş: Email=${account.email} Şifre=${account.password} (Google/Facebook KULLANMA!)
+3. Anket sayfasını bul (Surveys/Answer/Earn)
+4. Soruları mantıklı cevapla, Next/Continue ile ilerle
+5. Max 5 anket çöz
+KURALLAR: Sayfadan ayrılma, her cookie popup'ı kapat.`;
+}
+
 // ==================== ANA İŞLEM ====================
 
 async function processQuiz(url) {
   try {
-    // 1) Hesap bilgilerini al
     var account = await getLoginAccount();
-    if (!account) {
-      console.log("Hesap bulunamadi, islem iptal");
-      await supabaseInsertLog("Hesap bulunamadi, islem iptal", "error");
-      return;
-    }
+    if (!account) return;
 
-    // 2) Proxy ülke ayarını al
-    var proxyCountry = await getProxyCountry();
+    var settings = await getSettings();
+    var engine = settings.quiz_engine || "gemini";
 
-    // 3) Task prompt'unu oluştur
-    var taskPrompt = buildTaskPrompt(url, account);
-
-    console.log("=== Quiz Bot v3.0 — Browser Use Cloud ===");
+    console.log("=== Quiz Bot v4.0 — Motor: " + engine.toUpperCase() + " ===");
     console.log("URL: " + url);
     console.log("Hesap: " + account.email);
-    await supabaseInsertLog("Quiz baslatiliyor: " + url + " | Hesap: " + account.email, "info");
+    await supabaseInsertLog("Quiz başlatılıyor [" + engine + "]: " + url + " | Hesap: " + account.email, "info");
 
-    // 4) Browser Use task oluştur
-    var task = await createBrowserUseTask(taskPrompt, url, proxyCountry);
-
-    // 5) Tamamlanmasını bekle
-    var result = await waitForTaskCompletion(task.id, 600000); // 10 dakika max
-
-    // 6) Sonucu logla
-    if (result.isSuccess) {
-      console.log("=== Quiz basariyla tamamlandi! ===");
-      await supabaseInsertLog("Quiz basariyla tamamlandi! Sonuc: " + (result.output || "").slice(0, 200), "success");
+    if (engine === "browser_use") {
+      await runBrowserUseEngine(url, account, settings);
     } else {
-      console.log("=== Quiz tamamlanamadi ===");
-      await supabaseInsertLog("Quiz tamamlanamadi: " + (result.output || result.status), "error");
-      await supabaseUpdate("quiz_accounts", account.id, { fail_count: (account.fail_count || 0) + 1 });
+      await runGeminiEngine(url, account, settings);
     }
 
-    return result;
   } catch (err) {
-    console.error("Quiz hatasi:", err.message);
+    console.error("Quiz hatası:", err.message);
     await supabaseInsertLog("Hata: " + err.message, "error");
   }
-}
-
-function buildTaskPrompt(url, account) {
-  var isDirectQuiz = /\/(survey|answer|quiz|poll|questionnaire)/i.test(url);
-  var host = "";
-  try { host = new URL(url).hostname; } catch (e) {}
-
-  var prompt = `Sen bir anket çözücü botsun. Aşağıdaki adımları sırasıyla uygula:
-
-ADIM 1 - ÇEREZ POPUP:
-- Sayfa açıldığında bir çerez/cookie kabul popup'ı varsa "Accept All", "Kabul Et", "I Agree" gibi KABUL butonuna tıkla.
-- "Reject", "Manage", "Preferences" gibi butonlara TIKLAMA.
-- Popup yoksa bu adımı atla.
-
-ADIM 2 - GİRİŞ YAP:
-- Sayfada login/giriş formu veya "Log In", "Sign In" butonu varsa:
-  a) Önce "Log In" veya "Sign In" butonuna tıkla
-  b) "Continue with Email" butonu varsa ona tıkla (Google/Apple/Facebook butonlarına TIKLAMA!)
-  c) Email alanına şunu yaz: ${account.email}
-  d) Password alanına şunu yaz: ${account.password}
-  e) "Log In", "Sign In", "Submit" gibi giriş butonuna tıkla
-  f) reCAPTCHA varsa çözmeye çalış
-- Zaten giriş yapılmışsa bu adımı atla.
-
-ADIM 3 - ANKET SAYFASINA GİT:`;
-
-  if (isDirectQuiz) {
-    prompt += `
-- Bu URL zaten bir anket sayfası. Doğrudan soruları çözmeye başla.`;
-  } else {
-    prompt += `
-- Sayfada "Answer", "Surveys", "Anketler", "Earn" gibi bir menü/link varsa tıkla.
-- Yoksa ${host}/surveys veya ${host}/answer adresine gitmeyi dene.
-- Anket listesi sayfasında mevcut anketlerden birine tıkla.`;
-  }
-
-  prompt += `
-
-ADIM 4 - ANKETLERİ ÇÖZ:
-- Sayfadaki soruları oku ve mantıklı cevaplar ver:
-  * Çoktan seçmeli sorularda en uygun seçeneği tıkla
-  * Metin girişi gereken yerlere kısa ve mantıklı cevaplar yaz
-  * Likert ölçeği (1-5, 1-10) sorularında orta-üst değerleri seç
-  * "Next", "Continue", "İleri" butonlarıyla sonraki sayfaya geç
-- Her sayfadaki tüm soruları cevapla, sonra "Next" veya "Submit" butonuna bas.
-- Birden fazla sayfa varsa hepsini tamamla.
-- Anket bittiğinde sonuç ekranını bekle.
-
-ADIM 5 - SONUÇ:
-- Tamamlanan anket sayısını ve kazanılan puanı/ödülü raporla.
-- Hata varsa ne olduğunu açıkla.
-
-ÖNEMLİ KURALLAR:
-- Google, Apple, Facebook ile giriş yapMA. Sadece email/şifre kullan.
-- Sayfadan AYRILMA, sadece anket akışını takip et.
-- Her adımda cookie popup çıkarsa kapat.
-- Maksimum 5 anket çöz, sonra dur.`;
-
-  return prompt;
-}
-
-// ==================== ÇOKLU ANKET MODU ====================
-
-async function processMultipleQuizzes(url, maxTasks) {
-  maxTasks = maxTasks || 3;
-  var account = await getLoginAccount();
-  if (!account) return;
-
-  var proxyCountry = await getProxyCountry();
-
-  console.log("=== Coklu anket modu: " + maxTasks + " task ===");
-  await supabaseInsertLog("Coklu anket modu baslatiliyor: " + maxTasks + " task", "info");
-
-  for (var i = 0; i < maxTasks; i++) {
-    console.log("\n--- Task " + (i + 1) + "/" + maxTasks + " ---");
-    await supabaseInsertLog("Task " + (i + 1) + "/" + maxTasks + " baslatiliyor", "info");
-
-    var taskPrompt = buildTaskPrompt(url, account);
-    try {
-      var task = await createBrowserUseTask(taskPrompt, url, proxyCountry);
-      var result = await waitForTaskCompletion(task.id, 600000);
-
-      if (!result.isSuccess) {
-        console.log("Task basarisiz, durduruluyor");
-        await supabaseInsertLog("Task " + (i + 1) + " basarisiz, dongu durduruluyor", "warning");
-        break;
-      }
-    } catch (err) {
-      console.error("Task hatasi:", err.message);
-      await supabaseInsertLog("Task " + (i + 1) + " hatasi: " + err.message, "error");
-      break;
-    }
-
-    // Sonraki task için kısa bekleme
-    if (i < maxTasks - 1) {
-      console.log("Sonraki task icin 10sn bekleniyor...");
-      await new Promise(function(r) { setTimeout(r, 10000); });
-    }
-  }
-
-  console.log("=== Coklu anket modu tamamlandi ===");
-  await supabaseInsertLog("Coklu anket modu tamamlandi", "success");
 }
 
 // ==================== DB POLLING ====================
 
 async function pollForQuizTasks() {
-  console.log("Quiz bot v3.0 (Browser Use) baslatildi - gorev bekleniyor...");
-  await supabaseInsertLog("Quiz bot v3.0 (Browser Use) baslatildi", "info");
+  var settings = await getSettings();
+  var engine = settings.quiz_engine || "gemini";
+  var engineLabel = engine === "browser_use" ? "Browser Use Cloud" : "Puppeteer + Gemini Vision";
 
-  // API key kontrolü
-  var apiKey = await getBrowserUseApiKey();
-  if (!apiKey) {
-    console.error("HATA: Browser Use API key bulunamadi!");
-    console.error("bot_settings tablosuna 'browser_use_api_key' ekleyin veya .env'de BROWSER_USE_API_KEY tanimlayin");
-    await supabaseInsertLog("Browser Use API key bulunamadi!", "error");
-    return;
+  console.log("Quiz bot v4.0 (" + engineLabel + ") başlatıldı - görev bekleniyor...");
+  await supabaseInsertLog("Quiz bot v4.0 (" + engineLabel + ") başlatıldı", "info");
+
+  // Motor kontrolü
+  if (engine === "gemini") {
+    var geminiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || "";
+    if (!geminiKey) {
+      await supabaseInsertLog("Gemini API key bulunamadı! bot_settings'e gemini_api_key ekleyin.", "error");
+      return;
+    }
+    await supabaseInsertLog("Gemini API key doğrulandı ✓", "success");
+  } else {
+    var buKey = settings.browser_use_api_key || process.env.BROWSER_USE_API_KEY || "";
+    if (!buKey) {
+      await supabaseInsertLog("Browser Use API key bulunamadı!", "error");
+      return;
+    }
+    await supabaseInsertLog("Browser Use API key doğrulandı ✓", "success");
   }
-  console.log("Browser Use API key OK");
-  await supabaseInsertLog("Browser Use API key dogrulandi", "success");
 
   while (true) {
     try {
+      // Motor değişikliği kontrolü
+      var freshSettings = await getSettings();
+      var currentEngine = freshSettings.quiz_engine || "gemini";
+      if (currentEngine !== engine) {
+        engine = currentEngine;
+        engineLabel = engine === "browser_use" ? "Browser Use Cloud" : "Puppeteer + Gemini Vision";
+        console.log("Motor değişti: " + engineLabel);
+        await supabaseInsertLog("Motor değişti: " + engineLabel, "info");
+      }
+
       var tasks = await supabaseGet("link_analyses", "status=eq.quiz_pending&order=created_at.asc&limit=1");
       if (tasks && tasks.length > 0) {
         var task = tasks[0];
-        console.log("\nYeni quiz gorevi: " + task.url);
+        console.log("\nYeni quiz görevi: " + task.url);
         await supabaseUpdate("link_analyses", task.id, { status: "quiz_running" });
 
         try {
           await processQuiz(task.url);
           await supabaseUpdate("link_analyses", task.id, { status: "quiz_done" });
         } catch (taskErr) {
-          console.error("Gorev hatasi:", taskErr.message);
+          console.error("Görev hatası:", taskErr.message);
           await supabaseUpdate("link_analyses", task.id, { status: "quiz_done" });
-          await supabaseInsertLog("Gorev hatasi: " + taskErr.message, "error");
+          await supabaseInsertLog("Görev hatası: " + taskErr.message, "error");
         }
       }
     } catch (err) {
-      console.error("Polling hatasi:", err.message);
+      console.error("Polling hatası:", err.message);
     }
     await new Promise(function(r) { setTimeout(r, 5000); });
   }

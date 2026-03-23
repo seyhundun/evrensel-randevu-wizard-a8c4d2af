@@ -12,7 +12,7 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   Network, Globe, Wifi, MapPin, Activity, Shield, Loader2,
-  Clock, RefreshCw, Save, Eye, EyeOff, Key
+  Clock, RefreshCw, Save, Eye, EyeOff, Key, Cpu, Zap
 } from "lucide-react";
 
 function timeAgo(dateStr: string): string {
@@ -43,10 +43,20 @@ export default function QuizSidebarContent() {
   const [quizProxyEnabled, setQuizProxyEnabled] = useState(true);
   const [captchaProvider, setCaptchaProvider] = useState("—");
   const [captchaApiKey, setCaptchaApiKey] = useState(false);
-  const [browserUseApiKey, setBrowserUseApiKey] = useState(false);
+
+  // Engine selection
+  const [quizEngine, setQuizEngine] = useState<"gemini" | "browser_use">("gemini");
+
+  // Gemini API key
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [geminiKeyVisible, setGeminiKeyVisible] = useState(false);
+  const [savingGeminiKey, setSavingGeminiKey] = useState(false);
+
+  // Browser Use API key
   const [browserUseKeyValue, setBrowserUseKeyValue] = useState("");
   const [browserUseKeyVisible, setBrowserUseKeyVisible] = useState(false);
   const [savingBuKey, setSavingBuKey] = useState(false);
+
   const [quizStatus, setQuizStatus] = useState<"idle" | "running">("idle");
   const [lastLog, setLastLog] = useState<{ message: string; time: string; status: string } | null>(null);
   const [stats, setStats] = useState({ total: 0, success: 0, error: 0, successRate: 100 });
@@ -71,7 +81,8 @@ export default function QuizSidebarContent() {
       setQuizProxyEnabled(map.quiz_proxy_enabled !== "false");
       setCaptchaProvider(map.captcha_provider || "2captcha");
       setCaptchaApiKey(!!(map.captcha_api_key));
-      setBrowserUseApiKey(!!(map.browser_use_api_key));
+      setQuizEngine((map.quiz_engine as "gemini" | "browser_use") || "gemini");
+      setGeminiApiKey(map.gemini_api_key || "");
       setBrowserUseKeyValue(map.browser_use_api_key || "");
     }
   }, []);
@@ -128,7 +139,6 @@ export default function QuizSidebarContent() {
         setEvomiCities(
           (data.cities || []).map((c: any) => typeof c === "string" ? { name: c } : { name: c.name || c.city, region: c.region })
         );
-        // Countries
         const countriesObj = data.countries || {};
         const countryList = Object.entries(countriesObj).map(([code, name]) => ({
           code: code.toUpperCase(),
@@ -143,7 +153,6 @@ export default function QuizSidebarContent() {
     setLoadingRegions(false);
   };
 
-  // Fetch regions on first open or country change
   useEffect(() => {
     if (quizProxyEnabled && proxyCountry && proxyCountry !== "—") {
       fetchEvomiRegions(proxyCountry);
@@ -159,7 +168,7 @@ export default function QuizSidebarContent() {
 
   const handleCountryChange = (code: string) => {
     setProxyCountry(code);
-    setProxyRegion(""); // Reset region on country change
+    setProxyRegion("");
     setDirty(true);
     setCountryPopoverOpen(false);
   };
@@ -183,8 +192,13 @@ export default function QuizSidebarContent() {
     setSaving(false);
   };
 
-  const healthColor = stats.successRate >= 80 ? "text-emerald-500" : stats.successRate >= 50 ? "text-amber-500" : "text-destructive";
+  const switchEngine = async (engine: "gemini" | "browser_use") => {
+    setQuizEngine(engine);
+    await upsertSetting("quiz_engine", engine, "Quiz Motor Seçimi");
+    toast.success(engine === "gemini" ? "Motor: Gemini Vision (Ücretsiz)" : "Motor: Browser Use (Ücretli)");
+  };
 
+  const healthColor = stats.successRate >= 80 ? "text-emerald-500" : stats.successRate >= 50 ? "text-amber-500" : "text-destructive";
   const selectedCountryName = evomiCountries.find(c => c.code === proxyCountry)?.name || proxyCountry;
 
   return (
@@ -194,7 +208,7 @@ export default function QuizSidebarContent() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${quizStatus === "running" ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground"}`} />
-            <h3 className="text-xs font-semibold text-foreground">Quiz Bot Durumu</h3>
+            <h3 className="text-xs font-semibold text-foreground">Quiz Bot v4.0</h3>
           </div>
           <Badge className={`text-[10px] ${quizStatus === "running" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-secondary text-muted-foreground"}`}>
             {quizStatus === "running" ? "Çalışıyor" : "Bekliyor"}
@@ -244,6 +258,108 @@ export default function QuizSidebarContent() {
         </div>
       </Card>
 
+      {/* Engine Selection */}
+      <Card className="p-3 space-y-2">
+        <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+          <Cpu className="w-3.5 h-3.5 text-muted-foreground" />
+          Motor Seçimi
+        </h3>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            onClick={() => switchEngine("gemini")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
+              quizEngine === "gemini"
+                ? "border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                : "border-border bg-secondary/40 text-muted-foreground hover:bg-secondary"
+            }`}
+          >
+            <Zap className="w-4 h-4" />
+            <span className="font-semibold">Gemini Vision</span>
+            <span className="text-[9px] opacity-70">Puppeteer + AI</span>
+            <Badge variant="outline" className="text-[8px] h-4 border-emerald-500/30 text-emerald-600">Ücretsiz</Badge>
+          </button>
+          <button
+            onClick={() => switchEngine("browser_use")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
+              quizEngine === "browser_use"
+                ? "border-blue-500 bg-blue-500/10 text-blue-700 dark:text-blue-400"
+                : "border-border bg-secondary/40 text-muted-foreground hover:bg-secondary"
+            }`}
+          >
+            <Globe className="w-4 h-4" />
+            <span className="font-semibold">Browser Use</span>
+            <span className="text-[9px] opacity-70">Cloud Agent</span>
+            <Badge variant="outline" className="text-[8px] h-4 border-amber-500/30 text-amber-600">Ücretli</Badge>
+          </button>
+        </div>
+      </Card>
+
+      {/* Active Engine API Key */}
+      <Card className="p-3 space-y-2">
+        <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+          <Key className="w-3.5 h-3.5 text-muted-foreground" />
+          {quizEngine === "gemini" ? "Gemini API Key" : "Browser Use API Key"}
+        </h3>
+        <div className="space-y-1.5">
+          <Label className="text-[10px] text-muted-foreground">API Key</Label>
+          <div className="flex gap-1">
+            <div className="relative flex-1">
+              <Input
+                type={quizEngine === "gemini" ? (geminiKeyVisible ? "text" : "password") : (browserUseKeyVisible ? "text" : "password")}
+                value={quizEngine === "gemini" ? geminiApiKey : browserUseKeyValue}
+                onChange={(e) => quizEngine === "gemini" ? setGeminiApiKey(e.target.value) : setBrowserUseKeyValue(e.target.value)}
+                placeholder={quizEngine === "gemini" ? "Gemini API key girin..." : "Browser Use API key girin..."}
+                className="h-7 text-[11px] pr-7 font-mono"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-0 top-0 h-7 w-7 p-0"
+                onClick={() => quizEngine === "gemini" ? setGeminiKeyVisible(!geminiKeyVisible) : setBrowserUseKeyVisible(!browserUseKeyVisible)}
+              >
+                {(quizEngine === "gemini" ? geminiKeyVisible : browserUseKeyVisible) ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+              </Button>
+            </div>
+            <Button
+              size="sm"
+              className="h-7 px-2 text-[10px]"
+              disabled={quizEngine === "gemini" ? savingGeminiKey : savingBuKey}
+              onClick={async () => {
+                if (quizEngine === "gemini") {
+                  setSavingGeminiKey(true);
+                  try {
+                    await upsertSetting("gemini_api_key", geminiApiKey, "Gemini API Key");
+                    toast.success("Gemini API key kaydedildi");
+                  } catch (err: any) { toast.error("Hata: " + err.message); }
+                  setSavingGeminiKey(false);
+                } else {
+                  setSavingBuKey(true);
+                  try {
+                    await upsertSetting("browser_use_api_key", browserUseKeyValue, "Browser Use API Key");
+                    toast.success("Browser Use API key kaydedildi");
+                  } catch (err: any) { toast.error("Hata: " + err.message); }
+                  setSavingBuKey(false);
+                }
+              }}
+            >
+              {(quizEngine === "gemini" ? savingGeminiKey : savingBuKey) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+            </Button>
+          </div>
+          <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1 text-[10px]">
+            <span className="text-muted-foreground">Durum</span>
+            <span className={`font-medium ${(quizEngine === "gemini" ? !!geminiApiKey : !!browserUseKeyValue) ? "text-emerald-600" : "text-destructive"}`}>
+              {(quizEngine === "gemini" ? !!geminiApiKey : !!browserUseKeyValue) ? "✓ Tanımlı" : "✗ Eksik"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1 text-[10px]">
+            <span className="text-muted-foreground">Motor</span>
+            <span className="font-medium text-foreground">
+              {quizEngine === "gemini" ? "Puppeteer + Gemini v4.0" : "Cloud Agent v3.0"}
+            </span>
+          </div>
+        </div>
+      </Card>
+
       {/* Proxy Settings */}
       <Card className="p-3 space-y-3">
         <div className="flex items-center justify-between">
@@ -267,7 +383,6 @@ export default function QuizSidebarContent() {
               </div>
             </div>
 
-            {/* Host info */}
             <div className="rounded-md border bg-card p-2 space-y-1">
               <div className="flex items-center gap-1 text-muted-foreground">
                 <Wifi className="w-3 h-3" />
@@ -278,7 +393,7 @@ export default function QuizSidebarContent() {
               </p>
             </div>
 
-            {/* Country Picker (Evomi API) */}
+            {/* Country Picker */}
             <div className="space-y-1.5">
               <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
                 <Globe className="w-3 h-3" />
@@ -329,7 +444,7 @@ export default function QuizSidebarContent() {
               </Popover>
             </div>
 
-            {/* Region / City Picker (Evomi API) */}
+            {/* Region Picker */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
@@ -369,7 +484,6 @@ export default function QuizSidebarContent() {
                         ) : "Şehir bulunamadı"}
                       </CommandEmpty>
                       <CommandGroup>
-                        {/* "All regions" option */}
                         <CommandItem
                           value="__all__"
                           onSelect={() => handleRegionChange("")}
@@ -397,7 +511,6 @@ export default function QuizSidebarContent() {
               </Popover>
             </div>
 
-            {/* Save Button */}
             {dirty && (
               <Button
                 onClick={saveSettings}
@@ -411,64 +524,6 @@ export default function QuizSidebarContent() {
             )}
           </>
         )}
-      </Card>
-
-      {/* Browser Use API */}
-      <Card className="p-3 space-y-2">
-        <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-          <Key className="w-3.5 h-3.5 text-muted-foreground" />
-          Browser Use API
-        </h3>
-        <div className="space-y-1.5">
-          <Label className="text-[10px] text-muted-foreground">API Key</Label>
-          <div className="flex gap-1">
-            <div className="relative flex-1">
-              <Input
-                type={browserUseKeyVisible ? "text" : "password"}
-                value={browserUseKeyValue}
-                onChange={(e) => setBrowserUseKeyValue(e.target.value)}
-                placeholder="Browser Use API key girin..."
-                className="h-7 text-[11px] pr-7 font-mono"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-7 w-7 p-0"
-                onClick={() => setBrowserUseKeyVisible(!browserUseKeyVisible)}
-              >
-                {browserUseKeyVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-              </Button>
-            </div>
-            <Button
-              size="sm"
-              className="h-7 px-2 text-[10px]"
-              disabled={savingBuKey}
-              onClick={async () => {
-                setSavingBuKey(true);
-                try {
-                  await upsertSetting("browser_use_api_key", browserUseKeyValue, "Browser Use API Key");
-                  setBrowserUseApiKey(!!browserUseKeyValue);
-                  toast.success("Browser Use API key kaydedildi");
-                } catch (err: any) {
-                  toast.error("Kaydetme hatası: " + err.message);
-                }
-                setSavingBuKey(false);
-              }}
-            >
-              {savingBuKey ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-            </Button>
-          </div>
-          <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1 text-[10px]">
-            <span className="text-muted-foreground">Durum</span>
-            <span className={`font-medium ${browserUseApiKey ? "text-emerald-600" : "text-destructive"}`}>
-              {browserUseApiKey ? "✓ Tanımlı" : "✗ Eksik"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1 text-[10px]">
-            <span className="text-muted-foreground">Motor</span>
-            <span className="font-medium text-foreground">Cloud Agent v3.0</span>
-          </div>
-        </div>
       </Card>
 
       {/* CAPTCHA Settings */}
