@@ -109,10 +109,25 @@ async function runGeminiEngine(url, account, settings) {
     await supabaseInsertLog("Proxy aktif: " + proxyHost + " | Ülke: " + (settings.quiz_proxy_country || "US"), "info");
   }
 
+  var browser = await puppeteer.launch({
+    headless: false,
+    defaultViewport: { width: 1920, height: 1080 },
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--display=" + (process.env.DISPLAY || ":99"),
+      ...proxyArgs,
+    ],
+    executablePath: process.env.CHROME_PATH || "/usr/bin/google-chrome-stable",
+  });
+
+  var page = await browser.newPage();
+
   // Proxy auth — page.goto'dan ÖNCE çağrılmalı
   if (useProxy && proxyUser && proxyPass) {
     await page.authenticate({ username: proxyUser, password: proxyPass });
     console.log("[GEMINI] Proxy auth ayarlandı: " + proxyUser);
+    await supabaseInsertLog("Proxy auth ayarlandı", "success");
   }
 
   try {
