@@ -214,7 +214,7 @@ const Index = () => {
         {isMobile && (
           <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
             <SheetContent side="left" className="w-[320px] p-0 overflow-y-auto">
-              {activeTab === "vfs" ? <VfsSidebarContent t={t} /> : <IdataSidebarContent />}
+              {activeTab === "vfs" ? <VfsSidebarContent t={t} /> : activeTab === "idata" ? <IdataSidebarContent /> : <QuizSidebarContent />}
             </SheetContent>
           </Sheet>
         )}
