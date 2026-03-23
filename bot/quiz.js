@@ -1,6 +1,6 @@
 /**
- * Quiz/Anket Çözücü Bot v2.0
- * Google login + AI cevaplarıyla otomatik doldurma
+ * Quiz/Anket Çözücü Bot v2.1
+ * Email/şifre login + AI cevaplarıyla otomatik doldurma
  * Kullanım: node quiz.js [URL]
  */
 require("dotenv").config();
@@ -73,20 +73,88 @@ async function analyzeWithAI(url) {
 
 // ==================== TARAYICI KONTROL ====================
 
+async function preparePage(page) {
+  await page.evaluateOnNewDocument(function() {
+    Object.defineProperty(navigator, "webdriver", { get: function() { return false; } });
+  });
+  await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1, isMobile: false, hasTouch: false });
+}
+
+async function forceDesktopWindow(page) {
+  try {
+    var client = await page.target().createCDPSession();
+    var windowInfo = await client.send("Browser.getWindowForTarget").catch(function() { return null; });
+    if (windowInfo && windowInfo.windowId) {
+      await client.send("Browser.setWindowBounds", {
+        windowId: windowInfo.windowId,
+        bounds: { left: 0, top: 0, width: 1920, height: 1080, windowState: "normal" },
+      }).catch(function() {});
+    }
+    await client.send("Emulation.setDeviceMetricsOverride", {
+      width: 1920,
+      height: 1080,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1920,
+      screenHeight: 1080,
+      positionX: 0,
+      positionY: 0,
+      scale: 1,
+      screenOrientation: { angle: 0, type: "landscapePrimary" },
+    }).catch(function() {});
+  } catch (e) {}
+}
+
 async function launchBrowser() {
   var connect = require("puppeteer-real-browser").connect;
   var options = {
-    headless: false, turnstile: false, disableXvfb: true,
-    customConfig: { chromePath: undefined, args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-blink-features=AutomationControlled", "--start-maximized", "--window-size=1920,1080"] },
+    headless: false,
+    turnstile: false,
+    disableXvfb: true,
+    customConfig: {
+      chromePath: undefined,
+      defaultViewport: null,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--start-maximized",
+        "--window-size=1920,1080",
+      ],
+    },
     connectOption: {},
   };
   process.env.DISPLAY = DISPLAY;
   console.log("Chrome baslatiliyor (Display: " + DISPLAY + ")...");
   var result = await connect(options);
   currentBrowser = result.browser;
-  await result.page.evaluateOnNewDocument(function() { Object.defineProperty(navigator, "webdriver", { get: function() { return false; } }); });
-  await result.page.setViewport({ width: 1920, height: 1080 });
+  await preparePage(result.page);
+  await forceDesktopWindow(result.page);
+  await result.page.bringToFront().catch(function() {});
   return { browser: result.browser, page: result.page };
+}
+
+async function reopenInFreshTabIfNeeded(browser, page, url) {
+  try {
+    var width = await page.evaluate(function() { return window.innerWidth || document.documentElement.clientWidth || 0; });
+    if (width >= 1200) return page;
+
+    console.log("Dar/mobil görünüm algılandı (" + width + "px), yeni sekmede tekrar açılıyor...");
+    await supabaseInsertLog("Dar görünüm algılandı, yeni sekmede tekrar açılıyor", "warning");
+
+    var newPage = await browser.newPage();
+    await preparePage(newPage);
+    await forceDesktopWindow(newPage);
+    await newPage.bringToFront().catch(function() {});
+    await newPage.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+    await randomDelay(1500, 2500);
+    await dismissCookies(newPage);
+
+    try { await page.close(); } catch (e) {}
+    return newPage;
+  } catch (e) {
+    return page;
+  }
 }
 
 // ==================== INSAN BENZERİ ETKİLEŞİM ====================
@@ -113,7 +181,32 @@ async function humanClick(page, element) {
   return true;
 }
 
-// ==================== GOOGLE LOGIN ====================
+async function clickByText(page, selectors, keywords) {
+  var elements = await page.$$(selectors);
+  for (var i = 0; i < elements.length; i++) {
+    try {
+      var info = await page.evaluate(function(el) {
+        var style = window.getComputedStyle(el);
+        var rect = el.getBoundingClientRect();
+        return {
+          text: (el.textContent || el.value || "").toLowerCase().trim(),
+          visible: rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none",
+        };
+      }, elements[i]);
+      if (!info.visible) continue;
+      for (var j = 0; j < keywords.length; j++) {
+        if (info.text.indexOf(keywords[j]) !== -1) {
+          await elements[i].evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
+          await randomDelay(200, 400);
+          if (await humanClick(page, elements[i])) return true;
+        }
+      }
+    } catch (e) {}
+  }
+  return false;
+}
+
+// ==================== LOGIN ====================
 
 async function getLoginAccount() {
   var accounts = await supabaseGet("quiz_accounts", "status=eq.active&order=last_used_at.asc.nullsfirst&limit=1");
@@ -137,98 +230,77 @@ async function handleEmailLogin(page) {
   await supabaseInsertLog("Email giris: " + account.email, "info");
 
   try {
-    // Look for email input field
-    var emailInput = await page.$('input[type="email"], input[name="email"], input[name="username"], input[name="login"], input[id*="email"], input[id*="user"], input[placeholder*="mail"], input[placeholder*="email"]');
-    
+    await dismissCookies(page);
+
+    var emailSelector = 'input[type="email"], input[name="email"], input[name="username"], input[name="login"], input[id*="email"], input[id*="user"], input[autocomplete="username"], input[placeholder*="mail" i], input[placeholder*="email" i]';
+    var passwordSelector = 'input[type="password"], input[name="password"], input[id*="password"], input[autocomplete="current-password"]';
+    var emailInput = await page.$(emailSelector);
+
     if (!emailInput) {
-      // Try to find and click "Continue with Email" or login button first
-      var loginBtn = null;
-      var buttons = await page.$$("button, a, div[role='button']");
-      for (var i = 0; i < buttons.length; i++) {
-        var text = await page.evaluate(function(el) { return (el.textContent || "").toLowerCase(); }, buttons[i]);
-        if (text.indexOf("email") !== -1 || text.indexOf("e-posta") !== -1 || text.indexOf("sign in") !== -1 || text.indexOf("log in") !== -1 || text.indexOf("giriş") !== -1) {
-          loginBtn = buttons[i];
-          break;
-        }
-      }
-      if (loginBtn) {
-        console.log("Login butonu bulundu, tiklaniyor...");
-        await humanClick(page, loginBtn);
-        await randomDelay(2000, 4000);
-        emailInput = await page.$('input[type="email"], input[name="email"], input[name="username"], input[name="login"], input[id*="email"], input[id*="user"], input[placeholder*="mail"], input[placeholder*="email"]');
-      }
+      await clickByText(page, "button, a, div[role='button'], span, input[type='button'], input[type='submit']", [
+        "continue with email", "continue with e-mail", "email", "e-mail", "e posta", "e-posta", "email ile", "e-posta ile",
+        "login", "log in", "sign in", "signin", "giriş", "oturum aç"
+      ]);
+      await randomDelay(2000, 3500);
+      await dismissCookies(page);
+      emailInput = await page.$(emailSelector);
     }
 
     if (!emailInput) {
-      // Fallback: first visible text/email input
       emailInput = await page.$('input[type="text"], input[type="email"]');
     }
 
     if (!emailInput) {
       console.log("Email alani bulunamadi - login gerekmiyor olabilir");
+      await supabaseInsertLog("Email alani bulunamadi - login gerekmiyor olabilir", "warning");
       return true;
     }
 
-    // Type email
+    await emailInput.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
     await humanClick(page, emailInput);
     await randomDelay(300, 600);
-    await page.evaluate(function(el) { el.value = ''; }, emailInput);
+    await page.keyboard.down("Control").catch(function() {});
+    await page.keyboard.press("A").catch(function() {});
+    await page.keyboard.up("Control").catch(function() {});
+    await page.keyboard.press("Backspace").catch(function() {});
     for (var j = 0; j < account.email.length; j++) {
-      await emailInput.type(account.email[j], { delay: 40 + Math.random() * 60 });
+      await page.keyboard.type(account.email[j], { delay: 40 + Math.random() * 60 });
     }
     await randomDelay(500, 1000);
 
-    // Look for password field (might be on same page or next page)
-    var passwordInput = await page.$('input[type="password"]');
-    
+    var passwordInput = await page.$(passwordSelector);
     if (!passwordInput) {
-      // Click Next/Continue button to go to password page
-      var nextBtn = await page.$('button[type="submit"], input[type="submit"]');
-      if (!nextBtn) {
-        var allBtns = await page.$$("button, div[role='button'], a");
-        for (var k = 0; k < allBtns.length; k++) {
-          var btnText = await page.evaluate(function(el) { return (el.textContent || "").toLowerCase().trim(); }, allBtns[k]);
-          if (btnText === "next" || btnText === "continue" || btnText === "devam" || btnText === "ileri" || btnText === "sonraki" || btnText === "giriş" || btnText === "sign in" || btnText === "log in") {
-            nextBtn = allBtns[k];
-            break;
-          }
-        }
-      }
-      if (nextBtn) {
-        await humanClick(page, nextBtn);
-        await randomDelay(3000, 5000);
-      }
-      await page.waitForSelector('input[type="password"]', { timeout: 10000 }).catch(function() {});
-      passwordInput = await page.$('input[type="password"]');
+      await clickByText(page, "button, a, div[role='button'], input[type='submit']", [
+        "next", "continue", "devam", "ileri", "sonraki", "proceed", "submit", "giriş", "oturum aç", "sign in", "log in"
+      ]);
+      await randomDelay(2000, 4000);
+      await dismissCookies(page);
+      await page.waitForSelector(passwordSelector, { timeout: 10000 }).catch(function() {});
+      passwordInput = await page.$(passwordSelector);
     }
 
-    if (passwordInput) {
-      await humanClick(page, passwordInput);
-      await randomDelay(300, 600);
-      for (var m = 0; m < account.password.length; m++) {
-        await passwordInput.type(account.password[m], { delay: 40 + Math.random() * 60 });
-      }
-      await randomDelay(500, 1000);
-
-      // Click submit/login button
-      var submitBtn = await page.$('button[type="submit"], input[type="submit"]');
-      if (!submitBtn) {
-        var allBtns2 = await page.$$("button, div[role='button']");
-        for (var n = 0; n < allBtns2.length; n++) {
-          var btnText2 = await page.evaluate(function(el) { return (el.textContent || "").toLowerCase().trim(); }, allBtns2[n]);
-          if (btnText2 === "sign in" || btnText2 === "log in" || btnText2 === "login" || btnText2 === "giriş" || btnText2 === "oturum aç" || btnText2 === "submit" || btnText2 === "gönder") {
-            submitBtn = allBtns2[n];
-            break;
-          }
-        }
-      }
-      if (submitBtn) {
-        await humanClick(page, submitBtn);
-        await randomDelay(3000, 6000);
-      }
+    if (!passwordInput) {
+      console.log("Sifre alani bulunamadi");
+      await supabaseInsertLog("Sifre alani bulunamadi", "warning");
+      return false;
     }
+
+    await passwordInput.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
+    await humanClick(page, passwordInput);
+    await randomDelay(300, 600);
+    for (var m = 0; m < account.password.length; m++) {
+      await page.keyboard.type(account.password[m], { delay: 40 + Math.random() * 60 });
+    }
+    await randomDelay(500, 1000);
+
+    await dismissCookies(page);
+    await clickByText(page, "button, a, div[role='button'], input[type='submit']", [
+      "sign in", "log in", "login", "giriş", "oturum aç", "devam", "continue", "submit", "gönder"
+    ]);
+    await randomDelay(3000, 6000);
 
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+    await dismissCookies(page);
     console.log("Email giris tamamlandi!");
     await supabaseInsertLog("Email giris basarili: " + account.email, "success");
     return true;
@@ -243,28 +315,75 @@ async function handleEmailLogin(page) {
 // ==================== COOKIE POPUP KAPATMA ====================
 
 async function dismissCookies(page) {
-  for (var attempt = 0; attempt < 3; attempt++) {
-    var dismissed = await page.evaluate(function() {
-      var keywords = ["accept all", "accept", "kabul", "tamam", "ok", "agree", "i agree", "got it", "allow all"];
-      var buttons = document.querySelectorAll("button, a, div[role='button']");
-      for (var i = 0; i < buttons.length; i++) {
-        var text = (buttons[i].textContent || "").toLowerCase().trim();
-        for (var j = 0; j < keywords.length; j++) {
-          if (text === keywords[j] || (text.length < 30 && text.indexOf(keywords[j]) !== -1)) {
-            buttons[i].click();
-            return true;
+  for (var attempt = 0; attempt < 8; attempt++) {
+    try {
+      var dismissed = await page.evaluate(function() {
+        function isVisible(el) {
+          if (!el) return false;
+          var style = window.getComputedStyle(el);
+          var rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        }
+
+        var keywords = [
+          "accept all", "accept", "allow all", "allow", "agree", "i agree", "got it", "ok", "okay",
+          "kabul", "kabul et", "hepsini kabul et", "tamam", "anladım", "çerezleri kabul et", "cookie kabul"
+        ];
+
+        var selectors = [
+          "button",
+          "a",
+          "div[role='button']",
+          "input[type='button']",
+          "input[type='submit']"
+        ];
+
+        var nodes = document.querySelectorAll(selectors.join(","));
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          if (!isVisible(node)) continue;
+          var text = (node.textContent || node.value || "").toLowerCase().replace(/\s+/g, " ").trim();
+          for (var j = 0; j < keywords.length; j++) {
+            if (text === keywords[j] || text.indexOf(keywords[j]) !== -1) {
+              node.scrollIntoView({ block: "center", behavior: "instant" });
+              node.click();
+              return true;
+            }
           }
         }
+
+        var cookieContainers = document.querySelectorAll('[id*="cookie" i], [class*="cookie" i], [aria-label*="cookie" i], [data-testid*="cookie" i], [role="dialog"], [aria-modal="true"]');
+        for (var k = 0; k < cookieContainers.length; k++) {
+          var container = cookieContainers[k];
+          if (!isVisible(container)) continue;
+          var btns = container.querySelectorAll("button, a, div[role='button'], input[type='button'], input[type='submit']");
+          for (var m = 0; m < btns.length; m++) {
+            var btnText = (btns[m].textContent || btns[m].value || "").toLowerCase().replace(/\s+/g, " ").trim();
+            for (var n = 0; n < keywords.length; n++) {
+              if (btnText === keywords[n] || btnText.indexOf(keywords[n]) !== -1) {
+                btns[m].scrollIntoView({ block: "center", behavior: "instant" });
+                btns[m].click();
+                return true;
+              }
+            }
+          }
+        }
+
+        return false;
+      });
+      if (dismissed) {
+        console.log("Cookie popup kapatildi");
+        await randomDelay(700, 1200);
+        return true;
       }
-      return false;
-    });
-    if (dismissed) {
-      console.log("Cookie popup kapatildi");
-      await randomDelay(500, 1000);
-      return;
-    }
-    await randomDelay(500, 1000);
+    } catch (e) {}
+
+    await page.evaluate(function() { window.scrollTo(0, document.body.scrollHeight); }).catch(function() {});
+    await randomDelay(400, 800);
+    await page.evaluate(function() { window.scrollTo(0, 0); }).catch(function() {});
+    await randomDelay(400, 800);
   }
+  return false;
 }
 
 // ==================== SORU DOLDURMA ====================
@@ -363,11 +482,13 @@ async function processQuiz(url) {
     await supabaseInsertLog("Sayfaya gidiliyor: " + url, "info");
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
     await randomDelay(2000, 4000);
+    await forceDesktopWindow(page);
+    page = await reopenInFreshTabIfNeeded(browser, page, url);
 
     // 4) Cookie popup kapat
     await dismissCookies(page);
 
-    // 5) Google login gerekiyorsa yap
+    // 5) Login gerekiyorsa yap
     var loginOk = await handleEmailLogin(page);
     if (!loginOk) {
       console.log("Email giris basarisiz - VNC uzerinden manuel giris yapabilirsiniz");
