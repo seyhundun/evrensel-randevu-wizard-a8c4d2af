@@ -201,6 +201,64 @@ async function legacyDismissCookies(page) {
   return false;
 }
 
+async function clickPreferredCookieButton(page) {
+  try {
+    var candidates = await page.$$("button, a, div[role='button'], input[type='button'], input[type='submit']");
+    var best = null;
+    var bestScore = -9999;
+
+    for (var i = 0; i < candidates.length; i++) {
+      try {
+        var info = await page.evaluate(function(el) {
+          var style = window.getComputedStyle(el);
+          var rect = el.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0 || style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return null;
+          var text = (el.textContent || el.value || "").toLowerCase().replace(/\s+/g, " ").trim();
+          var parent = el.closest('[id*="cookie" i], [class*="cookie" i], [aria-label*="cookie" i], [data-testid*="cookie" i], [id*="consent" i], [class*="consent" i], [role="dialog"], [aria-modal="true"]');
+          return {
+            text: text,
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+            inCookie: !!parent,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+          };
+        }, candidates[i]);
+
+        if (!info || !info.text) continue;
+        if (info.text.indexOf("reject") !== -1 || info.text.indexOf("reddet") !== -1 || info.text.indexOf("manage") !== -1 || info.text.indexOf("preferences") !== -1 || info.text.indexOf("more choices") !== -1) continue;
+
+        var score = 0;
+        if (info.inCookie) score += 300;
+        if (info.text === "accept all") score += 500;
+        if (info.text.indexOf("accept all") !== -1) score += 400;
+        if (info.text.indexOf("accept") !== -1) score += 260;
+        if (info.text.indexOf("kabul") !== -1) score += 260;
+        if (info.text.indexOf("agree") !== -1) score += 180;
+        if (info.top > info.viewportHeight * 0.65) score += 180;
+        if (info.left < info.viewportWidth * 0.45) score += 220;
+
+        if (score > bestScore) {
+          best = candidates[i];
+          bestScore = score;
+        }
+      } catch (e) {}
+    }
+
+    if (best && bestScore > 0) {
+      await best.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
+      await randomDelay(250, 500);
+      await humanClick(page, best);
+      await supabaseInsertLog("Cookie kabul butonu soldan/assagidan onceliklendirilerek tiklandi", "info");
+      return true;
+    }
+  } catch (e) {}
+
+  return false;
+}
+
 // ==================== AI ANALİZ ====================
 
 async function analyzeWithAI(url) {
@@ -580,9 +638,16 @@ async function handleEmailLogin(page) {
 // ==================== COOKIE POPUP KAPATMA ====================
 
 async function dismissCookies(page) {
+  var preferredClicked = await clickPreferredCookieButton(page);
+  if (preferredClicked) {
+    console.log("  Cookie popup tercihli buton ile kapatildi");
+    await randomDelay(700, 1200);
+    return true;
+  }
+
   try {
     console.log("  Cookie: AI agent ile deneniyor...");
-    var agentResult = await agentStep(page, "Sayfadaki cookie/cerez kabul popup'ini kapat. 'Accept All', 'Kabul Et', 'Accept', 'Allow All', 'I Agree', 'Got it' gibi KABUL butonuna tikla. 'Reject', 'Manage', 'Preferences' gibi butonlara TIKLAMA. isInCookieBanner: true olan elementlere oncelik ver.", null);
+    var agentResult = await agentStep(page, "Sayfadaki cookie/cerez popup'inda once alt bolgedeki soldaki kabul butonunu tercih et. 'Accept All', 'Kabul Et', 'Accept', 'Allow All', 'I Agree', 'Got it' gibi KABUL butonuna tikla. 'Reject', 'Manage', 'Preferences', 'More choices' gibi butonlara TIKLAMA. isInCookieBanner: true olan ve sayfanin alt-sol tarafindaki elementlere oncelik ver.", null);
     if (agentResult.status === "found") {
       console.log("  Cookie popup AI agent ile kapatildi");
       await randomDelay(700, 1200);
