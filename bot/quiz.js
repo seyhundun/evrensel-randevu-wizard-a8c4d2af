@@ -238,33 +238,57 @@ async function handleEmailLogin(page) {
   await supabaseInsertLog("Email giris: " + account.email, "info");
 
   try {
+    // 1) HER ZAMAN önce çerezi kabul et
     await dismissCookies(page);
+    await randomDelay(1000, 1800);
 
     var emailSelector = 'input[type="email"], input[name="email"], input[name="username"], input[name="login"], input[id*="email"], input[id*="user"], input[autocomplete="username"], input[placeholder*="mail" i], input[placeholder*="email" i]';
     var passwordSelector = 'input[type="password"], input[name="password"], input[id*="password"], input[autocomplete="current-password"]';
     var emailInput = await page.$(emailSelector);
 
+    // 2) Email alanı görünmüyorsa SADECE email login butonuna tıkla
     if (!emailInput) {
-      await clickByText(page, "button, a, div[role='button'], span, input[type='button'], input[type='submit']", [
-        "continue with email", "continue with e-mail", "email ile devam", "e-posta ile devam",
-        "email", "e-mail", "e posta", "e-posta",
-        "login", "log in", "sign in", "signin", "giriş", "oturum aç"
-      ], ["google", "apple", "facebook", "twitter", "github"]);
-      await randomDelay(2000, 3500);
-      await dismissCookies(page);
-      emailInput = await page.$(emailSelector);
+      var emailLoginButton = await page.$('button.sb-button.sb-button--large.sb-button--wide.sb-button--dark');
+
+      if (!emailLoginButton) {
+        var candidates = await page.$$("button, a, div[role='button'], input[type='button'], input[type='submit']");
+        for (var c = 0; c < candidates.length; c++) {
+          try {
+            var info = await page.evaluate(function(el) {
+              var style = window.getComputedStyle(el);
+              var rect = el.getBoundingClientRect();
+              return {
+                text: (el.textContent || el.value || "").toLowerCase().replace(/\s+/g, " ").trim(),
+                visible: rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none",
+                top: rect.top,
+              };
+            }, candidates[c]);
+            if (!info.visible) continue;
+            if (info.text.indexOf("continue with email") !== -1 || info.text.indexOf("continue with e-mail") !== -1 || info.text.indexOf("email ile devam") !== -1 || info.text.indexOf("e-posta ile devam") !== -1) {
+              emailLoginButton = candidates[c];
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (emailLoginButton) {
+        await emailLoginButton.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
+        await randomDelay(300, 700);
+        await humanClick(page, emailLoginButton);
+        await supabaseInsertLog("Continue with Email tiklandi", "info");
+        await randomDelay(2500, 4000);
+        await dismissCookies(page);
+        emailInput = await page.$(emailSelector);
+      }
     }
 
     if (!emailInput) {
-      emailInput = await page.$('input[type="text"], input[type="email"]');
+      console.log("Email alani bulunamadi");
+      await supabaseInsertLog("Email alani bulunamadi", "warning");
+      return false;
     }
 
-    if (!emailInput) {
-      console.log("Email alani bulunamadi - login gerekmiyor olabilir");
-      await supabaseInsertLog("Email alani bulunamadi - login gerekmiyor olabilir", "warning");
-      return true;
-    }
-
+    // 3) Kayıtlı email'i gir
     await emailInput.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
     await humanClick(page, emailInput);
     await randomDelay(300, 600);
@@ -275,13 +299,15 @@ async function handleEmailLogin(page) {
     for (var j = 0; j < account.email.length; j++) {
       await page.keyboard.type(account.email[j], { delay: 40 + Math.random() * 60 });
     }
+    await supabaseInsertLog("Email alani dolduruldu", "info");
     await randomDelay(500, 1000);
 
+    // 4) Şifre alanını bul / gerekirse devam butonuna bas
     var passwordInput = await page.$(passwordSelector);
     if (!passwordInput) {
       await clickByText(page, "button, a, div[role='button'], input[type='submit']", [
-        "next", "continue", "devam", "ileri", "sonraki", "proceed", "submit", "giriş", "oturum aç", "sign in", "log in"
-      ]);
+        "next", "continue", "devam", "ileri", "sonraki", "proceed", "submit"
+      ], ["google", "apple"]);
       await randomDelay(2000, 4000);
       await dismissCookies(page);
       await page.waitForSelector(passwordSelector, { timeout: 10000 }).catch(function() {});
@@ -300,12 +326,14 @@ async function handleEmailLogin(page) {
     for (var m = 0; m < account.password.length; m++) {
       await page.keyboard.type(account.password[m], { delay: 40 + Math.random() * 60 });
     }
+    await supabaseInsertLog("Sifre alani dolduruldu", "info");
     await randomDelay(500, 1000);
 
+    // 5) Submit
     await dismissCookies(page);
     await clickByText(page, "button, a, div[role='button'], input[type='submit']", [
       "sign in", "log in", "login", "giriş", "oturum aç", "devam", "continue", "submit", "gönder"
-    ]);
+    ], ["google", "apple"]);
     await randomDelay(3000, 6000);
 
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
