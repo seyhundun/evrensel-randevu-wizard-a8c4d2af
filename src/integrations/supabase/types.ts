@@ -346,6 +346,30 @@ export type Database = {
         }
         Relationships: []
       }
+      quiz_tracking_logs: {
+        Row: {
+          created_at: string
+          id: string
+          message: string | null
+          screenshot_url: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          screenshot_url?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          screenshot_url?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       tracking_configs: {
         Row: {
           cf_blocked_ip: string | null
