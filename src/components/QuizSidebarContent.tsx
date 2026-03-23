@@ -42,6 +42,7 @@ export default function QuizSidebarContent() {
   const [quizProxyEnabled, setQuizProxyEnabled] = useState(true);
   const [captchaProvider, setCaptchaProvider] = useState("—");
   const [captchaApiKey, setCaptchaApiKey] = useState(false);
+  const [browserUseApiKey, setBrowserUseApiKey] = useState(false);
   const [quizStatus, setQuizStatus] = useState<"idle" | "running">("idle");
   const [lastLog, setLastLog] = useState<{ message: string; time: string; status: string } | null>(null);
   const [stats, setStats] = useState({ total: 0, success: 0, error: 0, successRate: 100 });
