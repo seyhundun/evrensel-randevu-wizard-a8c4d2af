@@ -45,7 +45,7 @@ export default function LinkAnalyzer() {
     if (data) setAnalyses(data as unknown as Analysis[]);
   };
 
-  const startAnalysis = async () => {
+  const startAnalysis = async (mode: "analyze" | "quiz" = "analyze") => {
     const urlList = urls
       .split("\n")
       .map(u => u.trim())
@@ -59,10 +59,11 @@ export default function LinkAnalyzer() {
     setProcessing(true);
 
     for (const url of urlList) {
-      // Create DB record first
+      const status = mode === "quiz" ? "quiz_pending" : "scraping";
+      
       const { data: record, error: insertErr } = await supabase
         .from("link_analyses")
-        .insert({ url, status: "scraping" } as any)
+        .insert({ url, status } as any)
         .select()
         .single();
 
@@ -71,17 +72,17 @@ export default function LinkAnalyzer() {
         continue;
       }
 
-      // Fire and forget - the edge function will update the record
-      supabase.functions.invoke("analyze-link", {
-        body: { url, analysisId: (record as any).id },
-      }).then(({ error }) => {
-        if (error) {
-          console.error("Analysis error for", url, error);
-          toast.error(`Hata (${url}): ${error.message}`);
-        }
-      });
+      if (mode === "analyze") {
+        supabase.functions.invoke("analyze-link", {
+          body: { url, analysisId: (record as any).id },
+        }).then(({ error }) => {
+          if (error) {
+            console.error("Analysis error for", url, error);
+            toast.error(`Hata (${url}): ${error.message}`);
+          }
+        });
+      }
 
-      // Small delay between requests
       if (urlList.length > 1) {
         await new Promise(r => setTimeout(r, 1500));
       }
@@ -89,7 +90,11 @@ export default function LinkAnalyzer() {
 
     setUrls("");
     setProcessing(false);
-    toast.success(`${urlList.length} link analiz ediliyor...`);
+    toast.success(
+      mode === "quiz"
+        ? `${urlList.length} link quiz botu kuyruğuna eklendi`
+        : `${urlList.length} link analiz ediliyor...`
+    );
   };
 
   const deleteAnalysis = async (id: string) => {
