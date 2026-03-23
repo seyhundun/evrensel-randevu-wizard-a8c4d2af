@@ -329,6 +329,19 @@ const Index = () => {
             </main>
           </div>
         </TabsContent>
+
+        {/* ========== QUIZ BOT TAB ========== */}
+        <TabsContent value="quiz" className="mt-0 flex-1 min-h-0">
+          <div className="flex h-[calc(100vh-105px)]">
+            <main className="flex-1 min-w-0">
+              <ScrollArea className="h-full">
+                <div className="p-3 md:p-6 max-w-4xl mx-auto">
+                  <QuizBotPanel />
+                </div>
+              </ScrollArea>
+            </main>
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
   );
