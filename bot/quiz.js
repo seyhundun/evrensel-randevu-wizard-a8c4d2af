@@ -478,15 +478,11 @@ async function fillTextInput(page, q) {
 async function processQuiz(url) {
   var browser, page;
   try {
-    // 1) AI Analiz
-    var ai = await analyzeWithAI(url);
-    if (ai.questions.length === 0) { console.log("Soru bulunamadi. Ham AI cevabi:"); console.log(ai.rawAnswer); await supabaseInsertLog("Soru bulunamadi", "warning"); return; }
-
-    // 2) Chrome ac
+    // 1) Chrome aç - HER ZAMAN önce tarayıcıyı aç
     var result = await launchBrowser();
     browser = result.browser; page = result.page;
 
-    // 3) Sayfaya git
+    // 2) Sayfaya git
     console.log("Sayfaya gidiliyor: " + url);
     await supabaseInsertLog("Sayfaya gidiliyor: " + url, "info");
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
@@ -494,23 +490,35 @@ async function processQuiz(url) {
     await forceDesktopWindow(page);
     page = await reopenInFreshTabIfNeeded(browser, page, url);
 
-    // 4) Cookie popup kapat
+    // 3) Cookie popup kapat
     await dismissCookies(page);
 
-    // 5) Login gerekiyorsa yap
+    // 4) Login gerekiyorsa yap
     var loginOk = await handleEmailLogin(page);
     if (!loginOk) {
       console.log("Email giris basarisiz - VNC uzerinden manuel giris yapabilirsiniz");
       await supabaseInsertLog("Email giris basarisiz - manuel giris gerekli", "warning");
     }
 
-    // 6) Sayfanin yuklenmesini bekle
+    // 5) Sayfanın yüklenmesini bekle
     await randomDelay(3000, 5000);
     await dismissCookies(page);
 
-    // 7) Sorulari doldur
-    var result2 = await fillAnswers(page, ai.questions);
-    await supabaseInsertLog("Quiz tamamlandi - " + result2.filled + "/" + ai.questions.length + " soru dolduruldu", result2.failed > 0 ? "warning" : "success");
+    // 6) AI Analiz (login sonrası sayfa içeriği daha doğru analiz edilir)
+    try {
+      var currentUrl = await page.url();
+      var ai = await analyzeWithAI(currentUrl);
+      if (ai.questions.length > 0) {
+        var result2 = await fillAnswers(page, ai.questions);
+        await supabaseInsertLog("Quiz tamamlandi - " + result2.filled + "/" + ai.questions.length + " soru dolduruldu", result2.failed > 0 ? "warning" : "success");
+      } else {
+        console.log("Quiz sorusu bulunamadi - sayfa login/dashboard olabilir");
+        await supabaseInsertLog("Soru bulunamadi - giris tamamlandi", "info");
+      }
+    } catch (aiErr) {
+      console.log("AI analiz atlandi: " + aiErr.message);
+      await supabaseInsertLog("AI analiz atlandi: " + aiErr.message, "warning");
+    }
 
     console.log("Tarayici acik kaliyor - VNC den kontrol edebilirsiniz.");
     await new Promise(function(resolve) { browser.on("disconnected", resolve); });
