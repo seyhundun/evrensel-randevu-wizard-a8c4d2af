@@ -109,6 +109,12 @@ async function runGeminiEngine(url, account, settings) {
     await supabaseInsertLog("Proxy aktif: " + proxyHost + " | Ülke: " + (settings.quiz_proxy_country || "US"), "info");
   }
 
+  // Proxy auth — page.goto'dan ÖNCE çağrılmalı
+  if (useProxy && proxyUser && proxyPass) {
+    await page.authenticate({ username: proxyUser, password: proxyPass });
+    console.log("[GEMINI] Proxy auth ayarlandı: " + proxyUser);
+  }
+
   try {
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
     await supabaseInsertLog("Sayfa yüklendi: " + url, "info");
