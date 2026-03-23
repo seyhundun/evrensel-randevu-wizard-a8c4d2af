@@ -413,8 +413,7 @@ async function getLoginAccount() {
 }
 
 async function handleEmailLogin(page) {
-  console.log("Login ekrani kontrol ediliyor...");
-
+  console.log("Login: AI agent ile kontrol ediliyor...");
   var account = await getLoginAccount();
   if (!account) return false;
 
@@ -424,143 +423,85 @@ async function handleEmailLogin(page) {
   try {
     // ===== ADIM 1: ÇEREZLERİ KABUL ET =====
     console.log("  Adim 1: Cerezleri kabul ediliyor...");
-    for (var cookieTry = 0; cookieTry < 5; cookieTry++) {
-      await recoverFromSocialPopup(page);
-      var cookieDismissed = await dismissCookies(page);
-      if (cookieDismissed) break;
-      await randomDelay(1000, 1500);
-    }
+    await recoverFromSocialPopup(page);
+    await dismissCookies(page);
     await randomDelay(1500, 2500);
 
-    // ===== ADIM 2: LOGIN SAYFASINA GİT =====
-    // Eğer login formu yoksa, "Log In" butonunu ara ve tıkla
-    var emailSelector = 'input[type="email"], input[name="email"], input[name="username"], input[name="login"], input[id*="email"], input[id*="user"], input[autocomplete="username"], input[placeholder*="mail" i], input[placeholder*="email" i]';
-    var passwordSelector = 'input[type="password"], input[name="password"], input[id*="password"], input[autocomplete="current-password"]';
-    var emailInput = await page.$(emailSelector);
-
-    if (!emailInput) {
-      console.log("  Adim 2: Login sayfasi araniyor...");
-      // Önce sayfada "Log In" / "Sign In" navigasyon butonu ara (header vb.)
-      var navLoginClicked = await page.evaluate(function() {
-        var links = document.querySelectorAll('a, button');
-        for (var i = 0; i < links.length; i++) {
-          var el = links[i];
-          var text = (el.textContent || "").trim().toLowerCase();
-          var href = (el.href || "").toLowerCase();
-          var style = window.getComputedStyle(el);
-          var rect = el.getBoundingClientRect();
-          if (rect.width === 0 || rect.height === 0 || style.display === "none" || style.visibility === "hidden") continue;
-          // Sadece kısa "Log In" / "Sign In" navigasyon butonları (kayıt butonları değil)
-          if ((text === "log in" || text === "login" || text === "sign in" || text === "giriş" || text === "giriş yap") && text.length < 15) {
-            // Google/Apple içermediğinden emin ol
-            if (text.indexOf("google") !== -1 || text.indexOf("apple") !== -1) continue;
-            el.click();
-            return true;
-          }
-          if (href.indexOf("/login") !== -1 || href.indexOf("/signin") !== -1 || href.indexOf("/sign-in") !== -1) {
-            if (text.indexOf("google") !== -1 || text.indexOf("apple") !== -1) continue;
-            el.click();
-            return true;
-          }
-        }
-        return false;
-      });
-
-      if (navLoginClicked) {
-        console.log("  Log In butonu tiklandi, sayfa yukleniyor...");
-        await supabaseInsertLog("Log In navigasyon butonu tiklandi", "info");
-        await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
-        await randomDelay(2000, 3000);
-        await recoverFromSocialPopup(page);
-        await dismissCookies(page);
-        emailInput = await page.$(emailSelector);
-      }
-    }
-
-    // ===== ADIM 3: "CONTINUE WITH EMAIL" BUTONUNA TIKLA =====
-    if (!emailInput) {
-      console.log("  Adim 3: Continue with Email butonu araniyor...");
+    // ===== ADIM 2: AI AGENT İLE LOGIN SAYFASINI BUL =====
+    console.log("  Adim 2: Login sayfasi araniyor (AI agent)...");
+    await supabaseInsertLog("Agent: Login sayfasi araniyor", "info");
+    var step1 = await agentStep(page, "Sayfada 'Log In', 'Sign In', 'Giris Yap' gibi bir navigasyon butonu veya linki varsa tikla. Email/kullanici adi input alani zaten gorunuyorsa status: already_done dondur. Google/Apple/Facebook butonlarina TIKLAMA.", null);
+    if (step1.status === "found") {
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+      await randomDelay(2000, 3000);
       await recoverFromSocialPopup(page);
       await dismissCookies(page);
-      var emailBtnClicked = await clickSwagbucksEmailButton(page);
-
-      if (emailBtnClicked) {
-        console.log("  Continue with Email tiklandi");
-        await supabaseInsertLog("Continue with Email tiklandi", "info");
-        await randomDelay(2500, 4000);
-        await recoverFromSocialPopup(page);
-        await dismissCookies(page);
-        emailInput = await page.$(emailSelector);
-      }
     }
 
-    // Son fallback: herhangi bir text/email input
-    if (!emailInput) {
-      emailInput = await page.$('input[type="text"], input[type="email"]');
+    // ===== ADIM 3: CONTINUE WITH EMAIL (AI Agent) =====
+    console.log("  Adim 3: Continue with Email araniyor (AI agent)...");
+    var step2 = await agentStep(page, "Sayfada 'Continue with Email', 'Email ile devam et' gibi bir buton varsa tikla. Email/kullanici input alani zaten gorunuyorsa status: already_done dondur. Google/Apple/Facebook butonlarina TIKLAMA.", null);
+    if (step2.status === "found") {
+      await randomDelay(2500, 4000);
+      await recoverFromSocialPopup(page);
+      await dismissCookies(page);
     }
 
-    if (!emailInput) {
-      console.log("  Email alani bulunamadi");
-      await supabaseInsertLog("Email alani bulunamadi", "warning");
+    // ===== ADIM 4: EMAIL GİR (AI Agent) =====
+    console.log("  Adim 4: Email giriliyor (AI agent)...");
+    await supabaseInsertLog("Agent: Email giriliyor", "info");
+    var step3 = await agentStep(page, "Email veya kullanici adi input alanini bul ve su degeri yaz: " + account.email, "Bu bir login formu. Email alanina yazi yazilacak.");
+    if (step3.status !== "found") {
+      console.log("  Agent: Email alani bulunamadi");
+      await supabaseInsertLog("Agent: Email alani bulunamadi", "warning");
       return false;
-    }
-
-    // ===== ADIM 4: EMAIL GİR =====
-    console.log("  Adim 4: Email giriliyor...");
-    await emailInput.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
-    await randomDelay(300, 500);
-    await humanClick(page, emailInput);
-    await randomDelay(300, 600);
-    await page.keyboard.down("Control").catch(function() {});
-    await page.keyboard.press("A").catch(function() {});
-    await page.keyboard.up("Control").catch(function() {});
-    await page.keyboard.press("Backspace").catch(function() {});
-    for (var j = 0; j < account.email.length; j++) {
-      await page.keyboard.type(account.email[j], { delay: 40 + Math.random() * 60 });
     }
     await supabaseInsertLog("Email dolduruldu", "info");
     await randomDelay(500, 1000);
 
-    // ===== ADIM 5: ŞİFRE GİR =====
-    var passwordInput = await page.$(passwordSelector);
-    if (!passwordInput) {
+    // ===== ADIM 5: ŞİFRE GİR (AI Agent) =====
+    console.log("  Adim 5: Sifre giriliyor (AI agent)...");
+    var step4 = await agentStep(page, "Sifre (password) input alanini bul ve su degeri yaz: " + account.password + ". Sifre alani yoksa 'Next', 'Continue', 'Devam' gibi ilerleme butonuna tikla.", "Login formu, email zaten girildi.");
+    if (step4.status === "found" && step4.actions) {
+      var hasPassword = false;
+      for (var a = 0; a < step4.actions.length; a++) {
+        if (step4.actions[a].type === "type") hasPassword = true;
+      }
+      if (!hasPassword) {
+        // Next/Continue'a tıklandı, şifre alanı henüz yok
+        await randomDelay(2000, 4000);
+        await recoverFromSocialPopup(page);
+        await dismissCookies(page);
+        console.log("  Adim 5b: Sifre alani tekrar araniyor...");
+        await agentStep(page, "Sifre (password) input alanini bul ve su degeri yaz: " + account.password, "Login formu ikinci adim, email girildi, simdi sifre girilecek.");
+      }
+    } else if (step4.status !== "found") {
+      // Fallback: Eski yöntemle şifre alanı ara
+      var passwordSelector = 'input[type="password"], input[name="password"], input[id*="password"]';
       await recoverFromSocialPopup(page);
-      // Devam / Next butonuna bas
       await clickByText(page, "button, a, div[role='button'], input[type='submit']", [
         "next", "continue", "devam", "ileri", "sonraki", "proceed", "submit"
       ], ["google", "apple", "facebook"]);
       await randomDelay(2000, 4000);
-      await recoverFromSocialPopup(page);
-      await dismissCookies(page);
       await page.waitForSelector(passwordSelector, { timeout: 10000 }).catch(function() {});
-      passwordInput = await page.$(passwordSelector);
-    }
-
-    if (!passwordInput) {
-      console.log("  Sifre alani bulunamadi");
-      await supabaseInsertLog("Sifre alani bulunamadi", "warning");
-      return false;
-    }
-
-    console.log("  Adim 5: Sifre giriliyor...");
-    await passwordInput.evaluate(function(el) { el.scrollIntoView({ block: "center", behavior: "instant" }); });
-    await humanClick(page, passwordInput);
-    await randomDelay(300, 600);
-    for (var m = 0; m < account.password.length; m++) {
-      await page.keyboard.type(account.password[m], { delay: 40 + Math.random() * 60 });
+      var passwordInput = await page.$(passwordSelector);
+      if (passwordInput) {
+        await humanClick(page, passwordInput);
+        await randomDelay(300, 600);
+        for (var m = 0; m < account.password.length; m++) {
+          await page.keyboard.type(account.password[m], { delay: 40 + Math.random() * 60 });
+        }
+      }
     }
     await supabaseInsertLog("Sifre dolduruldu", "info");
     await randomDelay(500, 1000);
 
-    // ===== ADIM 6: GİRİŞ YAP =====
-    console.log("  Adim 6: Giris yapiliyor...");
-    await recoverFromSocialPopup(page);
-    await dismissCookies(page);
-    await clickByText(page, "button, a, div[role='button'], input[type='submit']", [
-      "log in", "sign in", "login", "giriş", "oturum aç", "submit", "gönder"
-    ], ["google", "apple", "facebook", "create", "register", "kayıt", "join"]);
-    await randomDelay(3000, 6000);
+    // ===== ADIM 6: GİRİŞ YAP (AI Agent) =====
+    console.log("  Adim 6: Giris butonu araniyor (AI agent)...");
+    await supabaseInsertLog("Agent: Giris butonuna tiklaniyor", "info");
+    await agentStep(page, "'Log In', 'Sign In', 'Login', 'Giris Yap', 'Submit' gibi giris butonuna tikla. Google/Apple/Facebook/Create/Register butonlarina TIKLAMA.", "Login formu, email ve sifre girildi, simdi submit edilecek.");
 
+    await randomDelay(3000, 6000);
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
     await recoverFromSocialPopup(page);
     await dismissCookies(page);
