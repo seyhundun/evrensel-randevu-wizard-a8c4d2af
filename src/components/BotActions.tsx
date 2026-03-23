@@ -4,8 +4,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
-  Play, Zap, OctagonX, Camera, TestTube, RotateCcw, ShieldAlert,
-  Loader2, RefreshCw
+  Play, OctagonX, Camera, TestTube, ShieldAlert,
+  Loader2, RefreshCw, Monitor
 } from "lucide-react";
 import type { TrackingStatus } from "@/lib/constants";
 
@@ -29,6 +29,7 @@ export default function BotActions({
   const [requesting, setRequesting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [changingIp, setChangingIp] = useState(false);
+  const [manualNoProxy, setManualNoProxy] = useState(false);
   const isActive = status === "searching";
 
   const requestScreenshot = async () => {
@@ -64,6 +65,19 @@ export default function BotActions({
     setTimeout(() => setChangingIp(false), 3000);
   };
 
+  const requestManualNoProxy = async () => {
+    setManualNoProxy(true);
+    try {
+      await supabase.functions.invoke("bot-api", {
+        body: { action: "request_manual_noproxy" },
+      });
+      toast.success("🖥️ Proxy'siz Chrome açılıyor, VNC'den kontrol edebilirsiniz");
+    } catch {
+      toast.error("İstek gönderilemedi");
+    }
+    setTimeout(() => setManualNoProxy(false), 5000);
+  };
+
   const actions = [
     {
       label: "Başlat",
@@ -78,6 +92,13 @@ export default function BotActions({
       onClick: onStop,
       disabled: !isActive,
       className: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+    },
+    {
+      label: "Manuel Giriş (Proxy'siz)",
+      icon: manualNoProxy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Monitor className="w-4 h-4" />,
+      onClick: requestManualNoProxy,
+      disabled: manualNoProxy,
+      className: "bg-emerald-600 text-white hover:bg-emerald-700",
     },
     {
       label: "Captcha Reset",
