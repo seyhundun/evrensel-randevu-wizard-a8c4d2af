@@ -261,6 +261,164 @@ async function clickPreferredCookieButton(page) {
 
 // ==================== AI ANALİZ ====================
 
+// ==================== reCAPTCHA v2 ÇÖZÜCÜ (2Captcha) ====================
+
+async function get2CaptchaApiKey() {
+  try {
+    var settings = await supabaseGet("bot_settings", "key=eq.captcha_api_key&limit=1");
+    if (settings && settings.length > 0 && settings[0].value) return settings[0].value;
+  } catch (e) {}
+  return process.env.TWOCAPTCHA_API_KEY || null;
+}
+
+async function solveRecaptchaV2(page) {
+  try {
+    // reCAPTCHA iframe var mı kontrol et
+    var recaptchaInfo = await page.evaluate(function() {
+      // reCAPTCHA sitekey'i bul
+      var recaptchaEl = document.querySelector('[data-sitekey], .g-recaptcha');
+      if (recaptchaEl) {
+        return { sitekey: recaptchaEl.getAttribute("data-sitekey"), found: true };
+      }
+      // iframe içinde olabilir
+      var iframe = document.querySelector('iframe[src*="recaptcha"], iframe[src*="google.com/recaptcha"]');
+      if (iframe) {
+        var src = iframe.src || "";
+        var match = src.match(/[?&]k=([^&]+)/);
+        return { sitekey: match ? match[1] : null, found: true };
+      }
+      // Challenge popup kontrolü
+      var challengeFrame = document.querySelector('iframe[title*="recaptcha challenge"], iframe[src*="bframe"]');
+      if (challengeFrame) return { sitekey: null, found: true, challengeOnly: true };
+      return { found: false };
+    });
+
+    if (!recaptchaInfo.found) return false;
+
+    console.log("  reCAPTCHA v2 algilandi, 2Captcha ile cozuluyor...");
+    await supabaseInsertLog("reCAPTCHA v2 algilandi, 2Captcha ile cozuluyor", "info");
+
+    var apiKey = await get2CaptchaApiKey();
+    if (!apiKey) {
+      console.log("  2Captcha API key bulunamadi!");
+      await supabaseInsertLog("2Captcha API key eksik - bot_settings'te captcha_api_key tanimlayin", "error");
+      return false;
+    }
+
+    var sitekey = recaptchaInfo.sitekey;
+    if (!sitekey) {
+      // Sayfadaki tüm script/iframe'lerden sitekey bulmaya çalış
+      sitekey = await page.evaluate(function() {
+        var scripts = document.querySelectorAll("script[src*='recaptcha']");
+        for (var i = 0; i < scripts.length; i++) {
+          var m = (scripts[i].src || "").match(/[?&]render=([^&]+)/);
+          if (m) return m[1];
+        }
+        var allHtml = document.documentElement.outerHTML;
+        var keyMatch = allHtml.match(/sitekey['":\s]+(['"]([\w-]+)['"])/);
+        return keyMatch ? keyMatch[2] : null;
+      });
+    }
+
+    if (!sitekey) {
+      console.log("  reCAPTCHA sitekey bulunamadi");
+      await supabaseInsertLog("reCAPTCHA sitekey bulunamadi", "warning");
+      return false;
+    }
+
+    var pageUrl = await page.url();
+    console.log("  Sitekey: " + sitekey);
+    await supabaseInsertLog("reCAPTCHA sitekey: " + sitekey.slice(0, 20) + "...", "info");
+
+    // 2Captcha'ya gönder
+    var fetch = (await import("node-fetch")).default;
+    var createRes = await fetch("https://2captcha.com/in.php?key=" + apiKey + "&method=userrecaptcha&googlekey=" + sitekey + "&pageurl=" + encodeURIComponent(pageUrl) + "&json=1");
+    var createData = await createRes.json();
+
+    if (createData.status !== 1) {
+      console.log("  2Captcha gönderilemedi:", createData.request);
+      await supabaseInsertLog("2Captcha hata: " + createData.request, "error");
+      return false;
+    }
+
+    var taskId = createData.request;
+    console.log("  2Captcha task: " + taskId + " - cozum bekleniyor...");
+    await supabaseInsertLog("2Captcha task olusturuldu: " + taskId, "info");
+
+    // Çözümü bekle (max 120sn)
+    var token = null;
+    for (var attempt = 0; attempt < 24; attempt++) {
+      await new Promise(function(r) { setTimeout(r, 5000); });
+      var resultRes = await fetch("https://2captcha.com/res.php?key=" + apiKey + "&action=get&id=" + taskId + "&json=1");
+      var resultData = await resultRes.json();
+      if (resultData.status === 1) {
+        token = resultData.request;
+        break;
+      }
+      if (resultData.request !== "CAPCHA_NOT_READY") {
+        console.log("  2Captcha hatasi:", resultData.request);
+        await supabaseInsertLog("2Captcha cozum hatasi: " + resultData.request, "error");
+        return false;
+      }
+    }
+
+    if (!token) {
+      console.log("  2Captcha zaman asimi");
+      await supabaseInsertLog("2Captcha zaman asimi (120sn)", "error");
+      return false;
+    }
+
+    console.log("  reCAPTCHA cozuldu! Token enjekte ediliyor...");
+    await supabaseInsertLog("reCAPTCHA cozuldu, token enjekte ediliyor", "success");
+
+    // Token'ı sayfaya enjekte et
+    await page.evaluate(function(t) {
+      // g-recaptcha-response textarea'ya yaz
+      var textareas = document.querySelectorAll("#g-recaptcha-response, textarea[name='g-recaptcha-response']");
+      for (var i = 0; i < textareas.length; i++) {
+        textareas[i].style.display = "block";
+        textareas[i].value = t;
+      }
+      // Callback'i çağır
+      if (typeof window.___grecaptcha_cfg !== "undefined") {
+        var clients = window.___grecaptcha_cfg.clients;
+        if (clients) {
+          for (var key in clients) {
+            var client = clients[key];
+            try {
+              // Callback fonksiyonunu bul
+              var findCallback = function(obj) {
+                if (!obj || typeof obj !== "object") return null;
+                for (var k in obj) {
+                  if (typeof obj[k] === "function") return obj[k];
+                  if (typeof obj[k] === "object") {
+                    var found = findCallback(obj[k]);
+                    if (found) return found;
+                  }
+                }
+                return null;
+              };
+              var cb = findCallback(client);
+              if (cb) cb(t);
+            } catch (e2) {}
+          }
+        }
+      }
+      // Fallback: grecaptcha callback
+      if (typeof window.grecaptcha !== "undefined" && window.grecaptcha.getResponse) {
+        try { window.grecaptcha.enterprise && window.grecaptcha.enterprise.execute && window.grecaptcha.enterprise.execute(); } catch (e3) {}
+      }
+    }, token);
+
+    await randomDelay(1000, 2000);
+    return true;
+  } catch (err) {
+    console.error("  reCAPTCHA cozme hatasi:", err.message);
+    await supabaseInsertLog("reCAPTCHA hatasi: " + err.message, "error");
+    return false;
+  }
+}
+
 async function analyzeWithAI(url) {
   var fetch = (await import("node-fetch")).default;
   console.log("AI analiz basliyor: " + url);
@@ -620,7 +778,20 @@ async function handleEmailLogin(page) {
     await supabaseInsertLog("Agent: Giris butonuna tiklaniyor", "info");
     await agentStep(page, "'Log In', 'Sign In', 'Login', 'Giris Yap', 'Submit' gibi giris butonuna tikla. Google/Apple/Facebook/Create/Register butonlarina TIKLAMA.", "Login formu, email ve sifre girildi, simdi submit edilecek.");
 
-    await randomDelay(3000, 6000);
+    await randomDelay(2000, 3000);
+
+    // ===== ADIM 7: reCAPTCHA VARSA ÇÖZ =====
+    var captchaSolved = await solveRecaptchaV2(page);
+    if (captchaSolved) {
+      console.log("  reCAPTCHA cozuldu, giris butonu tekrar tiklaniyor...");
+      await supabaseInsertLog("reCAPTCHA cozuldu, tekrar submit", "info");
+      // Submit'e tekrar bas
+      await agentStep(page, "'Log In', 'Sign In', 'Login', 'Submit', 'Verify' gibi giris/dogrulama butonuna tikla.", "reCAPTCHA cozuldu, formu gonder.");
+      await randomDelay(3000, 5000);
+    } else {
+      await randomDelay(1000, 3000);
+    }
+
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
     await recoverFromSocialPopup(page);
     await dismissCookies(page);
