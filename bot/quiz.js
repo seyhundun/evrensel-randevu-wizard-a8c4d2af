@@ -482,8 +482,43 @@ async function forceDesktopWindow(page) {
   } catch (e) {}
 }
 
+async function getQuizProxyConfig() {
+  try {
+    var settings = await supabaseGet("bot_settings", "select=key,value");
+    if (!settings || !Array.isArray(settings)) return null;
+    var map = {};
+    for (var i = 0; i < settings.length; i++) map[settings[i].key] = settings[i].value;
+    
+    if (map.quiz_proxy_enabled === "false") {
+      console.log("Quiz proxy devre disi");
+      return null;
+    }
+    
+    var host = map.proxy_host || "core-residential.evomi-proxy.com";
+    var port = parseInt(map.proxy_port || "1000", 10);
+    var username = map.proxy_username || "";
+    var password = map.proxy_password || "";
+    var country = (map.quiz_proxy_country || map.proxy_country || "US").toLowerCase();
+    var region = (map.quiz_proxy_region || "").toLowerCase();
+    
+    // Session ID for fresh IP
+    var sessionId = "quiz" + Math.random().toString(36).slice(2, 10);
+    var fullPassword = password + "_country-" + country;
+    if (region) fullPassword += "_city-" + region;
+    fullPassword += "_session-" + sessionId;
+    
+    return { host: host, port: port, username: username, password: fullPassword };
+  } catch (e) {
+    console.error("Quiz proxy config hatasi:", e.message);
+    return null;
+  }
+}
+
 async function launchBrowser() {
   var connect = require("puppeteer-real-browser").connect;
+  
+  var proxyConfig = await getQuizProxyConfig();
+  
   var options = {
     headless: false,
     turnstile: false,
@@ -501,6 +536,21 @@ async function launchBrowser() {
     },
     connectOption: {},
   };
+  
+  if (proxyConfig) {
+    options.connectOption.proxy = {
+      host: proxyConfig.host,
+      port: proxyConfig.port,
+      username: proxyConfig.username,
+      password: proxyConfig.password,
+    };
+    console.log("Quiz proxy aktif: " + proxyConfig.host + ":" + proxyConfig.port + " (session: " + proxyConfig.password.split("_session-")[1] + ")");
+    await supabaseInsertLog("Proxy aktif: " + proxyConfig.host + " | Ülke: " + proxyConfig.password.match(/_country-([^_]+)/)?.[1] || "?", "info");
+  } else {
+    console.log("Quiz proxy KAPALI — doğrudan bağlantı");
+    await supabaseInsertLog("Proxy kapalı — doğrudan bağlantı", "info");
+  }
+  
   process.env.DISPLAY = DISPLAY;
   console.log("Chrome baslatiliyor (Display: " + DISPLAY + ")...");
   var result = await connect(options);
