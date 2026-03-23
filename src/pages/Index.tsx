@@ -203,6 +203,9 @@ const Index = () => {
             <TabsTrigger value="idata" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
               🇮🇹 iDATA
             </TabsTrigger>
+            <TabsTrigger value="quiz" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
+              🧩 Quiz Bot
+            </TabsTrigger>
           </TabsList>
         </div>
 
