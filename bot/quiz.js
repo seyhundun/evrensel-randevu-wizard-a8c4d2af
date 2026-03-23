@@ -368,10 +368,10 @@ async function processQuiz(url) {
     await dismissCookies(page);
 
     // 5) Google login gerekiyorsa yap
-    var loginOk = await handleGoogleLogin(page);
+    var loginOk = await handleEmailLogin(page);
     if (!loginOk) {
-      console.log("Google giris basarisiz - VNC uzerinden manuel giris yapabilirsiniz");
-      await supabaseInsertLog("Google giris basarisiz - manuel giris gerekli", "warning");
+      console.log("Email giris basarisiz - VNC uzerinden manuel giris yapabilirsiniz");
+      await supabaseInsertLog("Email giris basarisiz - manuel giris gerekli", "warning");
     }
 
     // 6) Sayfanin yuklenmesini bekle
