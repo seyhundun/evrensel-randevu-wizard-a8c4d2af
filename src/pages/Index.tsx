@@ -264,6 +264,7 @@ const Index = () => {
                       canStart={!!t.country && !!t.city}
                     />
                   </div>
+                  <AccountHealthPanel configId={t.configId} />
                   <StatusPanel
                     status={t.status}
                     country={t.country}
