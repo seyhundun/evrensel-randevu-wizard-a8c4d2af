@@ -54,11 +54,12 @@ ${JSON.stringify(elements, null, 2)}`;
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
+        temperature: 0,
       }),
     });
 
@@ -86,8 +87,39 @@ ${JSON.stringify(elements, null, 2)}`;
       const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
       result = JSON.parse(jsonMatch ? jsonMatch[1].trim() : content.trim());
     } catch {
-      console.error("Failed to parse AI response:", content);
-      result = { actions: [], status: "not_found", message: "AI cevabi parse edilemedi" };
+      try {
+        const objectMatch = content.match(/\{[\s\S]*\}/);
+        result = JSON.parse(objectMatch ? objectMatch[0] : "{}");
+      } catch {
+        console.error("Failed to parse AI response:", content);
+        result = { actions: [], status: "not_found", message: "AI cevabi parse edilemedi" };
+      }
+    }
+
+    if (!result || typeof result !== "object") {
+      result = { actions: [], status: "not_found", message: "Gecersiz ajan cevabi" };
+    }
+
+    if (!Array.isArray(result.actions)) {
+      result.actions = [];
+    }
+
+    result.actions = result.actions
+      .filter((action) => action && typeof action === "object")
+      .map((action) => ({
+        type: ["click", "type", "wait", "none"].includes(action.type) ? action.type : "none",
+        elementIndex: Number.isInteger(action.elementIndex) ? action.elementIndex : -1,
+        value: typeof action.value === "string" ? action.value : undefined,
+        reason: typeof action.reason === "string" ? action.reason : "Ajan eylemi",
+      }))
+      .filter((action) => action.type === "wait" || action.type === "none" || action.elementIndex >= 0);
+
+    if (!["found", "not_found", "already_done"].includes(result.status)) {
+      result.status = result.actions.length > 0 ? "found" : "not_found";
+    }
+
+    if (typeof result.message !== "string") {
+      result.message = result.status === "found" ? "Aksiyon bulundu" : "Aksiyon bulunamadi";
     }
 
     return new Response(JSON.stringify(result), {

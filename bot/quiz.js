@@ -132,12 +132,73 @@ async function executeAgentActions(page, actions) {
 async function agentStep(page, task, context) {
   var elements = await extractPageElements(page);
   console.log("  " + elements.length + " element tespit edildi, AI'a soruluyor...");
+  await supabaseInsertLog("Agent step: " + task.slice(0, 120), "info");
   var result = await askAgent(task, elements, context);
   console.log("  Agent cevabi: " + result.status + " - " + result.message);
   if (result.status === "found" && result.actions && result.actions.length > 0) {
     await executeAgentActions(page, result.actions);
   }
   return result;
+}
+
+async function legacyDismissCookies(page) {
+  for (var attempt = 0; attempt < 5; attempt++) {
+    try {
+      var dismissed = await page.evaluate(function() {
+        function isVisible(el) {
+          if (!el) return false;
+          var style = window.getComputedStyle(el);
+          var rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        }
+
+        var keywords = [
+          "accept all", "accept", "allow all", "allow", "agree", "i agree", "got it", "ok", "okay",
+          "kabul", "kabul et", "hepsini kabul et", "tamam", "anladım", "çerezleri kabul et", "cookie kabul"
+        ];
+        var rejectWords = ["reject", "reject all", "more choices", "manage", "preferences", "ayar", "reddet", "tercih"];
+        var nodes = document.querySelectorAll("button, a, div[role='button'], input[type='button'], input[type='submit']");
+        var bestNode = null;
+        var bestScore = -9999;
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          if (!isVisible(node)) continue;
+          var text = (node.textContent || node.value || "").toLowerCase().replace(/\s+/g, " ").trim();
+          if (!text) continue;
+          var blocked = false;
+          for (var r = 0; r < rejectWords.length; r++) {
+            if (text.indexOf(rejectWords[r]) !== -1) { blocked = true; break; }
+          }
+          if (blocked) continue;
+          var rect = node.getBoundingClientRect();
+          var score = 0;
+          var cookieParent = node.closest('[id*="cookie" i], [class*="cookie" i], [aria-label*="cookie" i], [data-testid*="cookie" i], [id*="consent" i], [class*="consent" i], [role="dialog"], [aria-modal="true"]');
+          if (cookieParent) score += 120;
+          if (rect.left < window.innerWidth * 0.45) score += 70;
+          if (rect.top > window.innerHeight * 0.45) score += 40;
+          for (var j = 0; j < keywords.length; j++) {
+            if (text === keywords[j]) score += 200;
+            else if (text.indexOf(keywords[j]) !== -1) score += 120;
+          }
+          if (score > bestScore) {
+            bestScore = score;
+            bestNode = node;
+          }
+        }
+
+        if (bestNode && bestScore > 0) {
+          bestNode.scrollIntoView({ block: "center", behavior: "instant" });
+          bestNode.click();
+          return true;
+        }
+
+        return false;
+      });
+      if (dismissed) return true;
+    } catch (e) {}
+    await randomDelay(300, 700);
+  }
+  return false;
 }
 
 // ==================== AI ANALİZ ====================
@@ -534,7 +595,8 @@ async function dismissCookies(page) {
   } catch (agentErr) {
     console.log("  AI agent cookie hatasi: " + agentErr.message);
   }
-  return false;
+  console.log("  Cookie: fallback heuristic deneniyor...");
+  return await legacyDismissCookies(page);
 }
 
 // ==================== SORU DOLDURMA ====================
