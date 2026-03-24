@@ -1106,6 +1106,53 @@ async function runGeminiEngine(url, account, settings) {
 
         await executeAction(page, action);
 
+        // === HER TIKLAMADAN SONRA: Sayfanın en altına in ve Continue/Next/Submit ara ===
+        if (action.action === 'click' || action.action === 'select_dropdown' || action.action === 'move_slider') {
+          await quizDelay(500, 1000);
+          // Sayfanın en altına scroll
+          await page.evaluate(function() { window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }); });
+          await quizDelay(600, 1200);
+          
+          // Continue/Next/Submit butonunu bul ve tıkla
+          var autoClicked = await page.evaluate(function() {
+            var btns = document.querySelectorAll('button, input[type="submit"], a.btn, a.button');
+            for (var i = 0; i < btns.length; i++) {
+              var txt = (btns[i].textContent || btns[i].value || '').trim();
+              if (/^(Continue|Next|Submit|Devam|İleri|Gönder|Sonraki|CONTINUE|NEXT|SUBMIT|Verify)$/i.test(txt)) {
+                var rect = btns[i].getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0 && !btns[i].disabled) {
+                  btns[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  return { found: true, text: txt, disabled: false };
+                } else if (btns[i].disabled) {
+                  return { found: true, text: txt, disabled: true };
+                }
+              }
+            }
+            return { found: false };
+          });
+          
+          if (autoClicked && autoClicked.found && !autoClicked.disabled) {
+            await quizDelay(300, 600);
+            // Fiziksel tıklama
+            var clicked = await page.evaluate(function() {
+              var btns = document.querySelectorAll('button, input[type="submit"], a.btn, a.button');
+              for (var i = 0; i < btns.length; i++) {
+                var txt = (btns[i].textContent || btns[i].value || '').trim();
+                if (/^(Continue|Next|Submit|Devam|İleri|Gönder|Sonraki|CONTINUE|NEXT|SUBMIT|Verify)$/i.test(txt) && !btns[i].disabled) {
+                  btns[i].click();
+                  return txt;
+                }
+              }
+              return null;
+            });
+            if (clicked) {
+              console.log('[AUTO-CONTINUE] ✅ ' + clicked + ' butonuna otomatik tıklandı');
+              await supabaseInsertLog('⏩ ' + clicked + ' butonuna otomatik tıklandı', 'info');
+              await quizDelay(1500, 3000);
+            }
+          }
+        }
+
         // Tıklamadan sonra yeni sekme açılmış mı kontrol et
         await quizDelay(1500, 3000);
         var pagesAfter = browser.targets().filter(function(t) { return t.type() === "page"; });
