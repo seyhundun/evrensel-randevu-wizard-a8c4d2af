@@ -1460,7 +1460,7 @@ async function runGeminiEngine(url, account, settings) {
 
     var stepStartTime = Date.now();
     var consecutiveFailures = 0;
-    var STEP_TIMEOUT_MS = 30000; // 30 saniye adım zaman aşımı
+    var STEP_TIMEOUT_MS = Math.max(10000, Math.min(120000, parseInt(settings.quiz_step_timeout || "30", 10) * 1000)); // Ayarlanabilir adım zaman aşımı
     var sameActionStreak = 0;
     var lastActionSummary = "";
     var repeatedStuckRecoveries = 0;

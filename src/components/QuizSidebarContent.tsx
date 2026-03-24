@@ -76,6 +76,7 @@ export default function QuizSidebarContent() {
   const [quizStatus, setQuizStatus] = useState<"idle" | "running">("idle");
   const [lastLog, setLastLog] = useState<{ message: string; time: string; status: string } | null>(null);
   const [stats, setStats] = useState({ total: 0, success: 0, error: 0, successRate: 100 });
+  const [stepTimeout, setStepTimeout] = useState("30");
 
   // Evomi API data
   const [evomiCountries, setEvomiCountries] = useState<{ code: string; name: string }[]>([]);
@@ -111,6 +112,7 @@ export default function QuizSidebarContent() {
       setOpenaiApiKey(map.openai_api_key || "");
       setLovableApiKey(map.lovable_api_key || "");
       setEvomiApiKey(map.evomi_api_key || "");
+      setStepTimeout(map.quiz_step_timeout || "30");
       setSettingsLoaded(true);
     }
   }, []);
@@ -378,6 +380,40 @@ export default function QuizSidebarContent() {
             <Badge variant="outline" className="text-[8px] h-4 border-amber-500/30 text-amber-600">Ücretli</Badge>
           </button>
         </div>
+      </Card>
+
+      {/* Step Timeout */}
+      <Card className="p-3 space-y-2">
+        <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+          Adım Zaman Aşımı
+        </h3>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={10}
+            max={120}
+            value={stepTimeout}
+            onChange={(e) => { setStepTimeout(e.target.value); setDirty(true); }}
+            className="h-7 text-[11px] w-20 font-mono"
+          />
+          <span className="text-[10px] text-muted-foreground">saniye</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px] ml-auto"
+            onClick={async () => {
+              await upsertSetting("quiz_step_timeout", stepTimeout, "Adım Zaman Aşımı (sn)");
+              toast.success("Zaman aşımı: " + stepTimeout + "s");
+            }}
+          >
+            <Save className="w-3 h-3 mr-1" />
+            Kaydet
+          </Button>
+        </div>
+        <p className="text-[9px] text-muted-foreground">
+          Her adım bu sürede tamamlanmazsa bot yeniden dener (10-120sn)
+        </p>
       </Card>
 
       {/* Active Engine API Key */}
