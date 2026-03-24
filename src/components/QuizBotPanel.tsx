@@ -91,6 +91,7 @@ export default function QuizBotPanel() {
   }
 
   async function deleteQuizLink(id: string) {
+    setQuizLinks(prev => prev.filter(l => l.id !== id));
     await supabase.from("link_analyses").delete().eq("id", id);
     toast.success("Link silindi");
   }
