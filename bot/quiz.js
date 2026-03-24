@@ -1307,31 +1307,51 @@ async function runGeminiEngine(url, account, settings) {
           console.log("[TAB] 🆕 Yeni sekme algılandı (" + pagesBeforeCount + " → " + pagesAfter.length + ")");
           await supabaseInsertLog("Yeni sekme açıldı, geçiş yapılıyor", "info");
 
-          // En son açılan sekmeyi bul
           var allPages = await browser.pages();
+          var oldPage = page;
           var newPage = allPages[allPages.length - 1];
 
           if (newPage && newPage !== page) {
-            // Yeni sekmeye geç
             await newPage.bringToFront();
             try { await newPage.setViewport({ width: 1920, height: 1080 }); } catch (e) {}
-
-            // Yeni sekmenin yüklenmesini bekle
             try {
               await newPage.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
             } catch (e) {}
 
-            // Eski page referansını güncelle
+            // Eski sekmeyi kapat (ilk sekme korunsun)
+            try {
+              var remainingPages = await browser.pages();
+              if (remainingPages.length > 2 && oldPage !== remainingPages[0]) {
+                await oldPage.close();
+                console.log("[TAB] 🗑️ Eski sekme kapatıldı");
+              }
+            } catch (closeErr) {
+              console.log("[TAB] Eski sekme kapatma hatası:", closeErr.message);
+            }
+
             page = newPage;
             console.log("[TAB] ✅ Yeni sekmeye geçildi: " + page.url());
             await supabaseInsertLog("Yeni sekmeye geçildi: " + page.url().slice(0, 80), "success");
 
-            // Yeni sayfada insan benzeri davranış
             await humanIdle(1500, 3000);
             await humanMove(page);
           }
+
+          // Fazla sekmeleri temizle (maks 3 sekme kalsın)
+          try {
+            var currentPages = await browser.pages();
+            if (currentPages.length > 3) {
+              console.log("[TAB] 🧹 Fazla sekme temizleniyor: " + currentPages.length + " açık");
+              for (var pi = 1; pi < currentPages.length - 1; pi++) {
+                if (currentPages[pi] !== page) {
+                  try { await currentPages[pi].close(); } catch (e) {}
+                }
+              }
+              var afterClean = await browser.pages();
+              console.log("[TAB] ✅ Temizlik sonrası: " + afterClean.length + " sekme");
+            }
+          } catch (cleanErr) {}
         } else {
-          // İnsan benzeri bekleme — sabit değil rastgele
           await humanIdle(1000, 2500);
         }
 
