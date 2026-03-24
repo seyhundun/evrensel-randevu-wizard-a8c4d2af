@@ -2342,6 +2342,141 @@ async function executeAction(page, action) {
       // Handled in main loop — just wait
       await new Promise(function(resolve) { setTimeout(resolve, 1000); });
       break;
+
+    case "drag_drop": {
+      console.log("[DRAG_DROP] Sürükle-bırak: " + action.selector + " → " + action.value);
+      var ddFrames = await getCandidateFrames();
+      var ddDone = false;
+      for (var ddf = 0; ddf < ddFrames.length && !ddDone; ddf++) {
+        try {
+          ddDone = await ddFrames[ddf].evaluate(function(sourceText, targetText) {
+            function normalize(text) { return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+            function isVisible(el) {
+              if (!el) return false;
+              var rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0;
+            }
+
+            var allEls = Array.from(document.querySelectorAll('*')).filter(isVisible);
+            var srcNorm = normalize(sourceText);
+            var tgtNorm = normalize(targetText);
+
+            var sourceEl = null;
+            var targetEl = null;
+
+            for (var i = 0; i < allEls.length; i++) {
+              var el = allEls[i];
+              var text = normalize(el.textContent || '');
+              var draggable = el.getAttribute('draggable') === 'true' || el.classList.contains('draggable') || el.getAttribute('data-drag') !== null;
+
+              if (!sourceEl && (text === srcNorm || (text.includes(srcNorm) && text.length < srcNorm.length + 10))) {
+                if (draggable || el.closest('[draggable="true"]')) {
+                  sourceEl = el.closest('[draggable="true"]') || el;
+                } else {
+                  sourceEl = el;
+                }
+              }
+
+              var isDropZone = el.classList.contains('drop-target') || el.classList.contains('dropzone') || el.classList.contains('drop-zone') ||
+                el.getAttribute('data-drop') !== null || el.getAttribute('data-droppable') !== null ||
+                (el.style.border && el.style.border.includes('dashed')) ||
+                window.getComputedStyle(el).borderStyle === 'dashed';
+
+              if (!targetEl && isDropZone) {
+                targetEl = el;
+              }
+              if (!targetEl && tgtNorm && text.includes(tgtNorm)) {
+                targetEl = el;
+              }
+            }
+
+            if (!targetEl) {
+              var placeholders = Array.from(document.querySelectorAll('[class*="drop"], [class*="placeholder"], [class*="target"], [style*="dashed"]')).filter(isVisible);
+              if (placeholders.length > 0) targetEl = placeholders[0];
+            }
+
+            if (!sourceEl || !targetEl) return false;
+
+            var srcRect = sourceEl.getBoundingClientRect();
+            var tgtRect = targetEl.getBoundingClientRect();
+            var srcX = srcRect.left + srcRect.width / 2;
+            var srcY = srcRect.top + srcRect.height / 2;
+            var tgtX = tgtRect.left + tgtRect.width / 2;
+            var tgtY = tgtRect.top + tgtRect.height / 2;
+
+            var dataTransfer = new DataTransfer();
+            try { dataTransfer.setData('text/plain', srcNorm); } catch(e) {}
+
+            function fire(el, type, x, y, dt) {
+              var evt = new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt });
+              el.dispatchEvent(evt);
+            }
+
+            fire(sourceEl, 'pointerdown', srcX, srcY, dataTransfer);
+            fire(sourceEl, 'mousedown', srcX, srcY, dataTransfer);
+            fire(sourceEl, 'dragstart', srcX, srcY, dataTransfer);
+            fire(sourceEl, 'drag', srcX, srcY, dataTransfer);
+            fire(targetEl, 'dragenter', tgtX, tgtY, dataTransfer);
+            fire(targetEl, 'dragover', tgtX, tgtY, dataTransfer);
+            fire(targetEl, 'drop', tgtX, tgtY, dataTransfer);
+            fire(sourceEl, 'dragend', tgtX, tgtY, dataTransfer);
+            fire(targetEl, 'pointerup', tgtX, tgtY, dataTransfer);
+            fire(targetEl, 'mouseup', tgtX, tgtY, dataTransfer);
+
+            return true;
+          }, action.selector || "", action.value || "");
+        } catch (ddErr) {
+          console.error("[DRAG_DROP] Frame hata:", ddErr.message);
+        }
+      }
+
+      if (!ddDone) {
+        console.log("[DRAG_DROP] DOM drag başarısız, Puppeteer mouse ile deneniyor...");
+        try {
+          var coords = await page.evaluate(function(sourceText) {
+            function normalize(text) { return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+            function isVisible(el) { var r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }
+            var srcNorm = normalize(sourceText);
+            var allEls = Array.from(document.querySelectorAll('*')).filter(isVisible);
+            var src = null, tgt = null;
+            for (var i = 0; i < allEls.length; i++) {
+              var text = normalize(allEls[i].textContent || '');
+              if (!src && (text === srcNorm || (text.includes(srcNorm) && text.length < srcNorm.length + 10))) {
+                src = allEls[i];
+              }
+              var isDrop = allEls[i].classList.contains('drop-target') || allEls[i].classList.contains('dropzone') ||
+                allEls[i].getAttribute('data-drop') !== null || window.getComputedStyle(allEls[i]).borderStyle === 'dashed';
+              if (!tgt && isDrop) tgt = allEls[i];
+            }
+            if (!tgt) {
+              var ph = Array.from(document.querySelectorAll('[class*="drop"], [class*="placeholder"], [class*="target"], [style*="dashed"]')).filter(isVisible);
+              if (ph.length > 0) tgt = ph[0];
+            }
+            if (!src || !tgt) return null;
+            var sr = src.getBoundingClientRect();
+            var tr = tgt.getBoundingClientRect();
+            return { sx: sr.left + sr.width/2, sy: sr.top + sr.height/2, tx: tr.left + tr.width/2, ty: tr.top + tr.height/2 };
+          }, action.selector || "");
+
+          if (coords) {
+            await page.mouse.move(coords.sx, coords.sy, { steps: 5 });
+            await page.mouse.down();
+            await new Promise(function(r) { setTimeout(r, 200); });
+            await page.mouse.move(coords.tx, coords.ty, { steps: 15 });
+            await new Promise(function(r) { setTimeout(r, 100); });
+            await page.mouse.up();
+            console.log("[DRAG_DROP] ✅ Mouse drag tamamlandı");
+          } else {
+            console.log("[DRAG_DROP] ❌ Kaynak/hedef bulunamadı");
+          }
+        } catch (mouseErr) {
+          console.error("[DRAG_DROP] Mouse drag hatası:", mouseErr.message);
+        }
+      } else {
+        console.log("[DRAG_DROP] ✅ DOM drag tamamlandı");
+      }
+      break;
+    }
   }
 }
 
