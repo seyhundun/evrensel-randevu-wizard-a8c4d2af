@@ -98,7 +98,8 @@ export default function QuizSidebarContent() {
       setProxyRegion(map.quiz_proxy_region || "");
       setQuizProxyEnabled(map.quiz_proxy_enabled !== "false");
       setCaptchaProvider(map.captcha_provider || "2captcha");
-      setCaptchaApiKey(!!(map.captcha_api_key));
+      setCaptchaApiKey(map.captcha_api_key || "");
+      setCapsolverApiKey(map.capsolver_api_key || "");
       setQuizEngine((map.quiz_engine as QuizEngineType) || "gemini");
       setGeminiApiKey(map.gemini_api_key || "");
       setBrowserUseKeyValue(map.browser_use_api_key || "");
