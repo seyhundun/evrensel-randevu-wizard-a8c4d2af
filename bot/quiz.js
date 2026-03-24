@@ -296,6 +296,208 @@ JSON formatı:
   return null;
 }
 
+// ==================== LOVABLE AI VISION ====================
+
+async function askLovableAIVision(apiKey, screenshotBase64, currentUrl, account, step, recentActions) {
+  var fetch = (await import("node-fetch")).default;
+  var recentText = (recentActions && recentActions.length > 0)
+    ? recentActions.map(function(a, i) { return (i + 1) + ". " + a; }).join("\n")
+    : "Yok";
+
+  var systemPrompt = `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip SADECE TEK BİR aksiyon belirle.
+
+GÖREV: Anket sitesine gir, giriş yap, anketleri bul ve çöz.
+
+HESAP BİLGİLERİ:
+- Email: ${account.email}
+- Şifre: ${account.password}
+
+SON DENEMELER:
+${recentText}
+
+KRİTİK KURALLAR:
+1. Aynı butona tekrar tekrar basma. Son 2-3 adım aynıysa FARKLI bir aksiyon seç.
+2. Eğer 'Log In' tıklandıysa ama sayfa değişmediyse sonraki adım email alanını doldurmak olmalı.
+3. Çerez popup varsa önce onu kapat.
+4. Giriş gerekiyorsa email/şifre ile giriş yap. Google/Facebook KULLANMA.
+5. Sadece ekranda gerçekten görünen öğeleri hedefle.
+6. JSON dışında hiçbir şey yazma.
+
+JSON formatı:
+{
+  "action": "click" | "type" | "scroll" | "wait" | "navigate",
+  "selector": "Kısa hedef metni veya CSS selector",
+  "value": "type/navigate için değer",
+  "description": "çok kısa açıklama",
+  "done": false
+}`;
+
+  var body = {
+    model: "google/gemini-2.5-flash",
+    messages: [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Mevcut URL: " + currentUrl + "\nAdım: " + step + "\n\nEkran görüntüsünü analiz et ve bir sonraki aksiyonu belirle." },
+          { type: "image_url", image_url: { url: "data:image/jpeg;base64," + screenshotBase64 } }
+        ]
+      }
+    ],
+    max_tokens: 1024,
+    temperature: 0.2
+  };
+
+  var maxRetries = 3;
+  for (var attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      var res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + apiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (res.status === 429) {
+        var waitSec = (attempt + 1) * 10;
+        console.log("[LOVABLE-AI] Rate limit (429), " + waitSec + "s bekleniyor...");
+        await supabaseInsertLog("Rate limit, " + waitSec + "s bekleniyor (deneme " + (attempt + 1) + ")", "warning");
+        await new Promise(function(r) { setTimeout(r, waitSec * 1000); });
+        continue;
+      }
+      if (res.status === 402) {
+        throw new Error("Lovable AI kredisi bitti! Settings > Workspace > Usage'dan kredi ekleyin.");
+      }
+      if (!res.ok) {
+        var errText = await res.text();
+        console.error("[LOVABLE-AI] API hata:", res.status, errText);
+        throw new Error("Lovable AI hata: " + res.status);
+      }
+
+      var data = await res.json();
+      var text = data.choices?.[0]?.message?.content || "";
+
+      if (!text || !text.trim()) {
+        await supabaseInsertLog("Lovable AI boş cevap döndürdü", "warning");
+        return null;
+      }
+
+      var jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try { return JSON.parse(jsonMatch[0]); } catch (parseErr) {
+          await supabaseInsertLog("Lovable AI JSON parse hatası: " + String(parseErr.message).slice(0, 120), "warning");
+        }
+      }
+      await supabaseInsertLog("Lovable AI parse edilemeyen cevap: " + text.slice(0, 180), "warning");
+      return null;
+    } catch (err) {
+      console.error("[LOVABLE-AI] Vision hata:", err.message);
+      await supabaseInsertLog("Lovable AI hata: " + err.message, "warning");
+      if (attempt < maxRetries - 1) { await new Promise(function(r) { setTimeout(r, 5000); }); continue; }
+      return null;
+    }
+  }
+  return null;
+}
+
+// ==================== OPENAI VISION ====================
+
+async function askOpenAIVision(apiKey, screenshotBase64, currentUrl, account, step, recentActions) {
+  var fetch = (await import("node-fetch")).default;
+  var recentText = (recentActions && recentActions.length > 0)
+    ? recentActions.map(function(a, i) { return (i + 1) + ". " + a; }).join("\n")
+    : "Yok";
+
+  var systemPrompt = `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip SADECE TEK BİR aksiyon belirle.
+
+GÖREV: Anket sitesine gir, giriş yap, anketleri bul ve çöz.
+
+HESAP BİLGİLERİ:
+- Email: ${account.email}
+- Şifre: ${account.password}
+
+SON DENEMELER:
+${recentText}
+
+KRİTİK KURALLAR:
+1. Aynı butona tekrar tekrar basma.
+2. Çerez popup varsa önce kapat.
+3. Email/şifre ile giriş yap. Google/Facebook KULLANMA.
+4. JSON dışında hiçbir şey yazma.
+
+JSON formatı:
+{
+  "action": "click" | "type" | "scroll" | "wait" | "navigate",
+  "selector": "Kısa hedef metni veya CSS selector",
+  "value": "type/navigate için değer",
+  "description": "çok kısa açıklama",
+  "done": false
+}`;
+
+  var body = {
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Mevcut URL: " + currentUrl + "\nAdım: " + step + "\nAnaliz et ve sonraki aksiyonu belirle." },
+          { type: "image_url", image_url: { url: "data:image/jpeg;base64," + screenshotBase64 } }
+        ]
+      }
+    ],
+    max_tokens: 1024,
+    temperature: 0.2
+  };
+
+  var maxRetries = 3;
+  for (var attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      var res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + apiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (res.status === 429) {
+        var waitSec = (attempt + 1) * 10;
+        console.log("[OPENAI] Rate limit (429), " + waitSec + "s bekleniyor...");
+        await supabaseInsertLog("OpenAI rate limit, " + waitSec + "s bekleniyor", "warning");
+        await new Promise(function(r) { setTimeout(r, waitSec * 1000); });
+        continue;
+      }
+      if (!res.ok) {
+        var errText = await res.text();
+        throw new Error("OpenAI API hata: " + res.status + " - " + errText.slice(0, 200));
+      }
+
+      var data = await res.json();
+      var text = data.choices?.[0]?.message?.content || "";
+
+      if (!text || !text.trim()) return null;
+
+      var jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try { return JSON.parse(jsonMatch[0]); } catch (e) {
+          await supabaseInsertLog("OpenAI JSON parse hatası", "warning");
+        }
+      }
+      return null;
+    } catch (err) {
+      console.error("[OPENAI] Vision hata:", err.message);
+      await supabaseInsertLog("OpenAI hata: " + err.message, "warning");
+      if (attempt < maxRetries - 1) { await new Promise(function(r) { setTimeout(r, 5000); }); continue; }
+      return null;
+    }
+  }
+  return null;
+}
+
 function buildClickSearchTexts(action) {
   var items = [];
 
