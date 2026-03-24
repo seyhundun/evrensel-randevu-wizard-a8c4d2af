@@ -179,10 +179,10 @@ export default function QuizSidebarContent() {
   };
 
   useEffect(() => {
-    if (quizProxyEnabled && proxyCountry && proxyCountry !== "—") {
-      fetchEvomiRegions(proxyCountry);
+    if (quizProxyEnabled) {
+      fetchEvomiRegions(proxyCountry && proxyCountry !== "—" ? proxyCountry : "US");
     }
-  }, [proxyCountry, quizProxyEnabled]);
+  }, [quizProxyEnabled]);
 
   const toggleQuizProxy = async () => {
     const newVal = !quizProxyEnabled;
