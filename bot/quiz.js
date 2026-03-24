@@ -1006,7 +1006,11 @@ async function runGeminiEngine(url, account, settings) {
     // Determine which vision function to use
     var engineType = settings.quiz_engine || "gemini";
     var visionFn;
-    if (engineType === "lovable_ai") {
+    if (engineType === "dom_agent") {
+      var domAgentKey = settings.lovable_api_key || process.env.LOVABLE_API_KEY || "";
+      if (!domAgentKey) throw new Error("Lovable API key bulunamadı (DOM Agent için gerekli)!");
+      visionFn = function(ss, url, acc, st, ra) { return askDOMAgent(page, url, acc, st, ra, domAgentKey); };
+    } else if (engineType === "lovable_ai") {
       var lovableKey = settings.lovable_api_key || process.env.LOVABLE_API_KEY || "";
       if (!lovableKey) throw new Error("Lovable API key bulunamadı! bot_settings'e lovable_api_key ekleyin.");
       visionFn = function(ss, url, acc, st, ra) { return askLovableAIVision(lovableKey, ss, url, acc, st, ra); };
@@ -1669,6 +1673,202 @@ async function askOpenAIVision(apiKey, screenshotBase64, currentUrl, account, st
   return null;
 }
 
+// ==================== DOM AGENT ENGINE ====================
+
+async function askDOMAgent(page, currentUrl, account, step, recentActions, apiKey) {
+  var fetch = (await import("node-fetch")).default;
+  var recentText = (recentActions && recentActions.length > 0)
+    ? recentActions.map(function(a, i) { return (i + 1) + ". " + a; }).join("\n")
+    : "Yok";
+
+  // 1) Sayfadaki interaktif elementleri topla
+  var elements = [];
+  try {
+    elements = await page.evaluate(function() {
+      var results = [];
+      var selectors = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="option"], [role="tab"], [role="menuitem"], [role="switch"], [tabindex], label, [onclick]';
+      var els = document.querySelectorAll(selectors);
+      var idx = 0;
+      for (var i = 0; i < els.length && idx < 120; i++) {
+        var el = els[i];
+        var rect = el.getBoundingClientRect();
+        if (rect.width < 5 || rect.height < 5) continue;
+        if (rect.top > window.innerHeight + 200 || rect.bottom < -100) continue;
+        var style = window.getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity) < 0.1) continue;
+
+        var text = (el.textContent || "").trim().slice(0, 80);
+        var isCookieBanner = false;
+        var parent = el;
+        for (var p = 0; p < 5 && parent; p++) {
+          var cname = (parent.className || "").toString().toLowerCase();
+          var pid = (parent.id || "").toLowerCase();
+          if (/(cookie|consent|gdpr|privacy-banner)/.test(cname + " " + pid)) { isCookieBanner = true; break; }
+          parent = parent.parentElement;
+        }
+
+        results.push({
+          index: idx,
+          tag: el.tagName.toLowerCase(),
+          type: el.type || null,
+          text: text,
+          id: el.id || null,
+          name: el.name || null,
+          className: (el.className || "").toString().slice(0, 60),
+          href: el.href || null,
+          placeholder: el.placeholder || null,
+          ariaLabel: el.getAttribute("aria-label") || null,
+          value: el.value || null,
+          checked: el.checked || false,
+          role: el.getAttribute("role") || null,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+          isInCookieBanner: isCookieBanner
+        });
+        idx++;
+      }
+      return results;
+    });
+  } catch (extractErr) {
+    console.error("[DOM-AGENT] Element çıkarma hatası:", extractErr.message);
+    await supabaseInsertLog("DOM element çıkarma hatası: " + extractErr.message, "warning");
+    return null;
+  }
+
+  if (elements.length === 0) {
+    await supabaseInsertLog("DOM'da interaktif element bulunamadı", "warning");
+    return null;
+  }
+
+  // 2) Görev tanımını oluştur
+  var taskText = "Anket çözme: Sayfadaki soruyu cevapla veya navigasyon butonuna tıkla.\n";
+  taskText += "Hesap: " + account.email + " / Şifre: " + account.password + "\n";
+  taskText += "Adım: " + step + "\nSon aksiyonlar:\n" + recentText;
+
+  var contextText = "PERSONA: Alex Johnson, 29, Male, Los Angeles CA 90210, Marketing Coordinator, $55k-$75k gelir, Single, No children, Caucasian/White.\n";
+  contextText += "Checkbox soruları için en az 1 seçenek işaretle. Açık uçlu sorulara en az 10 kelime İngilizce cevap ver.\n";
+  contextText += "ZIP Code=90210, Yaş=29. Anket bittiyse 'none' action döndür message='next_survey'.\n";
+  contextText += "Aynı elemente tekrar tıklama! Son aksiyonlardan farklı bir şey yap.";
+
+  // 3) dom-agent edge function'a gönder
+  var maxRetries = 3;
+  for (var attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      var res = await fetch(SUPABASE_URL + "/functions/v1/dom-agent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + (process.env.SUPABASE_KEY || SUPABASE_KEY)
+        },
+        body: JSON.stringify({
+          elements: elements,
+          task: taskText,
+          context: contextText
+        })
+      });
+
+      if (res.status === 429) {
+        var waitSec = (attempt + 1) * 10;
+        console.log("[DOM-AGENT] Rate limit, " + waitSec + "s bekleniyor...");
+        await supabaseInsertLog("DOM Agent rate limit, " + waitSec + "s bekleniyor", "warning");
+        await new Promise(function(r) { setTimeout(r, waitSec * 1000); });
+        continue;
+      }
+      if (res.status === 402) {
+        throw new Error("AI kredisi bitti! Settings > Workspace > Usage'dan kredi ekleyin.");
+      }
+      if (!res.ok) {
+        var errText = await res.text();
+        throw new Error("DOM Agent hata: " + res.status + " - " + errText.slice(0, 200));
+      }
+
+      var result = await res.json();
+      console.log("[DOM-AGENT] Cevap:", JSON.stringify(result).slice(0, 200));
+
+      if (!result || !result.actions || result.actions.length === 0) {
+        if (result.status === "already_done" || (result.message && /next_survey|tamamlan|complete|thank you/i.test(result.message))) {
+          return { action: "next_survey", selector: "", value: "", description: result.message || "Anket tamamlandı", done: false };
+        }
+        await supabaseInsertLog("DOM Agent aksiyon bulamadı: " + (result.message || ""), "warning");
+        return null;
+      }
+
+      // 4) İlk aksiyonu standart formata dönüştür
+      var domAction = result.actions[0];
+      var targetElement = elements[domAction.elementIndex];
+
+      if (domAction.type === "none" || domAction.type === "wait") {
+        if (/next_survey|tamamlan|complete/i.test(domAction.reason || "")) {
+          return { action: "next_survey", selector: "", value: "", description: domAction.reason, done: false };
+        }
+        return { action: "wait", selector: "", value: "", description: domAction.reason || "Bekleniyor", done: false };
+      }
+
+      if (domAction.type === "click" && targetElement) {
+        // Direkt elemente tıkla — selector yerine page.evaluate ile index kullan
+        var selector = "";
+        if (targetElement.id) {
+          selector = "#" + targetElement.id;
+        } else if (targetElement.name) {
+          selector = targetElement.tag + "[name='" + targetElement.name + "']";
+        } else {
+          // Text-based fallback
+          selector = (targetElement.text || "").slice(0, 30);
+        }
+        
+        // DOM Agent'ta direkt koordinat ile tıklama yapacağız — _domClickTarget olarak işaretle
+        return {
+          action: "click",
+          selector: selector,
+          value: "",
+          description: domAction.reason || ("Tıkla: " + (targetElement.text || targetElement.tag).slice(0, 40)),
+          done: false,
+          _domTarget: {
+            x: targetElement.rect.x + Math.round(targetElement.rect.w / 2),
+            y: targetElement.rect.y + Math.round(targetElement.rect.h / 2),
+            index: domAction.elementIndex
+          }
+        };
+      }
+
+      if (domAction.type === "type" && targetElement) {
+        var typeSelector = "";
+        if (targetElement.id) typeSelector = "#" + targetElement.id;
+        else if (targetElement.name) typeSelector = targetElement.tag + "[name='" + targetElement.name + "']";
+        else typeSelector = targetElement.tag + "[placeholder='" + (targetElement.placeholder || "") + "']";
+
+        return {
+          action: "type",
+          selector: typeSelector,
+          value: domAction.value || "",
+          description: domAction.reason || ("Yaz: " + (domAction.value || "").slice(0, 30)),
+          done: false,
+          _domTarget: {
+            x: targetElement.rect.x + Math.round(targetElement.rect.w / 2),
+            y: targetElement.rect.y + Math.round(targetElement.rect.h / 2),
+            index: domAction.elementIndex
+          }
+        };
+      }
+
+      // Fallback
+      return {
+        action: domAction.type || "click",
+        selector: targetElement ? (targetElement.text || "").slice(0, 30) : "",
+        value: domAction.value || "",
+        description: domAction.reason || "DOM Agent aksiyonu",
+        done: false
+      };
+
+    } catch (err) {
+      console.error("[DOM-AGENT] Hata:", err.message);
+      await supabaseInsertLog("DOM Agent hata: " + err.message, "warning");
+      if (attempt < maxRetries - 1) { await new Promise(function(r) { setTimeout(r, 5000); }); continue; }
+      return null;
+    }
+  }
+  return null;
+}
+
 function buildClickSearchTexts(action) {
   var items = [];
 
@@ -1704,6 +1904,37 @@ function buildClickSearchTexts(action) {
 }
 
 async function executeAction(page, action) {
+  // DOM Agent koordinat bazlı tıklama desteği
+  if (action._domTarget && action.action === "click") {
+    try {
+      await page.mouse.click(action._domTarget.x, action._domTarget.y);
+      console.log("[DOM-AGENT] Koordinat tıklama: (" + action._domTarget.x + ", " + action._domTarget.y + ")");
+      return;
+    } catch (coordErr) {
+      console.log("[DOM-AGENT] Koordinat tıklama başarısız, fallback'e geçiliyor:", coordErr.message);
+      // Fallback: normal executeAction devam edecek
+    }
+  }
+
+  if (action._domTarget && action.action === "type") {
+    try {
+      await page.mouse.click(action._domTarget.x, action._domTarget.y);
+      await new Promise(function(r) { setTimeout(r, 300); });
+      // Mevcut değeri temizle ve yaz
+      await page.keyboard.down("Control");
+      await page.keyboard.press("a");
+      await page.keyboard.up("Control");
+      await page.keyboard.press("Backspace");
+      for (var ci = 0; ci < (action.value || "").length; ci++) {
+        await page.keyboard.type((action.value || "")[ci], { delay: 30 + Math.random() * 50 });
+      }
+      console.log("[DOM-AGENT] Koordinat type: (" + action._domTarget.x + ", " + action._domTarget.y + ") = " + (action.value || "").slice(0, 30));
+      return;
+    } catch (typeErr) {
+      console.log("[DOM-AGENT] Koordinat type başarısız, fallback'e geçiliyor:", typeErr.message);
+    }
+  }
+
   function looksLikeCssSelector(value) {
     return !!value && /^[.#\[]|^[a-z]+[.#\[]/i.test(value);
   }
@@ -2736,6 +2967,7 @@ async function pollForQuizTasks() {
     gemini: "Puppeteer + Gemini Vision",
     lovable_ai: "Puppeteer + Lovable AI",
     openai: "Puppeteer + OpenAI GPT-4o-mini",
+    dom_agent: "Puppeteer + DOM Agent",
     browser_use: "Browser Use Cloud"
   };
   var engineLabel = engineLabels[engine] || engine;
@@ -2748,6 +2980,7 @@ async function pollForQuizTasks() {
     gemini: { key: settings.gemini_api_key || process.env.GEMINI_API_KEY || "", name: "Gemini API key" },
     lovable_ai: { key: settings.lovable_api_key || process.env.LOVABLE_API_KEY || "", name: "Lovable API key" },
     openai: { key: settings.openai_api_key || process.env.OPENAI_API_KEY || "", name: "OpenAI API key" },
+    dom_agent: { key: settings.lovable_api_key || process.env.LOVABLE_API_KEY || "", name: "Lovable API key (DOM Agent)" },
     browser_use: { key: settings.browser_use_api_key || process.env.BROWSER_USE_API_KEY || "", name: "Browser Use API key" }
   };
   var check = keyChecks[engine];

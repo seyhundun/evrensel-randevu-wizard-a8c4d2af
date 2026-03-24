@@ -53,7 +53,7 @@ export default function QuizSidebarContent() {
   const [savingCapsolverKey, setSavingCapsolverKey] = useState(false);
 
   // Engine selection
-  type QuizEngineType = "gemini" | "browser_use" | "lovable_ai" | "openai";
+  type QuizEngineType = "gemini" | "browser_use" | "lovable_ai" | "openai" | "dom_agent";
   const [quizEngine, setQuizEngine] = useState<QuizEngineType>("gemini");
 
   // API keys
@@ -236,6 +236,7 @@ export default function QuizSidebarContent() {
     gemini: "Gemini Vision (Kendi Key)",
     lovable_ai: "Lovable AI (Ücretsiz)",
     openai: "OpenAI GPT-4o-mini (Ucuz)",
+    dom_agent: "DOM Agent (Hızlı)",
     browser_use: "Browser Use (Ücretli)",
   };
   const switchEngine = async (engine: QuizEngineType) => {
@@ -351,6 +352,19 @@ export default function QuizSidebarContent() {
             <Badge variant="outline" className="text-[8px] h-4 border-sky-500/30 text-sky-600">Ucuz</Badge>
           </button>
           <button
+            onClick={() => switchEngine("dom_agent")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
+              quizEngine === "dom_agent"
+                ? "border-orange-500 bg-orange-500/10 text-orange-700 dark:text-orange-400"
+                : "border-border bg-secondary/40 text-muted-foreground hover:bg-secondary"
+            }`}
+          >
+            <Cpu className="w-4 h-4" />
+            <span className="font-semibold">DOM Agent</span>
+            <span className="text-[9px] opacity-70">DOM Analizi</span>
+            <Badge variant="outline" className="text-[8px] h-4 border-orange-500/30 text-orange-600">Hızlı</Badge>
+          </button>
+          <button
             onClick={() => switchEngine("browser_use")}
             className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
               quizEngine === "browser_use"
@@ -370,7 +384,7 @@ export default function QuizSidebarContent() {
       <Card className="p-3 space-y-2">
         <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
           <Key className="w-3.5 h-3.5 text-muted-foreground" />
-          {quizEngine === "gemini" ? "Gemini API Key" : quizEngine === "openai" ? "OpenAI API Key" : quizEngine === "lovable_ai" ? "Lovable API Key" : "Browser Use API Key"}
+          {quizEngine === "gemini" ? "Gemini API Key" : quizEngine === "openai" ? "OpenAI API Key" : quizEngine === "lovable_ai" ? "Lovable API Key" : quizEngine === "dom_agent" ? "Lovable API Key (DOM)" : "Browser Use API Key"}
         </h3>
         <div className="space-y-1.5">
           <Label className="text-[10px] text-muted-foreground">API Key</Label>
@@ -380,6 +394,7 @@ export default function QuizSidebarContent() {
               openai: { value: openaiApiKey, set: setOpenaiApiKey, visible: openaiKeyVisible, toggleVisible: () => setOpenaiKeyVisible(!openaiKeyVisible), saving: savingOpenaiKey, setSaving: setSavingOpenaiKey, settingKey: "openai_api_key", label: "OpenAI API Key", placeholder: "sk-... OpenAI key girin..." },
               lovable_ai: { value: lovableApiKey, set: setLovableApiKey, visible: lovableKeyVisible, toggleVisible: () => setLovableKeyVisible(!lovableKeyVisible), saving: savingLovableKey, setSaving: setSavingLovableKey, settingKey: "lovable_api_key", label: "Lovable API Key", placeholder: "Lovable API key girin..." },
               browser_use: { value: browserUseKeyValue, set: setBrowserUseKeyValue, visible: browserUseKeyVisible, toggleVisible: () => setBrowserUseKeyVisible(!browserUseKeyVisible), saving: savingBuKey, setSaving: setSavingBuKey, settingKey: "browser_use_api_key", label: "Browser Use API Key", placeholder: "Browser Use API key girin..." },
+              dom_agent: { value: lovableApiKey, set: setLovableApiKey, visible: lovableKeyVisible, toggleVisible: () => setLovableKeyVisible(!lovableKeyVisible), saving: savingLovableKey, setSaving: setSavingLovableKey, settingKey: "lovable_api_key", label: "Lovable API Key (DOM)", placeholder: "Lovable API key girin..." },
             };
             const k = engineKeyMap[quizEngine];
             return (
