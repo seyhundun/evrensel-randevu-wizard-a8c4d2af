@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import {
   Plus, Trash2, Play, Eye, EyeOff,
   Link2, Loader2, CheckCircle2, AlertCircle,
-  Clock, Mail, Power, Square, Globe, RotateCcw
+  Clock, Mail, Power, Square, Globe, RotateCcw, StopCircle
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import QuizTrackingLogs from "@/components/QuizTrackingLogs";
