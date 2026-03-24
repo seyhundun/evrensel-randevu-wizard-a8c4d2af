@@ -108,6 +108,7 @@ export default function QuizSidebarContent() {
       setBrowserUseKeyValue(map.browser_use_api_key || "");
       setOpenaiApiKey(map.openai_api_key || "");
       setLovableApiKey(map.lovable_api_key || "");
+      setEvomiApiKey(map.evomi_api_key || "");
     }
   }, []);
 
