@@ -68,71 +68,74 @@ async function getLoginAccount() {
 // ==================== MOTOR 1: PUPPETEER + GEMINI VISION ====================
 
 async function runGeminiEngine(url, account, settings) {
-  var puppeteer;
+  const { connect } = require("puppeteer-real-browser");
   var browser = null;
   var page = null;
-
-  try { puppeteer = require("puppeteer"); } catch (e) {
-    try { puppeteer = require("puppeteer-core"); } catch (e2) {
-      throw new Error("Puppeteer yüklü değil! npm install puppeteer");
-    }
-  }
 
   var geminiApiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || "";
   if (!geminiApiKey) throw new Error("Gemini API key bulunamadı! bot_settings'e gemini_api_key ekleyin.");
 
-  var proxyArgs = [];
-  var proxyUser = "";
-  var proxyPass = "";
+  var args = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--window-size=1920,1080",
+    "--start-maximized",
+  ];
+
   var useProxy = settings.quiz_proxy_enabled !== "false";
+  var proxyConfig = undefined;
 
   if (useProxy) {
     var proxyHost = settings.proxy_host || "core-residential.evomi-proxy.com";
     var proxyPort = settings.proxy_port || "1000";
-    proxyArgs = ["--proxy-server=http://" + proxyHost + ":" + proxyPort];
+    var proxyUser = settings.quiz_proxy_username || settings.proxy_username || process.env.PROXY_USERNAME || "";
+    var proxyPass = settings.quiz_proxy_password || settings.proxy_password || process.env.PROXY_PASSWORD || "";
 
-    proxyUser = settings.proxy_username || process.env.PROXY_USERNAME || "";
-    proxyPass = settings.proxy_password || process.env.PROXY_PASSWORD || "";
-
-    if (proxyPass) {
-      var country = (settings.quiz_proxy_country || settings.proxy_country || "US").toLowerCase();
-      var region = settings.quiz_proxy_region || "";
-      var sessionId = "quiz" + Math.random().toString(36).slice(2, 10);
-
-      var suffix = "_country-" + country;
-      if (region) suffix += "_city-" + region;
-      suffix += "_session-" + sessionId;
-
-      proxyPass = proxyPass.split("_country-")[0].split("_session-")[0].split("_city-")[0];
-      proxyPass = proxyPass + suffix;
+    if (!proxyUser || !proxyPass) {
+      throw new Error("Proxy aktif ama kullanıcı adı/şifre eksik. bot_settings'e proxy_username ve proxy_password ekleyin.");
     }
 
-    console.log("[GEMINI] Proxy: " + proxyHost + ":" + proxyPort + " | Ülke: " + (settings.quiz_proxy_country || "US"));
-    await supabaseInsertLog("Proxy aktif: " + proxyHost + " | Ülke: " + (settings.quiz_proxy_country || "US"), "info");
+    var country = (settings.quiz_proxy_country || settings.proxy_country || "US").toLowerCase();
+    var region = (settings.quiz_proxy_region || "").trim().toLowerCase();
+    var sessionId = Math.random().toString(36).replace(/[^a-z0-9]/g, "").slice(0, 8) || "quiz0001";
+
+    var suffix = "_country-" + country;
+    if (region) suffix += "_city-" + region;
+    suffix += "_session-" + sessionId;
+
+    proxyPass = proxyPass.split("_country-")[0].split("_session-")[0].split("_city-")[0] + suffix;
+
+    proxyConfig = {
+      host: proxyHost,
+      port: proxyPort,
+      username: proxyUser,
+      password: proxyPass,
+    };
+
+    console.log("[GEMINI] Proxy config: " + proxyHost + ":" + proxyPort + " | user=" + proxyUser + " | ülke=" + country + (region ? " | şehir=" + region : ""));
+    await supabaseInsertLog("Proxy aktif: " + proxyHost + ":" + proxyPort + " | ülke=" + country + (region ? " | şehir=" + region : ""), "info");
   }
 
-  browser = await puppeteer.launch({
+  var connectOptions = {
     headless: false,
-    defaultViewport: { width: 1920, height: 1080 },
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--display=" + (process.env.DISPLAY || ":99"),
-      ...proxyArgs,
-    ],
-    executablePath: process.env.CHROME_PATH || "/usr/bin/google-chrome-stable",
-  });
+    args: args,
+    turnstile: true,
+    disableXvfb: true,
+  };
 
-  page = await browser.newPage();
+  if (proxyConfig) {
+    connectOptions.proxy = proxyConfig;
+  }
+
+  var launched = await connect(connectOptions);
+  browser = launched.browser;
+  page = launched.page;
+
   if (!page) throw new Error("Tarayıcı sekmesi oluşturulamadı");
 
-  if (useProxy && proxyUser && proxyPass) {
-    await page.authenticate({ username: proxyUser, password: proxyPass });
-    console.log("[GEMINI] Proxy auth ayarlandı: " + proxyUser);
-    await supabaseInsertLog("Proxy auth ayarlandı", "success");
-  }
-
   try {
+    await page.setViewport({ width: 1920, height: 1080 });
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
     await supabaseInsertLog("Sayfa yüklendi: " + url, "info");
 
@@ -143,13 +146,10 @@ async function runGeminiEngine(url, account, settings) {
       stepCount++;
       console.log("[GEMINI] Adım " + stepCount + "/" + maxSteps);
 
-      // Ekran görüntüsü al
       var screenshot = await page.screenshot({ encoding: "base64", type: "jpeg", quality: 70 });
       var currentUrl = page.url();
-
-      // Gemini'ye gönder
       var action = await askGeminiVision(geminiApiKey, screenshot, currentUrl, account, stepCount);
-      
+
       if (!action) {
         console.log("[GEMINI] Gemini cevap vermedi, durduruluyor");
         await supabaseInsertLog("Gemini cevap vermedi, durduruluyor", "warning");
@@ -164,7 +164,6 @@ async function runGeminiEngine(url, account, settings) {
         break;
       }
 
-      // Aksiyonu uygula
       try {
         await executeAction(page, action);
         await page.waitForTimeout(1500);
@@ -174,16 +173,13 @@ async function runGeminiEngine(url, account, settings) {
       }
     }
 
-    // Son ekran görüntüsü
     var finalScreenshot = await page.screenshot({ encoding: "base64", type: "jpeg", quality: 70 });
     await supabaseInsertLog("Quiz tamamlandı - " + stepCount + " adım", "success", "data:image/jpeg;base64," + finalScreenshot);
-
   } catch (err) {
     console.error("[GEMINI] Hata:", err.message);
     await supabaseInsertLog("Hata: " + err.message, "error");
     throw err;
   } finally {
-    // Tarayıcıyı açık bırak VNC izleme için
     console.log("[GEMINI] Tarayıcı açık bırakıldı (VNC)");
     await supabaseInsertLog("Tarayıcı açık bırakıldı (VNC izleme)", "info");
   }
