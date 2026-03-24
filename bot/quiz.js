@@ -1552,7 +1552,7 @@ async function askLovableAIVision(apiKey, screenshotBase64, currentUrl, account,
   return null;
 }
 
-// ==================== OPENAI VISION ====================
+// ==================== OPENAI VISION (via Lovable AI Gateway) ====================
 
 async function askOpenAIVision(apiKey, screenshotBase64, currentUrl, account, step, recentActions) {
   var fetch = (await import("node-fetch")).default;
@@ -1562,8 +1562,19 @@ async function askOpenAIVision(apiKey, screenshotBase64, currentUrl, account, st
 
   var systemPrompt = buildSurveySystemPrompt(account, recentText);
 
+  // Lovable AI Gateway üzerinden OpenAI eşdeğeri model kullan
+  // openai/gpt-5-mini = gpt-4o-mini eşdeğeri, moderasyon engeli yok
+  var lovableKey = process.env.LOVABLE_API_KEY || "";
+  var useGateway = lovableKey.length > 0;
+  
+  var apiUrl = useGateway 
+    ? "https://ai.gateway.lovable.dev/v1/chat/completions"
+    : "https://api.openai.com/v1/chat/completions";
+  var authKey = useGateway ? lovableKey : apiKey;
+  var modelName = useGateway ? "openai/gpt-5-mini" : "gpt-4o-mini";
+
   var body = {
-    model: "gpt-4o-mini",
+    model: modelName,
     messages: [
       { role: "system", content: systemPrompt },
       {
@@ -1581,10 +1592,10 @@ async function askOpenAIVision(apiKey, screenshotBase64, currentUrl, account, st
   var maxRetries = 3;
   for (var attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      var res = await fetch("https://api.openai.com/v1/chat/completions", {
+      var res = await fetch(apiUrl, {
         method: "POST",
         headers: {
-          "Authorization": "Bearer " + apiKey,
+          "Authorization": "Bearer " + authKey,
           "Content-Type": "application/json"
         },
         body: JSON.stringify(body)
@@ -1596,6 +1607,9 @@ async function askOpenAIVision(apiKey, screenshotBase64, currentUrl, account, st
         await supabaseInsertLog("OpenAI rate limit, " + waitSec + "s bekleniyor", "warning");
         await new Promise(function(r) { setTimeout(r, waitSec * 1000); });
         continue;
+      }
+      if (res.status === 402) {
+        throw new Error("AI kredisi bitti! Settings > Workspace > Usage'dan kredi ekleyin.");
       }
       if (!res.ok) {
         var errText = await res.text();
