@@ -289,6 +289,19 @@ export default function QuizSidebarContent() {
         </h3>
         <div className="grid grid-cols-2 gap-1.5">
           <button
+            onClick={() => switchEngine("lovable_ai")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
+              quizEngine === "lovable_ai"
+                ? "border-purple-500 bg-purple-500/10 text-purple-700 dark:text-purple-400"
+                : "border-border bg-secondary/40 text-muted-foreground hover:bg-secondary"
+            }`}
+          >
+            <Zap className="w-4 h-4" />
+            <span className="font-semibold">Lovable AI</span>
+            <span className="text-[9px] opacity-70">Vision + Gateway</span>
+            <Badge variant="outline" className="text-[8px] h-4 border-purple-500/30 text-purple-600">Ücretsiz</Badge>
+          </button>
+          <button
             onClick={() => switchEngine("gemini")}
             className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
               quizEngine === "gemini"
@@ -298,8 +311,21 @@ export default function QuizSidebarContent() {
           >
             <Zap className="w-4 h-4" />
             <span className="font-semibold">Gemini Vision</span>
-            <span className="text-[9px] opacity-70">Puppeteer + AI</span>
+            <span className="text-[9px] opacity-70">Kendi API Key</span>
             <Badge variant="outline" className="text-[8px] h-4 border-emerald-500/30 text-emerald-600">Ücretsiz</Badge>
+          </button>
+          <button
+            onClick={() => switchEngine("openai")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
+              quizEngine === "openai"
+                ? "border-sky-500 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                : "border-border bg-secondary/40 text-muted-foreground hover:bg-secondary"
+            }`}
+          >
+            <Globe className="w-4 h-4" />
+            <span className="font-semibold">OpenAI</span>
+            <span className="text-[9px] opacity-70">GPT-4o-mini Vision</span>
+            <Badge variant="outline" className="text-[8px] h-4 border-sky-500/30 text-sky-600">Ucuz</Badge>
           </button>
           <button
             onClick={() => switchEngine("browser_use")}
