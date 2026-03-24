@@ -94,9 +94,11 @@ export default function QuizSidebarContent() {
       setQuizProxyEnabled(map.quiz_proxy_enabled !== "false");
       setCaptchaProvider(map.captcha_provider || "2captcha");
       setCaptchaApiKey(!!(map.captcha_api_key));
-      setQuizEngine((map.quiz_engine as "gemini" | "browser_use") || "gemini");
+      setQuizEngine((map.quiz_engine as QuizEngineType) || "gemini");
       setGeminiApiKey(map.gemini_api_key || "");
       setBrowserUseKeyValue(map.browser_use_api_key || "");
+      setOpenaiApiKey(map.openai_api_key || "");
+      setLovableApiKey(map.lovable_api_key || "");
     }
   }, []);
 
