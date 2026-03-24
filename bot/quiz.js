@@ -740,6 +740,13 @@ NEXT/CONTINUE/SUBMIT BUTONLARI:
 - Soruyu cevapladıktan sonra Next/Continue/Submit butonuna tıkla
 - action: "click", selector: "Next" veya "Continue" veya "Submit"
 
+SAYFA KAYDIRMA (ÇOK ÖNEMLİ):
+- Eğer sayfada soru veya seçenekler var ama Next/Continue/Submit butonu GÖRÜNMÜYORSA:
+  action: "scroll", description: "Sayfayı aşağı kaydır Continue butonunu bulmak için"
+- Eğer seçenek listesi uzunsa ve alttaki seçenekler kesilmişse scroll yap
+- Tüm seçenekleri görmeden ve cevaplamadan scroll yapma
+- Bir soruyu cevapladıktan SONRA Continue/Next butonu göremiyorsan MUTLAKA scroll yap
+
 COMPLETION/DONE SAYFASI:
 - "Thank you", "Survey complete", "Congratulations" görünce done: true yap
 
