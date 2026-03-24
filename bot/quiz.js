@@ -68,48 +68,115 @@ async function getLoginAccount() {
 // ==================== CAPTCHA SOLVER (2captcha / Capsolver) ====================
 
 async function detectCaptchaOnPage(page) {
-  // Detect reCAPTCHA v2, hCaptcha, or Turnstile on the page
-  return await page.evaluate(function() {
-    // reCAPTCHA v2 iframe
-    var recaptchaFrame = document.querySelector('iframe[src*="recaptcha"], iframe[src*="google.com/recaptcha"]');
-    var recaptchaSitekey = null;
-    var recaptchaEl = document.querySelector('.g-recaptcha, [data-sitekey]');
-    if (recaptchaEl) recaptchaSitekey = recaptchaEl.getAttribute('data-sitekey');
-    if (!recaptchaSitekey) {
-      var scripts = document.querySelectorAll('script[src*="recaptcha"]');
-      if (scripts.length > 0) {
-        var match = document.documentElement.innerHTML.match(/sitekey['":\s]+['"]([0-9a-zA-Z_-]{20,})['"]/);
-        if (match) recaptchaSitekey = match[1];
-      }
+  function getQueryParam(url, key) {
+    try {
+      var match = String(url || "").match(new RegExp("[?&]" + key + "=([^&#]+)"));
+      return match ? decodeURIComponent(match[1]) : null;
+    } catch (e) {
+      return null;
     }
+  }
 
-    // hCaptcha
-    var hcaptchaFrame = document.querySelector('iframe[src*="hcaptcha"]');
-    var hcaptchaSitekey = null;
-    var hcaptchaEl = document.querySelector('.h-captcha, [data-hcaptcha-sitekey], [data-sitekey]');
-    if (hcaptchaEl && hcaptchaFrame) hcaptchaSitekey = hcaptchaEl.getAttribute('data-sitekey') || hcaptchaEl.getAttribute('data-hcaptcha-sitekey');
+  async function inspectFrame(frame) {
+    var frameUrl = "";
+    try { frameUrl = frame.url(); } catch (e) {}
 
-    // Turnstile
-    var turnstileFrame = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
-    var turnstileSitekey = null;
-    var turnstileEl = document.querySelector('.cf-turnstile, [data-sitekey]');
-    if (turnstileEl && turnstileFrame) turnstileSitekey = turnstileEl.getAttribute('data-sitekey');
+    var infoFromUrl = {
+      recaptchaSitekey: getQueryParam(frameUrl, "k"),
+      hcaptchaSitekey: getQueryParam(frameUrl, "sitekey"),
+      turnstileSitekey: getQueryParam(frameUrl, "sitekey"),
+      hasRecaptchaFrame: /recaptcha|google\.com\/recaptcha/i.test(frameUrl),
+      hasHCaptchaFrame: /hcaptcha/i.test(frameUrl),
+      hasTurnstileFrame: /challenges\.cloudflare\.com/i.test(frameUrl),
+      hasImageGrid: /recaptcha\/api2\/bframe|recaptcha challenge/i.test(frameUrl),
+    };
 
-    // Image grid challenge (visible reCAPTCHA challenge)
-    var imageGrid = document.querySelector('iframe[title*="recaptcha challenge"], iframe[src*="bframe"]');
+    var infoFromDom = {};
+    try {
+      infoFromDom = await frame.evaluate(function() {
+        function getAttr(selector, attr) {
+          var el = document.querySelector(selector);
+          return el ? el.getAttribute(attr) : null;
+        }
 
-    if (recaptchaSitekey || recaptchaFrame) {
-      return { type: "recaptcha_v2", sitekey: recaptchaSitekey, hasFrame: !!recaptchaFrame, hasImageGrid: !!imageGrid };
-    }
-    if (hcaptchaSitekey || hcaptchaFrame) {
-      return { type: "hcaptcha", sitekey: hcaptchaSitekey, hasFrame: !!hcaptchaFrame };
-    }
-    if (turnstileSitekey || turnstileFrame) {
-      return { type: "turnstile", sitekey: turnstileSitekey, hasFrame: !!turnstileFrame };
-    }
+        var html = document.documentElement ? document.documentElement.innerHTML : "";
+        var sitekeyMatch = html.match(/(?:data-sitekey|sitekey)['"\s:=]+['"]?([0-9A-Za-z_-]{20,})/i);
 
-    return null;
-  });
+        return {
+          recaptchaSitekey: getAttr('.g-recaptcha, [data-sitekey]', 'data-sitekey') || (sitekeyMatch ? sitekeyMatch[1] : null),
+          hcaptchaSitekey: getAttr('.h-captcha, [data-hcaptcha-sitekey], [data-sitekey]', 'data-hcaptcha-sitekey') || getAttr('.h-captcha, [data-hcaptcha-sitekey], [data-sitekey]', 'data-sitekey') || null,
+          turnstileSitekey: getAttr('.cf-turnstile, [data-sitekey]', 'data-sitekey') || null,
+          hasRecaptchaFrame: !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="google.com/recaptcha"], .g-recaptcha, [data-sitekey]'),
+          hasHCaptchaFrame: !!document.querySelector('iframe[src*="hcaptcha"], .h-captcha, [data-hcaptcha-sitekey]'),
+          hasTurnstileFrame: !!document.querySelector('iframe[src*="challenges.cloudflare.com"], .cf-turnstile'),
+          hasImageGrid: !!document.querySelector('iframe[title*="recaptcha challenge" i], iframe[src*="bframe"], .rc-imageselect-table-33, .rc-imageselect-table-44, .rc-imageselect-table, #rc-imageselect, .rc-imageselect-desc-wrapper, .rc-imageselect-instructions'),
+        };
+      });
+    } catch (e) {}
+
+    return {
+      recaptchaSitekey: infoFromDom.recaptchaSitekey || infoFromUrl.recaptchaSitekey || null,
+      hcaptchaSitekey: infoFromDom.hcaptchaSitekey || infoFromUrl.hcaptchaSitekey || null,
+      turnstileSitekey: infoFromDom.turnstileSitekey || infoFromUrl.turnstileSitekey || null,
+      hasRecaptchaFrame: !!(infoFromDom.hasRecaptchaFrame || infoFromUrl.hasRecaptchaFrame),
+      hasHCaptchaFrame: !!(infoFromDom.hasHCaptchaFrame || infoFromUrl.hasHCaptchaFrame),
+      hasTurnstileFrame: !!(infoFromDom.hasTurnstileFrame || infoFromUrl.hasTurnstileFrame),
+      hasImageGrid: !!(infoFromDom.hasImageGrid || infoFromUrl.hasImageGrid),
+      frameUrl: frameUrl,
+    };
+  }
+
+  var frames = [];
+  try {
+    frames = page.frames();
+  } catch (e) {}
+  if (!frames || frames.length === 0) frames = [page.mainFrame ? page.mainFrame() : page];
+
+  var combined = {
+    recaptchaSitekey: null,
+    hcaptchaSitekey: null,
+    turnstileSitekey: null,
+    hasRecaptchaFrame: false,
+    hasHCaptchaFrame: false,
+    hasTurnstileFrame: false,
+    hasImageGrid: false,
+  };
+
+  for (var i = 0; i < frames.length; i++) {
+    var info = await inspectFrame(frames[i]);
+    if (!combined.recaptchaSitekey && info.recaptchaSitekey) combined.recaptchaSitekey = info.recaptchaSitekey;
+    if (!combined.hcaptchaSitekey && info.hcaptchaSitekey) combined.hcaptchaSitekey = info.hcaptchaSitekey;
+    if (!combined.turnstileSitekey && info.turnstileSitekey) combined.turnstileSitekey = info.turnstileSitekey;
+    combined.hasRecaptchaFrame = combined.hasRecaptchaFrame || info.hasRecaptchaFrame;
+    combined.hasHCaptchaFrame = combined.hasHCaptchaFrame || info.hasHCaptchaFrame;
+    combined.hasTurnstileFrame = combined.hasTurnstileFrame || info.hasTurnstileFrame;
+    combined.hasImageGrid = combined.hasImageGrid || info.hasImageGrid;
+  }
+
+  if (combined.recaptchaSitekey || combined.hasRecaptchaFrame || combined.hasImageGrid) {
+    return {
+      type: "recaptcha_v2",
+      sitekey: combined.recaptchaSitekey,
+      hasFrame: combined.hasRecaptchaFrame,
+      hasImageGrid: combined.hasImageGrid,
+    };
+  }
+  if (combined.hcaptchaSitekey || combined.hasHCaptchaFrame) {
+    return {
+      type: "hcaptcha",
+      sitekey: combined.hcaptchaSitekey,
+      hasFrame: combined.hasHCaptchaFrame,
+    };
+  }
+  if (combined.turnstileSitekey || combined.hasTurnstileFrame) {
+    return {
+      type: "turnstile",
+      sitekey: combined.turnstileSitekey,
+      hasFrame: combined.hasTurnstileFrame,
+    };
+  }
+
+  return null;
 }
 
 async function solveRecaptchaWith2Captcha(apiKey, sitekey, pageUrl) {
@@ -291,8 +358,12 @@ async function tryAutoSolveCaptcha(page, settings) {
   await supabaseInsertLog("CAPTCHA tespit edildi: " + captchaInfo.type + " (provider: " + provider + ")", "info");
 
   if (!captchaInfo.sitekey) {
-    await supabaseInsertLog("CAPTCHA sitekey bulunamadı, çözülemiyor", "warning");
-    return false;
+    if (captchaInfo.type === "recaptcha_v2" && captchaInfo.hasImageGrid) {
+      await supabaseInsertLog("reCAPTCHA image-grid açık ama sitekey bulunamadı; challenge iframe yeniden taranıyor", "warning");
+    } else {
+      await supabaseInsertLog("CAPTCHA sitekey bulunamadı, çözülemiyor", "warning");
+      return false;
+    }
   }
 
   // Turnstile is handled by puppeteer-real-browser's built-in turnstile solver
@@ -306,6 +377,10 @@ async function tryAutoSolveCaptcha(page, settings) {
 
   try {
     if (captchaInfo.type === "recaptcha_v2") {
+      if (!captchaInfo.sitekey) {
+        await supabaseInsertLog("reCAPTCHA challenge tespit edildi ama sitekey çözülemedi", "error");
+        return false;
+      }
       if (provider === "capsolver" && capsolverKey) {
         token = await solveRecaptchaWithCapsolver(capsolverKey, captchaInfo.sitekey, pageUrl);
       } else if (provider === "2captcha" && twoCaptchaKey) {
