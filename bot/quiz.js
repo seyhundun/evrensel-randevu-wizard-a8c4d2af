@@ -861,6 +861,17 @@ async function runGeminiEngine(url, account, settings) {
     // İlk sayfa yüklemeden önce insan benzeri hareket
     await humanMove(page);
 
+    // IP doğrulaması — hangi IP'den bağlandığını logla
+    try {
+      await page.goto("https://ip.evomi.com/s", { waitUntil: "networkidle2", timeout: 15000 });
+      var detectedIp = await page.evaluate(function() { return document.body ? document.body.innerText.trim() : "bilinmiyor"; });
+      console.log("[QUIZ] Aktif IP: " + detectedIp);
+      await supabaseInsertLog("🌐 Bağlantı IP: " + detectedIp, "info");
+    } catch(ipErr) {
+      console.log("[QUIZ] IP tespiti başarısız: " + ipErr.message);
+      await supabaseInsertLog("⚠️ IP tespiti başarısız", "warning");
+    }
+
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
     await supabaseInsertLog("Sayfa yüklendi: " + url, "info");
 
