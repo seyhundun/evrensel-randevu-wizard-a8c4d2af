@@ -1003,6 +1003,19 @@ async function runGeminiEngine(url, account, settings) {
       recentActions.push(actionSummary);
       if (recentActions.length > 5) recentActions.shift();
 
+      // Stuck detection: son 3 aksiyon aynıysa zorla scroll yap
+      if (recentActions.length >= 3) {
+        var last3 = recentActions.slice(-3);
+        if (last3[0] === last3[1] && last3[1] === last3[2]) {
+          console.log("[STUCK] Son 3 aksiyon aynı, zorla scroll yapılıyor");
+          await supabaseInsertLog("⚠️ Takılma algılandı, sayfayı kaydırıyor", "warning");
+          await page.evaluate(function() { window.scrollBy({ top: 600, behavior: 'smooth' }); });
+          await quizDelay(1000, 2000);
+          recentActions.push("scroll: forced_unstuck");
+          continue;
+        }
+      }
+
       await supabaseInsertLog("Adım " + stepCount + ": " + action.description, "info");
 
       if (action.done) {
