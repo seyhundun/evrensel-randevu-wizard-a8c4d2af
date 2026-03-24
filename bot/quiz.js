@@ -190,10 +190,13 @@ async function runGeminiEngine(url, account, settings) {
   }
 }
 
-async function askGeminiVision(apiKey, screenshotBase64, currentUrl, account, step) {
+async function askGeminiVision(apiKey, screenshotBase64, currentUrl, account, step, recentActions) {
   var fetch = (await import("node-fetch")).default;
+  var recentText = (recentActions && recentActions.length > 0)
+    ? recentActions.map(function(a, i) { return (i + 1) + ". " + a; }).join("\n")
+    : "Yok";
 
-  var systemPrompt = `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip TEK BİR aksiyon belirle.
+  var systemPrompt = `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip SADECE TEK BİR aksiyon belirle.
 
 GÖREV: Anket sitesine gir, giriş yap, anketleri bul ve çöz.
 
@@ -201,27 +204,25 @@ HESAP BİLGİLERİ:
 - Email: ${account.email}
 - Şifre: ${account.password}
 
-KURALLAR:
-1. Çerez popup varsa → kabul et
-2. Giriş gerekiyorsa → email/şifre ile giriş yap (Google/Facebook KULLANMA)
-3. Anket sayfasını bul → "Surveys", "Answer", "Earn" menülerine tıkla
-4. Soruları çöz → mantıklı cevaplar ver
-5. "Next", "Continue" ile ilerle
-6. Tamamlandıysa done: true döndür
+SON DENEMELER:
+${recentText}
 
-JSON formatında SADECE BİR aksiyon döndür:
+KRİTİK KURALLAR:
+1. Aynı butona tekrar tekrar basma. Son 2-3 adım aynıysa FARKLI bir aksiyon seç.
+2. Eğer 'Log In' tıklandıysa ama sayfa değişmediyse sonraki adım email alanını doldurmak, giriş modalını açmak veya login sayfasına gitmek olmalı.
+3. Çerez popup varsa önce onu kapat.
+4. Giriş gerekiyorsa email/şifre ile giriş yap. Google/Facebook KULLANMA.
+5. Sadece ekranda gerçekten görünen öğeleri hedefle.
+6. JSON dışında hiçbir şey yazma.
+
+JSON formatı:
 {
   "action": "click" | "type" | "scroll" | "wait" | "navigate",
-  "selector": "CSS selector veya metin açıklaması",
-  "value": "type için yazılacak metin",
-  "description": "ne yapıyorsun kısa açıklama",
+  "selector": "Kısa hedef metni veya CSS selector",
+  "value": "type/navigate için değer",
+  "description": "çok kısa açıklama",
   "done": false
-}
-
-Örnekler:
-- Çerez kabul: {"action":"click","selector":"Accept All butonuna tıkla","description":"Çerez popup kabul ediliyor","done":false}
-- Metin yaz: {"action":"type","selector":"input[type=email]","value":"test@test.com","description":"Email giriliyor","done":false}
-- Tamamlandı: {"action":"wait","selector":"","description":"Anket başarıyla tamamlandı","done":true}`;
+}`;
 
   var body = {
     contents: [{
@@ -233,7 +234,7 @@ JSON formatında SADECE BİR aksiyon döndür:
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 500,
+      maxOutputTokens: 400,
       responseMimeType: "application/json"
     }
   };
@@ -256,63 +257,158 @@ JSON formatında SADECE BİR aksiyon döndür:
 
     var data = await res.json();
     var text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    
-    // JSON parse
+
+    if (!text || !text.trim()) {
+      await supabaseInsertLog("Gemini boş cevap döndürdü", "warning");
+      return null;
+    }
+
     var jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch (parseErr) {
+        await supabaseInsertLog("Gemini JSON parse hatası: " + String(parseErr.message || parseErr).slice(0, 120), "warning");
+      }
     }
+
+    await supabaseInsertLog("Gemini parse edilemeyen cevap: " + text.slice(0, 180), "warning");
     return null;
   } catch (err) {
     console.error("[GEMINI] Vision hata:", err.message);
+    await supabaseInsertLog("Gemini vision hata: " + err.message, "warning");
     return null;
   }
 }
 
+function buildClickSearchTexts(action) {
+  var items = [];
+
+  function pushText(value) {
+    if (!value) return;
+    var normalized = String(value).trim();
+    if (!normalized) return;
+    if (items.indexOf(normalized) === -1) items.push(normalized);
+
+    var cleaned = normalized
+      .replace(/["'“”‘’]/g, " ")
+      .replace(/\b(butonuna|butonu|button|linki|link|tıkla|tikla|click|için|icin|yap|bas|press)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (cleaned && items.indexOf(cleaned) === -1) items.push(cleaned);
+  }
+
+  pushText(action.selector);
+  pushText(action.description);
+
+  var source = [action.selector, action.description].filter(Boolean).join(" ");
+  var matches = source.match(/["'“”‘’]([^"'“”‘’]{2,60})["'“”‘’]/g) || [];
+  for (var i = 0; i < matches.length; i++) {
+    pushText(matches[i].replace(/^["'“”‘’]|["'“”‘’]$/g, ""));
+  }
+
+  return items;
+}
+
 async function executeAction(page, action) {
   switch (action.action) {
-    case "click":
-      // Önce CSS selector dene
+    case "click": {
       try {
-        if (action.selector && !action.selector.includes(" ")) {
+        if (action.selector && /^[.#\[]|^[a-z]+[.#\[]/i.test(action.selector)) {
           await page.click(action.selector);
           return;
         }
       } catch (e) {}
-      // Metin bazlı tıklama
-      var text = action.selector || action.description;
-      var clicked = await page.evaluate(function(searchText) {
-        var elements = document.querySelectorAll("button, a, input[type=submit], input[type=button], [role=button], label, span, div[onclick]");
-        for (var i = 0; i < elements.length; i++) {
-          var el = elements[i];
-          var elText = (el.textContent || el.value || "").trim().toLowerCase();
-          if (elText.includes(searchText.toLowerCase())) {
-            el.click();
-            return true;
+
+      var searchTexts = buildClickSearchTexts(action);
+      var clickResult = await page.evaluate(function(candidates) {
+        function normalize(text) {
+          return String(text || "")
+            .toLowerCase()
+            .replace(/["'“”‘’]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        }
+
+        function isVisible(el) {
+          var rect = el.getBoundingClientRect();
+          var style = window.getComputedStyle(el);
+          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        }
+
+        var phrases = (candidates || []).map(normalize).filter(Boolean);
+        var weakWords = { button: true, buton: true, tıkla: true, tikla: true, click: true, link: true, için: true, icin: true, yap: true, bas: true, press: true };
+        var words = [];
+        for (var p = 0; p < phrases.length; p++) {
+          var parts = phrases[p].split(" ");
+          for (var w = 0; w < parts.length; w++) {
+            var word = parts[w];
+            if (word.length > 1 && !weakWords[word] && words.indexOf(word) === -1) words.push(word);
           }
         }
-        return false;
-      }, text);
-      if (!clicked) {
-        console.log("  Metin bulunamadı, koordinat tıklama deneniyor...");
+
+        var elements = Array.from(document.querySelectorAll("button, a, input[type=submit], input[type=button], [role=button], label, [onclick], [tabindex]"))
+          .filter(isVisible);
+
+        var best = null;
+        var bestScore = 0;
+        var bestText = "";
+
+        for (var i = 0; i < elements.length; i++) {
+          var el = elements[i];
+          var text = normalize(el.textContent || el.value || el.getAttribute("aria-label") || el.getAttribute("title") || "");
+          if (!text) continue;
+
+          var score = 0;
+          for (var j = 0; j < phrases.length; j++) {
+            var phrase = phrases[j];
+            if (!phrase) continue;
+            if (text === phrase) score = Math.max(score, 100);
+            else if (text.includes(phrase) || phrase.includes(text)) score = Math.max(score, 80);
+          }
+
+          if (score < 80 && words.length > 0) {
+            var matched = 0;
+            for (var k = 0; k < words.length; k++) {
+              if (text.includes(words[k])) matched++;
+            }
+            if (matched > 0) score = Math.max(score, matched * 20);
+          }
+
+          if (score > bestScore) {
+            best = el;
+            bestScore = score;
+            bestText = text;
+          }
+        }
+
+        if (best && bestScore >= 40) {
+          best.click();
+          return { clicked: true, matchedText: bestText, score: bestScore };
+        }
+
+        return { clicked: false, matchedText: bestText, score: bestScore };
+      }, searchTexts);
+
+      if (!clickResult.clicked) {
+        throw new Error("Tıklanabilir öğe bulunamadı: " + searchTexts.join(" | "));
       }
-      break;
+      return;
+    }
 
     case "type":
       try {
-        // Önce alanı temizle
         await page.click(action.selector);
         await page.evaluate(function(sel) {
           var el = document.querySelector(sel);
           if (el) el.value = "";
         }, action.selector);
-        // İnsan gibi yaz
         for (var c = 0; c < action.value.length; c++) {
           await page.keyboard.type(action.value[c]);
           await new Promise(function(resolve) { setTimeout(resolve, 30 + Math.random() * 70); });
         }
       } catch (typeErr) {
-        // Fallback: Tüm input'ları dene
         await page.evaluate(function(val, desc) {
           var inputs = document.querySelectorAll("input, textarea");
           for (var i = 0; i < inputs.length; i++) {
@@ -320,14 +416,14 @@ async function executeAction(page, action) {
             var placeholder = (inp.placeholder || "").toLowerCase();
             var label = (inp.getAttribute("aria-label") || "").toLowerCase();
             var type = (inp.type || "").toLowerCase();
-            if (desc.toLowerCase().includes("email") && (type === "email" || placeholder.includes("email"))) {
+            if (desc.toLowerCase().includes("email") && (type === "email" || placeholder.includes("email") || label.includes("email"))) {
               inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
             }
-            if (desc.toLowerCase().includes("password") && type === "password") {
+            if (desc.toLowerCase().includes("password") && (type === "password" || placeholder.includes("password") || label.includes("password"))) {
               inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
             }
           }
-        }, action.value, action.description);
+        }, action.value, action.description || action.selector || "");
       }
       break;
 
