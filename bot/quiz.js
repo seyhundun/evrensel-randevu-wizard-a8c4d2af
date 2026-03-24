@@ -934,7 +934,7 @@ async function runGeminiEngine(url, account, settings) {
     // === OTOMATİK GİRİŞ KONTROLÜ ===
     // Kalıcı profil sayesinde zaten login olmuş olabilir — login sayfasında değilsek direkt anketlere başla
     var currentUrl = page.url();
-    var isLoginPage = //login|/p/login|signin|sign-in/i.test(currentUrl);
+    var isLoginPage = /\/login|\/p\/login|signin|sign-in/i.test(currentUrl);
     var isAlreadyLoggedIn = await page.evaluate(function() {
       var body = document.body ? document.body.innerText : '';
       // Swagbucks dashboard göstergeleri
