@@ -3248,11 +3248,40 @@ async function executeAction(page, action) {
             var selectEl = null;
             try { selectEl = document.querySelector(selector); } catch(e) {}
             
-            // Fallback: find any visible select element
+            // Fallback: find the select that contains the target option
             if (!selectEl || selectEl.tagName !== "SELECT") {
-              var selects = Array.from(document.querySelectorAll("select"));
+              var selects = Array.from(document.querySelectorAll("select")).filter(isVisible);
+              var optLowerCheck = (optionText || "").toLowerCase().trim();
+              
+              // First pass: find select that has matching option text
               for (var i = 0; i < selects.length; i++) {
-                if (isVisible(selects[i])) { selectEl = selects[i]; break; }
+                var opts = Array.from(selects[i].options);
+                for (var j = 0; j < opts.length; j++) {
+                  var optText = (opts[j].text || "").toLowerCase().trim();
+                  if (optText === optLowerCheck || optText.includes(optLowerCheck) || optLowerCheck.includes(optText)) {
+                    selectEl = selects[i];
+                    break;
+                  }
+                }
+                if (selectEl) break;
+              }
+              
+              // Second pass: for numeric values (like year), find select with numeric options
+              if (!selectEl && /^\d+$/.test(optLowerCheck)) {
+                for (var i = 0; i < selects.length; i++) {
+                  var opts = Array.from(selects[i].options);
+                  var numericCount = 0;
+                  for (var j = 0; j < opts.length; j++) {
+                    if (/^\d{4}$/.test((opts[j].text || "").trim())) numericCount++;
+                  }
+                  // If most options are 4-digit years, this is the year select
+                  if (numericCount > 3) { selectEl = selects[i]; break; }
+                }
+              }
+              
+              // Last fallback: first visible select
+              if (!selectEl && selects.length > 0) {
+                selectEl = selects[0];
               }
             }
             
