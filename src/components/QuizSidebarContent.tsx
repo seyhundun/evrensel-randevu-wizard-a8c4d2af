@@ -89,6 +89,8 @@ export default function QuizSidebarContent() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
   const loadSettings = useCallback(async () => {
     const { data } = await supabase.from("bot_settings").select("key, value");
     if (data) {
@@ -109,6 +111,7 @@ export default function QuizSidebarContent() {
       setOpenaiApiKey(map.openai_api_key || "");
       setLovableApiKey(map.lovable_api_key || "");
       setEvomiApiKey(map.evomi_api_key || "");
+      setSettingsLoaded(true);
     }
   }, []);
 
