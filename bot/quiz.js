@@ -401,26 +401,80 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
       });
     }
 
-    // Drop zone bul (dashed border, drop class vb.)
+    // Drop zone bul - çoklu strateji
     var dropZone = null;
-    var dropCandidates = document.querySelectorAll("[class*='drop'], [class*='target'], [class*='placeholder'], [data-drop], [data-droppable]");
+    
+    // 1. Sınıf adına göre drop zone ara
+    var dropCandidates = document.querySelectorAll("[class*='drop'], [class*='target'], [class*='placeholder'], [data-drop], [data-droppable], [class*='answer-box'], [class*='droparea'], [class*='drop-area']");
     for (var k = 0; k < dropCandidates.length; k++) {
       var dr = dropCandidates[k].getBoundingClientRect();
-      if (dr.width > 30 && dr.height > 30) {
+      if (dr.width > 30 && dr.height > 30 && dr.width < 500 && dr.height < 500) {
         dropZone = { x: Math.round(dr.x + dr.width / 2), y: Math.round(dr.y + dr.height / 2) };
         break;
       }
     }
-    // Fallback: dashed border olan elemanları ara
+    
+    // 2. Dashed border olan elemanları ara
     if (!dropZone) {
-      var allVisible = document.querySelectorAll("div, section, span, td");
+      var allVisible = document.querySelectorAll("div, section, span, td, li, article");
       for (var m = 0; m < allVisible.length; m++) {
         var cs = window.getComputedStyle(allVisible[m]);
-        if (cs.borderStyle === "dashed" || cs.outlineStyle === "dashed") {
+        var hasDashed = cs.borderStyle === "dashed" || cs.outlineStyle === "dashed" ||
+          cs.borderTopStyle === "dashed" || cs.borderBottomStyle === "dashed" ||
+          cs.borderLeftStyle === "dashed" || cs.borderRightStyle === "dashed";
+        if (hasDashed) {
           var dRect = allVisible[m].getBoundingClientRect();
-          if (dRect.width > 40 && dRect.height > 40) {
+          if (dRect.width > 40 && dRect.height > 40 && dRect.width < 500) {
             dropZone = { x: Math.round(dRect.x + dRect.width / 2), y: Math.round(dRect.y + dRect.height / 2) };
             break;
+          }
+        }
+      }
+    }
+    
+    // 3. İçinde sadece resim placeholder (broken img icon) olan boş kutuları ara
+    if (!dropZone) {
+      var boxes = document.querySelectorAll("div, td, li, section");
+      for (var b = 0; b < boxes.length; b++) {
+        var box = boxes[b];
+        var bRect = box.getBoundingClientRect();
+        if (bRect.width < 50 || bRect.height < 50 || bRect.width > 400) continue;
+        var bcs = window.getComputedStyle(box);
+        var hasBorder = bcs.borderWidth && parseInt(bcs.borderWidth) > 0;
+        var bgColor = bcs.backgroundColor;
+        var isGrayBg = bgColor && (bgColor.indexOf("rgb(2") > -1 || bgColor.indexOf("rgb(22") > -1 || bgColor.indexOf("rgb(23") > -1 || bgColor.indexOf("rgb(24") > -1 || bgColor.indexOf("#e") > -1 || bgColor.indexOf("#d") > -1 || bgColor.indexOf("#c") > -1);
+        // İçinde sadece bir img (broken/placeholder) varsa ve metin yoksa
+        var innerImgs = box.querySelectorAll("img");
+        var innerText = (box.textContent || "").trim();
+        if ((hasBorder || isGrayBg) && innerImgs.length >= 1 && innerText.length < 5) {
+          // Bu draggable değilse drop zone olabilir
+          var isDraggable = box.getAttribute("draggable") === "true" || box.closest("[draggable='true']");
+          if (!isDraggable) {
+            dropZone = { x: Math.round(bRect.x + bRect.width / 2), y: Math.round(bRect.y + bRect.height / 2) };
+            break;
+          }
+        }
+      }
+    }
+    
+    // 4. Gri arka planlı ve boş olan büyükçe kutuları ara (son çare)
+    if (!dropZone) {
+      var allDivs = document.querySelectorAll("div");
+      for (var g = 0; g < allDivs.length; g++) {
+        var gRect = allDivs[g].getBoundingClientRect();
+        if (gRect.width < 80 || gRect.height < 80 || gRect.width > 400) continue;
+        var gcs = window.getComputedStyle(allDivs[g]);
+        var gbg = gcs.backgroundColor;
+        // Gri tonları: rgb(200-245, 200-245, 200-245)
+        var grayMatch = gbg && gbg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+        if (grayMatch) {
+          var rr = parseInt(grayMatch[1]), gg2 = parseInt(grayMatch[2]), bb = parseInt(grayMatch[3]);
+          if (rr > 190 && rr < 250 && gg2 > 190 && gg2 < 250 && bb > 190 && bb < 250 && Math.abs(rr - gg2) < 15 && Math.abs(gg2 - bb) < 15) {
+            var gText = (allDivs[g].textContent || "").trim();
+            if (gText.length < 10) {
+              dropZone = { x: Math.round(gRect.x + gRect.width / 2), y: Math.round(gRect.y + gRect.height / 2) };
+              break;
+            }
           }
         }
       }
@@ -3298,8 +3352,34 @@ async function executeAction(page, action) {
 
               var isDropZone = el.classList.contains('drop-target') || el.classList.contains('dropzone') || el.classList.contains('drop-zone') ||
                 el.getAttribute('data-drop') !== null || el.getAttribute('data-droppable') !== null ||
-                (el.style.border && el.style.border.includes('dashed')) ||
-                window.getComputedStyle(el).borderStyle === 'dashed';
+                (el.style.border && el.style.border.includes('dashed'));
+
+              // Computed style ile dashed border kontrolü
+              if (!isDropZone) {
+                var elCs = window.getComputedStyle(el);
+                isDropZone = elCs.borderStyle === 'dashed' || elCs.borderTopStyle === 'dashed' || 
+                  elCs.borderBottomStyle === 'dashed' || elCs.borderLeftStyle === 'dashed' || elCs.borderRightStyle === 'dashed';
+              }
+              
+              // Gri arka planlı, içi boş/placeholder kutu kontrolü
+              if (!isDropZone && !el.getAttribute('draggable')) {
+                var elCs2 = window.getComputedStyle(el);
+                var elRect = el.getBoundingClientRect();
+                var elBg = elCs2.backgroundColor;
+                var grayM = elBg && elBg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+                if (grayM && elRect.width > 60 && elRect.height > 60 && elRect.width < 400) {
+                  var rv = parseInt(grayM[1]), gv = parseInt(grayM[2]), bv = parseInt(grayM[3]);
+                  if (rv > 190 && rv < 250 && gv > 190 && bv > 190 && Math.abs(rv-gv) < 15 && Math.abs(gv-bv) < 15) {
+                    var elInnerText = (el.textContent || '').trim();
+                    if (elInnerText.length < 5) isDropZone = true;
+                  }
+                }
+                // İçinde sadece broken/placeholder img olan kutu
+                var elImgs = el.querySelectorAll('img');
+                if (!isDropZone && elImgs.length >= 1 && (el.textContent || '').trim().length < 5 && elRect.width > 60 && elRect.height > 60) {
+                  isDropZone = true;
+                }
+              }
 
               if (!targetEl && isDropZone) {
                 targetEl = el;
@@ -3363,8 +3443,28 @@ async function executeAction(page, action) {
               if (!src && (text === srcNorm || (text.includes(srcNorm) && text.length < srcNorm.length + 10))) {
                 src = allEls[i];
               }
+              // Drop zone: dashed border
+              var elCs = window.getComputedStyle(allEls[i]);
               var isDrop = allEls[i].classList.contains('drop-target') || allEls[i].classList.contains('dropzone') ||
-                allEls[i].getAttribute('data-drop') !== null || window.getComputedStyle(allEls[i]).borderStyle === 'dashed';
+                allEls[i].getAttribute('data-drop') !== null || 
+                elCs.borderStyle === 'dashed' || elCs.borderTopStyle === 'dashed' || elCs.borderBottomStyle === 'dashed';
+              // Drop zone: gri arka planlı boş kutu
+              if (!isDrop && !allEls[i].getAttribute('draggable')) {
+                var elBg = elCs.backgroundColor;
+                var elR = allEls[i].getBoundingClientRect();
+                var gm = elBg && elBg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+                if (gm && elR.width > 60 && elR.height > 60 && elR.width < 400) {
+                  var rv2 = parseInt(gm[1]), gv2 = parseInt(gm[2]), bv2 = parseInt(gm[3]);
+                  if (rv2 > 190 && gv2 > 190 && bv2 > 190 && rv2 < 250 && Math.abs(rv2-gv2) < 15) {
+                    if ((allEls[i].textContent || '').trim().length < 5) isDrop = true;
+                  }
+                }
+                // İçinde broken img olan boş kutu
+                var imgs = allEls[i].querySelectorAll('img');
+                if (!isDrop && imgs.length >= 1 && (allEls[i].textContent || '').trim().length < 5 && elR.width > 60 && elR.height > 60) {
+                  isDrop = true;
+                }
+              }
               if (!tgt && isDrop) tgt = allEls[i];
             }
             if (!tgt) {
