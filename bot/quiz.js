@@ -1300,24 +1300,25 @@ async function runGeminiEngine(url, account, settings) {
             await humanIdle(1500, 3000);
             await humanMove(page);
           }
-
-          // Fazla sekmeleri temizle (maks 3 sekme kalsın)
-          try {
-            var currentPages = await browser.pages();
-            if (currentPages.length > 3) {
-              console.log("[TAB] 🧹 Fazla sekme temizleniyor: " + currentPages.length + " açık");
-              for (var pi = 1; pi < currentPages.length - 1; pi++) {
-                if (currentPages[pi] !== page) {
-                  try { await currentPages[pi].close(); } catch (e) {}
-                }
-              }
-              var afterClean = await browser.pages();
-              console.log("[TAB] ✅ Temizlik sonrası: " + afterClean.length + " sekme");
-            }
-          } catch (cleanErr) {}
         } else {
           await humanIdle(1000, 2500);
         }
+
+        // === HER ADIMDA: Fazla sekmeleri agresif temizle (maks 2 sekme: root + aktif) ===
+        try {
+          var currentPages = await browser.pages();
+          if (currentPages.length > 2) {
+            var rootPage = currentPages[0];
+            for (var pi = 1; pi < currentPages.length; pi++) {
+              if (currentPages[pi] !== page && currentPages[pi] !== rootPage) {
+                try {
+                  console.log("[TAB] 🗑️ Fazla sekme kapatılıyor: " + currentPages[pi].url().slice(0, 60));
+                  await currentPages[pi].close();
+                } catch (e) {}
+              }
+            }
+          }
+        } catch (cleanErr) {}
 
         // Bazen scroll yap
         if (Math.random() > 0.6) await humanScroll(page);
