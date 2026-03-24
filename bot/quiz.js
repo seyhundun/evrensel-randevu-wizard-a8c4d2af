@@ -455,6 +455,52 @@ async function tryAutoSolveCaptcha(page, settings) {
   return true;
 }
 
+// ==================== TEMP PROFILE (VFS'den) ====================
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
+
+function createTempUserDataDir() {
+  var dir = path.join(os.tmpdir(), "quiz-chrome-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8));
+  fs.mkdirSync(dir, { recursive: true });
+  console.log("[BROWSER] 🧹 Temiz profil: " + dir);
+  return dir;
+}
+
+function cleanupUserDataDir(dir) {
+  try {
+    if (dir && fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      console.log("[BROWSER] 🗑 Profil temizlendi: " + dir);
+    }
+  } catch (e) {
+    console.warn("[BROWSER] Profil temizleme hatası: " + e.message);
+  }
+}
+
+// ==================== PROXY REGION ROTATION (VFS'den) ====================
+var QUIZ_PROXY_REGIONS_BY_COUNTRY = {
+  TR: ["ankara", "istanbul", "izmir", "bursa", "antalya", "adana", "konya"],
+  US: ["new.york", "los.angeles", "chicago", "houston", "phoenix", "philadelphia"],
+  GB: ["london", "manchester", "birmingham", "leeds", "glasgow"],
+  DE: ["berlin", "munich", "hamburg", "frankfurt", "cologne"],
+  FR: ["paris", "lyon", "marseille", "toulouse", "nice", "bordeaux"],
+  NL: ["amsterdam", "rotterdam", "the.hague", "utrecht", "eindhoven"],
+  PL: ["warsaw", "krakow", "wroclaw", "gdansk", "poznan", "lodz"],
+  IT: ["rome", "milan", "naples", "turin", "florence"],
+  DK: ["copenhagen", "aarhus", "odense", "aalborg"],
+};
+var quizRegionIndex = -1;
+
+function getQuizFallbackRegion(countryCode) {
+  var cc = (countryCode || "US").toUpperCase();
+  var regions = QUIZ_PROXY_REGIONS_BY_COUNTRY[cc] || QUIZ_PROXY_REGIONS_BY_COUNTRY.US;
+  quizRegionIndex = (quizRegionIndex + 1) % regions.length;
+  var region = regions[quizRegionIndex];
+  console.log("[PROXY] 🏙 Fallback bölge rotasyonu: " + region + " (" + (quizRegionIndex + 1) + "/" + regions.length + ") [" + cc + "]");
+  return region;
+}
+
 // ==================== ANTİ-DETECTİON HELPERS (VFS'den) ====================
 
 function quizDelay(min, max) {
