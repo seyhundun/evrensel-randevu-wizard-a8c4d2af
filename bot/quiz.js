@@ -304,7 +304,7 @@ async function executeAction(page, action) {
         // İnsan gibi yaz
         for (var c = 0; c < action.value.length; c++) {
           await page.keyboard.type(action.value[c]);
-          await page.waitForTimeout(30 + Math.random() * 70);
+          await new Promise(function(resolve) { setTimeout(resolve, 30 + Math.random() * 70); });
         }
       } catch (typeErr) {
         // Fallback: Tüm input'ları dene
