@@ -3352,8 +3352,34 @@ async function executeAction(page, action) {
 
               var isDropZone = el.classList.contains('drop-target') || el.classList.contains('dropzone') || el.classList.contains('drop-zone') ||
                 el.getAttribute('data-drop') !== null || el.getAttribute('data-droppable') !== null ||
-                (el.style.border && el.style.border.includes('dashed')) ||
-                window.getComputedStyle(el).borderStyle === 'dashed';
+                (el.style.border && el.style.border.includes('dashed'));
+
+              // Computed style ile dashed border kontrolü
+              if (!isDropZone) {
+                var elCs = window.getComputedStyle(el);
+                isDropZone = elCs.borderStyle === 'dashed' || elCs.borderTopStyle === 'dashed' || 
+                  elCs.borderBottomStyle === 'dashed' || elCs.borderLeftStyle === 'dashed' || elCs.borderRightStyle === 'dashed';
+              }
+              
+              // Gri arka planlı, içi boş/placeholder kutu kontrolü
+              if (!isDropZone && !el.getAttribute('draggable')) {
+                var elCs2 = window.getComputedStyle(el);
+                var elRect = el.getBoundingClientRect();
+                var elBg = elCs2.backgroundColor;
+                var grayM = elBg && elBg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+                if (grayM && elRect.width > 60 && elRect.height > 60 && elRect.width < 400) {
+                  var rv = parseInt(grayM[1]), gv = parseInt(grayM[2]), bv = parseInt(grayM[3]);
+                  if (rv > 190 && rv < 250 && gv > 190 && bv > 190 && Math.abs(rv-gv) < 15 && Math.abs(gv-bv) < 15) {
+                    var elInnerText = (el.textContent || '').trim();
+                    if (elInnerText.length < 5) isDropZone = true;
+                  }
+                }
+                // İçinde sadece broken/placeholder img olan kutu
+                var elImgs = el.querySelectorAll('img');
+                if (!isDropZone && elImgs.length >= 1 && (el.textContent || '').trim().length < 5 && elRect.width > 60 && elRect.height > 60) {
+                  isDropZone = true;
+                }
+              }
 
               if (!targetEl && isDropZone) {
                 targetEl = el;
