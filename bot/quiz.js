@@ -1479,6 +1479,10 @@ function buildClickSearchTexts(action) {
     pushText(matches[i].replace(/^["'“”‘’]|["'“”‘’]$/g, ""));
   }
 
+  if (/(continue|next|submit|verify|devam|ileri|sonraki|go on)/i.test(source)) {
+    ["Continue", "Next", "Submit", "Verify", "Please click to continue", "click to continue", "Devam", "Devam et", "İleri", "Sonraki"].forEach(pushText);
+  }
+
   return items;
 }
 
