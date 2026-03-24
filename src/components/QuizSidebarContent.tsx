@@ -48,17 +48,25 @@ export default function QuizSidebarContent() {
   const [captchaApiKey, setCaptchaApiKey] = useState(false);
 
   // Engine selection
-  const [quizEngine, setQuizEngine] = useState<"gemini" | "browser_use">("gemini");
+  type QuizEngineType = "gemini" | "browser_use" | "lovable_ai" | "openai";
+  const [quizEngine, setQuizEngine] = useState<QuizEngineType>("gemini");
 
-  // Gemini API key
+  // API keys
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [geminiKeyVisible, setGeminiKeyVisible] = useState(false);
   const [savingGeminiKey, setSavingGeminiKey] = useState(false);
 
-  // Browser Use API key
   const [browserUseKeyValue, setBrowserUseKeyValue] = useState("");
   const [browserUseKeyVisible, setBrowserUseKeyVisible] = useState(false);
   const [savingBuKey, setSavingBuKey] = useState(false);
+
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [openaiKeyVisible, setOpenaiKeyVisible] = useState(false);
+  const [savingOpenaiKey, setSavingOpenaiKey] = useState(false);
+
+  const [lovableApiKey, setLovableApiKey] = useState("");
+  const [lovableKeyVisible, setLovableKeyVisible] = useState(false);
+  const [savingLovableKey, setSavingLovableKey] = useState(false);
 
   const [quizStatus, setQuizStatus] = useState<"idle" | "running">("idle");
   const [lastLog, setLastLog] = useState<{ message: string; time: string; status: string } | null>(null);
@@ -86,9 +94,11 @@ export default function QuizSidebarContent() {
       setQuizProxyEnabled(map.quiz_proxy_enabled !== "false");
       setCaptchaProvider(map.captcha_provider || "2captcha");
       setCaptchaApiKey(!!(map.captcha_api_key));
-      setQuizEngine((map.quiz_engine as "gemini" | "browser_use") || "gemini");
+      setQuizEngine((map.quiz_engine as QuizEngineType) || "gemini");
       setGeminiApiKey(map.gemini_api_key || "");
       setBrowserUseKeyValue(map.browser_use_api_key || "");
+      setOpenaiApiKey(map.openai_api_key || "");
+      setLovableApiKey(map.lovable_api_key || "");
     }
   }, []);
 
@@ -199,10 +209,16 @@ export default function QuizSidebarContent() {
     setSaving(false);
   };
 
-  const switchEngine = async (engine: "gemini" | "browser_use") => {
+  const engineLabels: Record<QuizEngineType, string> = {
+    gemini: "Gemini Vision (Kendi Key)",
+    lovable_ai: "Lovable AI (Ücretsiz)",
+    openai: "OpenAI GPT-4o-mini (Ucuz)",
+    browser_use: "Browser Use (Ücretli)",
+  };
+  const switchEngine = async (engine: QuizEngineType) => {
     setQuizEngine(engine);
     await upsertSetting("quiz_engine", engine, "Quiz Motor Seçimi");
-    toast.success(engine === "gemini" ? "Motor: Gemini Vision (Ücretsiz)" : "Motor: Browser Use (Ücretli)");
+    toast.success("Motor: " + engineLabels[engine]);
   };
 
   const healthColor = stats.successRate >= 80 ? "text-emerald-500" : stats.successRate >= 50 ? "text-amber-500" : "text-destructive";
@@ -273,6 +289,19 @@ export default function QuizSidebarContent() {
         </h3>
         <div className="grid grid-cols-2 gap-1.5">
           <button
+            onClick={() => switchEngine("lovable_ai")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
+              quizEngine === "lovable_ai"
+                ? "border-purple-500 bg-purple-500/10 text-purple-700 dark:text-purple-400"
+                : "border-border bg-secondary/40 text-muted-foreground hover:bg-secondary"
+            }`}
+          >
+            <Zap className="w-4 h-4" />
+            <span className="font-semibold">Lovable AI</span>
+            <span className="text-[9px] opacity-70">Vision + Gateway</span>
+            <Badge variant="outline" className="text-[8px] h-4 border-purple-500/30 text-purple-600">Ücretsiz</Badge>
+          </button>
+          <button
             onClick={() => switchEngine("gemini")}
             className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
               quizEngine === "gemini"
@@ -282,8 +311,21 @@ export default function QuizSidebarContent() {
           >
             <Zap className="w-4 h-4" />
             <span className="font-semibold">Gemini Vision</span>
-            <span className="text-[9px] opacity-70">Puppeteer + AI</span>
+            <span className="text-[9px] opacity-70">Kendi API Key</span>
             <Badge variant="outline" className="text-[8px] h-4 border-emerald-500/30 text-emerald-600">Ücretsiz</Badge>
+          </button>
+          <button
+            onClick={() => switchEngine("openai")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-md border text-[10px] transition-all ${
+              quizEngine === "openai"
+                ? "border-sky-500 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                : "border-border bg-secondary/40 text-muted-foreground hover:bg-secondary"
+            }`}
+          >
+            <Globe className="w-4 h-4" />
+            <span className="font-semibold">OpenAI</span>
+            <span className="text-[9px] opacity-70">GPT-4o-mini Vision</span>
+            <Badge variant="outline" className="text-[8px] h-4 border-sky-500/30 text-sky-600">Ucuz</Badge>
           </button>
           <button
             onClick={() => switchEngine("browser_use")}
@@ -305,64 +347,61 @@ export default function QuizSidebarContent() {
       <Card className="p-3 space-y-2">
         <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
           <Key className="w-3.5 h-3.5 text-muted-foreground" />
-          {quizEngine === "gemini" ? "Gemini API Key" : "Browser Use API Key"}
+          {quizEngine === "gemini" ? "Gemini API Key" : quizEngine === "openai" ? "OpenAI API Key" : quizEngine === "lovable_ai" ? "Lovable API Key" : "Browser Use API Key"}
         </h3>
         <div className="space-y-1.5">
           <Label className="text-[10px] text-muted-foreground">API Key</Label>
-          <div className="flex gap-1">
-            <div className="relative flex-1">
-              <Input
-                type={quizEngine === "gemini" ? (geminiKeyVisible ? "text" : "password") : (browserUseKeyVisible ? "text" : "password")}
-                value={quizEngine === "gemini" ? geminiApiKey : browserUseKeyValue}
-                onChange={(e) => quizEngine === "gemini" ? setGeminiApiKey(e.target.value) : setBrowserUseKeyValue(e.target.value)}
-                placeholder={quizEngine === "gemini" ? "Gemini API key girin..." : "Browser Use API key girin..."}
-                className="h-7 text-[11px] pr-7 font-mono"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-7 w-7 p-0"
-                onClick={() => quizEngine === "gemini" ? setGeminiKeyVisible(!geminiKeyVisible) : setBrowserUseKeyVisible(!browserUseKeyVisible)}
-              >
-                {(quizEngine === "gemini" ? geminiKeyVisible : browserUseKeyVisible) ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-              </Button>
-            </div>
-            <Button
-              size="sm"
-              className="h-7 px-2 text-[10px]"
-              disabled={quizEngine === "gemini" ? savingGeminiKey : savingBuKey}
-              onClick={async () => {
-                if (quizEngine === "gemini") {
-                  setSavingGeminiKey(true);
-                  try {
-                    await upsertSetting("gemini_api_key", geminiApiKey, "Gemini API Key");
-                    toast.success("Gemini API key kaydedildi");
-                  } catch (err: any) { toast.error("Hata: " + err.message); }
-                  setSavingGeminiKey(false);
-                } else {
-                  setSavingBuKey(true);
-                  try {
-                    await upsertSetting("browser_use_api_key", browserUseKeyValue, "Browser Use API Key");
-                    toast.success("Browser Use API key kaydedildi");
-                  } catch (err: any) { toast.error("Hata: " + err.message); }
-                  setSavingBuKey(false);
-                }
-              }}
-            >
-              {(quizEngine === "gemini" ? savingGeminiKey : savingBuKey) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-            </Button>
-          </div>
-          <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1 text-[10px]">
-            <span className="text-muted-foreground">Durum</span>
-            <span className={`font-medium ${(quizEngine === "gemini" ? !!geminiApiKey : !!browserUseKeyValue) ? "text-emerald-600" : "text-destructive"}`}>
-              {(quizEngine === "gemini" ? !!geminiApiKey : !!browserUseKeyValue) ? "✓ Tanımlı" : "✗ Eksik"}
-            </span>
-          </div>
+          {(() => {
+            const engineKeyMap: Record<QuizEngineType, { value: string; set: (v: string) => void; visible: boolean; toggleVisible: () => void; saving: boolean; setSaving: (v: boolean) => void; settingKey: string; label: string; placeholder: string }> = {
+              gemini: { value: geminiApiKey, set: setGeminiApiKey, visible: geminiKeyVisible, toggleVisible: () => setGeminiKeyVisible(!geminiKeyVisible), saving: savingGeminiKey, setSaving: setSavingGeminiKey, settingKey: "gemini_api_key", label: "Gemini API Key", placeholder: "Gemini API key girin..." },
+              openai: { value: openaiApiKey, set: setOpenaiApiKey, visible: openaiKeyVisible, toggleVisible: () => setOpenaiKeyVisible(!openaiKeyVisible), saving: savingOpenaiKey, setSaving: setSavingOpenaiKey, settingKey: "openai_api_key", label: "OpenAI API Key", placeholder: "sk-... OpenAI key girin..." },
+              lovable_ai: { value: lovableApiKey, set: setLovableApiKey, visible: lovableKeyVisible, toggleVisible: () => setLovableKeyVisible(!lovableKeyVisible), saving: savingLovableKey, setSaving: setSavingLovableKey, settingKey: "lovable_api_key", label: "Lovable API Key", placeholder: "Lovable API key girin..." },
+              browser_use: { value: browserUseKeyValue, set: setBrowserUseKeyValue, visible: browserUseKeyVisible, toggleVisible: () => setBrowserUseKeyVisible(!browserUseKeyVisible), saving: savingBuKey, setSaving: setSavingBuKey, settingKey: "browser_use_api_key", label: "Browser Use API Key", placeholder: "Browser Use API key girin..." },
+            };
+            const k = engineKeyMap[quizEngine];
+            return (
+              <>
+                <div className="flex gap-1">
+                  <div className="relative flex-1">
+                    <Input
+                      type={k.visible ? "text" : "password"}
+                      value={k.value}
+                      onChange={(e) => k.set(e.target.value)}
+                      placeholder={k.placeholder}
+                      className="h-7 text-[11px] pr-7 font-mono"
+                    />
+                    <Button variant="ghost" size="sm" className="absolute right-0 top-0 h-7 w-7 p-0" onClick={k.toggleVisible}>
+                      {k.visible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    </Button>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="h-7 px-2 text-[10px]"
+                    disabled={k.saving}
+                    onClick={async () => {
+                      k.setSaving(true);
+                      try {
+                        await upsertSetting(k.settingKey, k.value, k.label);
+                        toast.success(k.label + " kaydedildi");
+                      } catch (err: any) { toast.error("Hata: " + err.message); }
+                      k.setSaving(false);
+                    }}
+                  >
+                    {k.saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  </Button>
+                </div>
+                <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1 text-[10px]">
+                  <span className="text-muted-foreground">Durum</span>
+                  <span className={`font-medium ${k.value ? "text-emerald-600" : "text-destructive"}`}>
+                    {k.value ? "✓ Tanımlı" : "✗ Eksik"}
+                  </span>
+                </div>
+              </>
+            );
+          })()}
           <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1 text-[10px]">
             <span className="text-muted-foreground">Motor</span>
-            <span className="font-medium text-foreground">
-              {quizEngine === "gemini" ? "Puppeteer + Gemini v4.0" : "Cloud Agent v3.0"}
-            </span>
+            <span className="font-medium text-foreground">{engineLabels[quizEngine]}</span>
           </div>
         </div>
       </Card>
