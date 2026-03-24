@@ -801,6 +801,13 @@ async function runGeminiEngine(url, account, settings) {
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
     await supabaseInsertLog("Sayfa yüklendi: " + url, "info");
 
+    // Sayfa engel kontrolü (VFS ile aynı)
+    var pageContent = await page.evaluate(function() { return document.body ? document.body.innerText : ""; }).catch(function() { return ""; });
+    if (quizIsPageBlocked(pageContent)) {
+      await supabaseInsertLog("🚫 Sayfa engellendi — yeni oturum denenecek", "warning");
+      throw new Error("blocked: Sayfa engellendi (403/access denied/rate limit)");
+    }
+
     // Sayfa yüklendikten sonra insan benzeri davranış
     await humanIdle(1500, 3000);
     await humanMove(page);
