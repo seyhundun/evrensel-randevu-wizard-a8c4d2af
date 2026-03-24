@@ -544,120 +544,173 @@ function buildClickSearchTexts(action) {
 }
 
 async function executeAction(page, action) {
+  function looksLikeCssSelector(value) {
+    return !!value && /^[.#\[]|^[a-z]+[.#\[]/i.test(value);
+  }
+
+  async function getCandidateFrames() {
+    var frames = [page];
+    try {
+      var childFrames = page.frames();
+      for (var i = 0; i < childFrames.length; i++) {
+        if (frames.indexOf(childFrames[i]) === -1) frames.push(childFrames[i]);
+      }
+    } catch (e) {}
+    return frames;
+  }
+
+  async function tryDirectClick(targetPage, selector) {
+    if (!looksLikeCssSelector(selector)) return false;
+    try {
+      await targetPage.click(selector);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function trySmartClick(targetPage, candidates) {
+    return await targetPage.evaluate(function(candidates) {
+      function normalize(text) {
+        return String(text || "")
+          .toLowerCase()
+          .replace(/["'“”‘’]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      function isVisible(el) {
+        var rect = el.getBoundingClientRect();
+        var style = window.getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      }
+
+      function isCaptchaLike(el) {
+        var cls = normalize(el.className || "");
+        var aria = normalize(el.getAttribute("aria-label") || "");
+        var title = normalize(el.getAttribute("title") || "");
+        var data = normalize(el.getAttribute("data-testid") || "");
+        var combined = [cls, aria, title, data].join(" ");
+        return /(challenge|captcha|tile|grid|traffic|crosswalk|bus|car|bicycle|hydrant|motorcycle)/.test(combined);
+      }
+
+      var phrases = (candidates || []).map(normalize).filter(Boolean);
+      var weakWords = { button: true, buton: true, tıkla: true, tikla: true, click: true, link: true, için: true, icin: true, yap: true, bas: true, press: true, kareye: true, kare: true, olduğu: true };
+      var words = [];
+      for (var p = 0; p < phrases.length; p++) {
+        var parts = phrases[p].split(" ");
+        for (var w = 0; w < parts.length; w++) {
+          var word = parts[w];
+          if (word.length > 1 && !weakWords[word] && words.indexOf(word) === -1) words.push(word);
+        }
+      }
+
+      var selectors = [
+        "button, a, input[type=submit], input[type=button], [role=button], label, [onclick], [tabindex]",
+        "div, span"
+      ];
+      var elements = Array.from(document.querySelectorAll(selectors.join(","))).filter(isVisible);
+
+      var best = null;
+      var bestScore = 0;
+      var bestText = "";
+
+      for (var i = 0; i < elements.length; i++) {
+        var el = elements[i];
+        var text = normalize(el.textContent || el.value || el.getAttribute("aria-label") || el.getAttribute("title") || "");
+        var score = 0;
+
+        if (isCaptchaLike(el)) score += 35;
+
+        for (var j = 0; j < phrases.length; j++) {
+          var phrase = phrases[j];
+          if (!phrase) continue;
+          if (text && text === phrase) score = Math.max(score, 100);
+          else if (text && (text.includes(phrase) || phrase.includes(text))) score = Math.max(score, 80);
+        }
+
+        if (words.length > 0) {
+          var matched = 0;
+          var blob = [text, normalize(el.className || ""), normalize(el.getAttribute("aria-label") || ""), normalize(el.getAttribute("title") || "")].join(" ");
+          for (var k = 0; k < words.length; k++) {
+            if (blob.includes(words[k])) matched++;
+          }
+          if (matched > 0) score = Math.max(score, matched * 20);
+        }
+
+        if (score > bestScore) {
+          best = el;
+          bestScore = score;
+          bestText = text || normalize(el.className || "");
+        }
+      }
+
+      if (best && bestScore >= 40) {
+        best.click();
+        return { clicked: true, matchedText: bestText, score: bestScore };
+      }
+
+      return { clicked: false, matchedText: bestText, score: bestScore };
+    }, candidates);
+  }
+
   switch (action.action) {
     case "click": {
-      try {
-        if (action.selector && /^[.#\[]|^[a-z]+[.#\[]/i.test(action.selector)) {
-          await page.click(action.selector);
-          return;
-        }
-      } catch (e) {}
+      var frames = await getCandidateFrames();
+      for (var f = 0; f < frames.length; f++) {
+        if (await tryDirectClick(frames[f], action.selector)) return;
+      }
 
       var searchTexts = buildClickSearchTexts(action);
-      var clickResult = await page.evaluate(function(candidates) {
-        function normalize(text) {
-          return String(text || "")
-            .toLowerCase()
-            .replace(/["'“”‘’]/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-        }
-
-        function isVisible(el) {
-          var rect = el.getBoundingClientRect();
-          var style = window.getComputedStyle(el);
-          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-        }
-
-        var phrases = (candidates || []).map(normalize).filter(Boolean);
-        var weakWords = { button: true, buton: true, tıkla: true, tikla: true, click: true, link: true, için: true, icin: true, yap: true, bas: true, press: true };
-        var words = [];
-        for (var p = 0; p < phrases.length; p++) {
-          var parts = phrases[p].split(" ");
-          for (var w = 0; w < parts.length; w++) {
-            var word = parts[w];
-            if (word.length > 1 && !weakWords[word] && words.indexOf(word) === -1) words.push(word);
-          }
-        }
-
-        var elements = Array.from(document.querySelectorAll("button, a, input[type=submit], input[type=button], [role=button], label, [onclick], [tabindex]"))
-          .filter(isVisible);
-
-        var best = null;
-        var bestScore = 0;
-        var bestText = "";
-
-        for (var i = 0; i < elements.length; i++) {
-          var el = elements[i];
-          var text = normalize(el.textContent || el.value || el.getAttribute("aria-label") || el.getAttribute("title") || "");
-          if (!text) continue;
-
-          var score = 0;
-          for (var j = 0; j < phrases.length; j++) {
-            var phrase = phrases[j];
-            if (!phrase) continue;
-            if (text === phrase) score = Math.max(score, 100);
-            else if (text.includes(phrase) || phrase.includes(text)) score = Math.max(score, 80);
-          }
-
-          if (score < 80 && words.length > 0) {
-            var matched = 0;
-            for (var k = 0; k < words.length; k++) {
-              if (text.includes(words[k])) matched++;
-            }
-            if (matched > 0) score = Math.max(score, matched * 20);
-          }
-
-          if (score > bestScore) {
-            best = el;
-            bestScore = score;
-            bestText = text;
-          }
-        }
-
-        if (best && bestScore >= 40) {
-          best.click();
-          return { clicked: true, matchedText: bestText, score: bestScore };
-        }
-
-        return { clicked: false, matchedText: bestText, score: bestScore };
-      }, searchTexts);
-
-      if (!clickResult.clicked) {
-        throw new Error("Tıklanabilir öğe bulunamadı: " + searchTexts.join(" | "));
+      for (var i = 0; i < frames.length; i++) {
+        try {
+          var clickResult = await trySmartClick(frames[i], searchTexts);
+          if (clickResult.clicked) return;
+        } catch (e) {}
       }
-      return;
+
+      throw new Error("Tıklanabilir öğe bulunamadı: " + searchTexts.join(" | "));
     }
 
-    case "type":
-      try {
-        await page.click(action.selector);
-        await page.evaluate(function(sel) {
-          var el = document.querySelector(sel);
-          if (el) el.value = "";
-        }, action.selector);
-        for (var c = 0; c < action.value.length; c++) {
-          await page.keyboard.type(action.value[c]);
-          await new Promise(function(resolve) { setTimeout(resolve, 30 + Math.random() * 70); });
-        }
-      } catch (typeErr) {
-        await page.evaluate(function(val, desc) {
-          var inputs = document.querySelectorAll("input, textarea");
-          for (var i = 0; i < inputs.length; i++) {
-            var inp = inputs[i];
-            var placeholder = (inp.placeholder || "").toLowerCase();
-            var label = (inp.getAttribute("aria-label") || "").toLowerCase();
-            var type = (inp.type || "").toLowerCase();
-            if (desc.toLowerCase().includes("email") && (type === "email" || placeholder.includes("email") || label.includes("email"))) {
-              inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
-            }
-            if (desc.toLowerCase().includes("password") && (type === "password" || placeholder.includes("password") || label.includes("password"))) {
-              inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
-            }
+    case "type": {
+      var typeFrames = await getCandidateFrames();
+      for (var tf = 0; tf < typeFrames.length; tf++) {
+        try {
+          await typeFrames[tf].click(action.selector);
+          await typeFrames[tf].evaluate(function(sel) {
+            var el = document.querySelector(sel);
+            if (el) el.value = "";
+          }, action.selector);
+          for (var c = 0; c < action.value.length; c++) {
+            await page.keyboard.type(action.value[c]);
+            await new Promise(function(resolve) { setTimeout(resolve, 30 + Math.random() * 70); });
           }
-        }, action.value, action.description || action.selector || "");
+          return;
+        } catch (typeErr) {}
+      }
+
+      for (var tfi = 0; tfi < typeFrames.length; tfi++) {
+        try {
+          await typeFrames[tfi].evaluate(function(val, desc) {
+            var inputs = document.querySelectorAll("input, textarea");
+            for (var i = 0; i < inputs.length; i++) {
+              var inp = inputs[i];
+              var placeholder = (inp.placeholder || "").toLowerCase();
+              var label = (inp.getAttribute("aria-label") || "").toLowerCase();
+              var type = (inp.type || "").toLowerCase();
+              if (desc.toLowerCase().includes("email") && (type === "email" || placeholder.includes("email") || label.includes("email"))) {
+                inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
+              }
+              if (desc.toLowerCase().includes("password") && (type === "password" || placeholder.includes("password") || label.includes("password"))) {
+                inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
+              }
+            }
+          }, action.value, action.description || action.selector || "");
+          return;
+        } catch (e) {}
       }
       break;
+    }
 
     case "scroll":
       await page.evaluate(function() { window.scrollBy(0, 400); });
