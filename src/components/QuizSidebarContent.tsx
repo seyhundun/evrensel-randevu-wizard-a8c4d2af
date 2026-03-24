@@ -38,6 +38,9 @@ async function upsertSetting(key: string, value: string, label?: string) {
 export default function QuizSidebarContent() {
   const [proxyHost, setProxyHost] = useState("—");
   const [proxyPort, setProxyPort] = useState("1000");
+  const [proxyUsername, setProxyUsername] = useState("");
+  const [proxyPassword, setProxyPassword] = useState("");
+  const [proxyPassVisible, setProxyPassVisible] = useState(false);
   const [proxyCountry, setProxyCountry] = useState("US");
   const [proxyRegion, setProxyRegion] = useState("");
   const [quizProxyEnabled, setQuizProxyEnabled] = useState(true);
