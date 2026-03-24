@@ -1904,6 +1904,37 @@ function buildClickSearchTexts(action) {
 }
 
 async function executeAction(page, action) {
+  // DOM Agent koordinat bazlı tıklama desteği
+  if (action._domTarget && action.action === "click") {
+    try {
+      await page.mouse.click(action._domTarget.x, action._domTarget.y);
+      console.log("[DOM-AGENT] Koordinat tıklama: (" + action._domTarget.x + ", " + action._domTarget.y + ")");
+      return;
+    } catch (coordErr) {
+      console.log("[DOM-AGENT] Koordinat tıklama başarısız, fallback'e geçiliyor:", coordErr.message);
+      // Fallback: normal executeAction devam edecek
+    }
+  }
+
+  if (action._domTarget && action.action === "type") {
+    try {
+      await page.mouse.click(action._domTarget.x, action._domTarget.y);
+      await new Promise(function(r) { setTimeout(r, 300); });
+      // Mevcut değeri temizle ve yaz
+      await page.keyboard.down("Control");
+      await page.keyboard.press("a");
+      await page.keyboard.up("Control");
+      await page.keyboard.press("Backspace");
+      for (var ci = 0; ci < (action.value || "").length; ci++) {
+        await page.keyboard.type((action.value || "")[ci], { delay: 30 + Math.random() * 50 });
+      }
+      console.log("[DOM-AGENT] Koordinat type: (" + action._domTarget.x + ", " + action._domTarget.y + ") = " + (action.value || "").slice(0, 30));
+      return;
+    } catch (typeErr) {
+      console.log("[DOM-AGENT] Koordinat type başarısız, fallback'e geçiliyor:", typeErr.message);
+    }
+  }
+
   function looksLikeCssSelector(value) {
     return !!value && /^[.#\[]|^[a-z]+[.#\[]/i.test(value);
   }
