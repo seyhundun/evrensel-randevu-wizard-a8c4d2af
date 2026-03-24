@@ -36,7 +36,7 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: "You are an OCR specialist. Read ONLY the CAPTCHA characters from the verification image and return only the code. Ignore logos, brand text, headers, watermarks, and decorative text. No explanation, no quotes. The CAPTCHA is usually 4-6 alphanumeric characters. Be precise for similar pairs (0/O, 1/l/I, 5/S, 8/B, 9/g, 2/Z)."
+            content: "You are an OCR specialist. Read ONLY the CAPTCHA characters or numbers from the verification image and return only the code. Ignore logos, brand text, headers, watermarks, and decorative text. No explanation, no quotes. The CAPTCHA is usually 2-6 alphanumeric characters. Be precise for similar pairs (0/O, 1/l/I, 5/S, 8/B, 9/g, 2/Z). If the image contains a single number, return that number."
           },
           {
             role: "user",
