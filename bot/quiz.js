@@ -1018,8 +1018,13 @@ async function runGeminiEngine(url, account, settings) {
       visionFn = function(ss, url, acc, st, ra) { return askGeminiVision(geminiApiKey, ss, url, acc, st, ra); };
     }
 
+    var stepStartTime = Date.now();
+    var consecutiveFailures = 0;
+    var STEP_TIMEOUT_MS = 30000; // 30 saniye adım zaman aşımı
+
     while (stepCount < maxSteps) {
       stepCount++;
+      stepStartTime = Date.now();
       console.log("[" + engineType.toUpperCase() + "] Adım " + stepCount + "/" + maxSteps);
 
       // === CAPTCHA AUTO-DETECTION ===
@@ -1028,6 +1033,7 @@ async function runGeminiEngine(url, account, settings) {
         if (captchaSolved) {
           console.log("[CAPTCHA] Otomatik çözüldü, 3s bekleniyor...");
           await quizDelay(2000, 4000);
+          consecutiveFailures = 0;
           continue;
         }
       } catch (captchaErr) {
