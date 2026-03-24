@@ -547,7 +547,15 @@ async function tryAutoSolveTextCaptcha(page, settings) {
 }
 
 
-  // === TEXT/IMAGE CAPTCHA TESPİTİ (öncelikli) ===
+  // === DRAG-DROP CAPTCHA TESPİTİ ===
+  try {
+    var dragCaptchaSolved = await tryAutoSolveDragDropCaptcha(page, settings);
+    if (dragCaptchaSolved) return true;
+  } catch (dcErr) {
+    console.log("[DRAG-CAPTCHA] Hata:", dcErr.message);
+  }
+
+  // === TEXT/IMAGE CAPTCHA TESPİTİ ===
   try {
     var textCaptchaSolved = await tryAutoSolveTextCaptcha(page, settings);
     if (textCaptchaSolved) return true;
