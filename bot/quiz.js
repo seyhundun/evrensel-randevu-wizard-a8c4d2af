@@ -1676,15 +1676,57 @@ async function askOpenAIVision(apiKey, screenshotBase64, currentUrl, account, st
   return null;
 }
 
-// ==================== DOM AGENT ENGINE ====================
+// ==================== DOM AGENT ENGINE (TAM OTONOM) ====================
+
+// DOM Agent: Sayfa metnini + elementleri toplar, AI tam otonom karar verir
+// Birden fazla aksiyonu sırayla yürütür (multi-action)
+
+var _domAgentPendingActions = []; // Kuyruktaki aksiyonlar
 
 async function askDOMAgent(page, currentUrl, account, step, recentActions, apiKey) {
+  // Eğer kuyrukta bekleyen aksiyon varsa, AI'ya sormadan direkt döndür
+  if (_domAgentPendingActions.length > 0) {
+    var queued = _domAgentPendingActions.shift();
+    console.log("[DOM-AGENT] Kuyruktan aksiyon: " + (queued.description || queued.action));
+    return queued;
+  }
+
   var fetch = (await import("node-fetch")).default;
   var recentText = (recentActions && recentActions.length > 0)
     ? recentActions.map(function(a, i) { return (i + 1) + ". " + a; }).join("\n")
     : "Yok";
 
-  // 1) Sayfadaki interaktif elementleri topla
+  // 1) Sayfa metnini çıkar (soruları, seçenekleri AI'ın okuması için)
+  var pageText = "";
+  try {
+    pageText = await page.evaluate(function() {
+      // Görünür metin al — script/style hariç
+      function getVisibleText(node) {
+        if (!node) return "";
+        if (node.nodeType === 3) return node.textContent || "";
+        if (node.nodeType !== 1) return "";
+        var tag = (node.tagName || "").toLowerCase();
+        if (tag === "script" || tag === "style" || tag === "noscript" || tag === "svg") return "";
+        var style = window.getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden") return "";
+        var text = "";
+        for (var i = 0; i < node.childNodes.length; i++) {
+          text += getVisibleText(node.childNodes[i]);
+        }
+        if (tag === "p" || tag === "div" || tag === "h1" || tag === "h2" || tag === "h3" || tag === "h4" || tag === "li" || tag === "tr" || tag === "br") {
+          text = "\n" + text;
+        }
+        return text;
+      }
+      var raw = getVisibleText(document.body);
+      // Temizle: çoklu boşlukları kaldır, max 4000 karakter
+      return raw.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 4000);
+    });
+  } catch (textErr) {
+    console.log("[DOM-AGENT] Sayfa metni çıkarma hatası:", textErr.message);
+  }
+
+  // 2) Sayfadaki interaktif elementleri topla
   var elements = [];
   try {
     elements = await page.evaluate(function() {
@@ -1692,15 +1734,15 @@ async function askDOMAgent(page, currentUrl, account, step, recentActions, apiKe
       var selectors = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="option"], [role="tab"], [role="menuitem"], [role="switch"], [tabindex], label, [onclick]';
       var els = document.querySelectorAll(selectors);
       var idx = 0;
-      for (var i = 0; i < els.length && idx < 120; i++) {
+      for (var i = 0; i < els.length && idx < 150; i++) {
         var el = els[i];
         var rect = el.getBoundingClientRect();
         if (rect.width < 5 || rect.height < 5) continue;
-        if (rect.top > window.innerHeight + 200 || rect.bottom < -100) continue;
+        if (rect.top > window.innerHeight + 300 || rect.bottom < -200) continue;
         var style = window.getComputedStyle(el);
         if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity) < 0.1) continue;
 
-        var text = (el.textContent || "").trim().slice(0, 80);
+        var text = (el.textContent || "").trim().slice(0, 100);
         var isCookieBanner = false;
         var parent = el;
         for (var p = 0; p < 5 && parent; p++) {
@@ -1717,13 +1759,14 @@ async function askDOMAgent(page, currentUrl, account, step, recentActions, apiKe
           text: text,
           id: el.id || null,
           name: el.name || null,
-          className: (el.className || "").toString().slice(0, 60),
+          className: (el.className || "").toString().slice(0, 80),
           href: el.href || null,
           placeholder: el.placeholder || null,
           ariaLabel: el.getAttribute("aria-label") || null,
-          value: el.value || null,
-          checked: el.checked || false,
+          value: (el.tagName === "SELECT" || el.type === "hidden") ? null : (el.value || null),
+          checked: !!el.checked,
           role: el.getAttribute("role") || null,
+          disabled: !!el.disabled,
           rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
           isInCookieBanner: isCookieBanner
         });
@@ -1737,22 +1780,17 @@ async function askDOMAgent(page, currentUrl, account, step, recentActions, apiKe
     return null;
   }
 
-  if (elements.length === 0) {
-    await supabaseInsertLog("DOM'da interaktif element bulunamadı", "warning");
+  if (elements.length === 0 && !pageText) {
+    await supabaseInsertLog("DOM'da element ve metin bulunamadı", "warning");
     return null;
   }
 
-  // 2) Görev tanımını oluştur
-  var taskText = "Anket çözme: Sayfadaki soruyu cevapla veya navigasyon butonuna tıkla.\n";
+  // 3) Görev tanımı
+  var taskText = "Anket/quiz çöz. Sayfayı analiz et, soruyu oku, cevapla veya ilerle.\n";
   taskText += "Hesap: " + account.email + " / Şifre: " + account.password + "\n";
-  taskText += "Adım: " + step + "\nSon aksiyonlar:\n" + recentText;
+  taskText += "Son aksiyonlar:\n" + recentText;
 
-  var contextText = "PERSONA: Alex Johnson, 29, Male, Los Angeles CA 90210, Marketing Coordinator, $55k-$75k gelir, Single, No children, Caucasian/White.\n";
-  contextText += "Checkbox soruları için en az 1 seçenek işaretle. Açık uçlu sorulara KISA (5-8 kelime) doğal İngilizce cevap ver, uzun yazma.\n";
-  contextText += "ZIP Code=90210, Yaş=29. Anket bittiyse 'none' action döndür message='next_survey'.\n";
-  contextText += "Aynı elemente tekrar tıklama! Son aksiyonlardan farklı bir şey yap.";
-
-  // 3) dom-agent edge function'a gönder
+  // 4) dom-agent edge function'a gönder
   var maxRetries = 3;
   for (var attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -1765,7 +1803,9 @@ async function askDOMAgent(page, currentUrl, account, step, recentActions, apiKe
         body: JSON.stringify({
           elements: elements,
           task: taskText,
-          context: contextText
+          pageText: pageText,
+          pageUrl: currentUrl,
+          step: step
         })
       });
 
@@ -1785,82 +1825,126 @@ async function askDOMAgent(page, currentUrl, account, step, recentActions, apiKe
       }
 
       var result = await res.json();
-      console.log("[DOM-AGENT] Cevap:", JSON.stringify(result).slice(0, 200));
+      
+      // Düşünce sürecini logla
+      if (result.thinking) {
+        console.log("[DOM-AGENT] 🧠 Düşünce: " + result.thinking.slice(0, 150));
+        await supabaseInsertLog("🧠 AI düşünce: " + result.thinking.slice(0, 120), "info");
+      }
+      
+      console.log("[DOM-AGENT] Cevap: status=" + result.status + " actions=" + (result.actions || []).length + " msg=" + (result.message || "").slice(0, 80));
+
+      // Anket tamamlandı
+      if (result.status === "completed" || result.status === "already_done") {
+        return { action: "next_survey", selector: "", value: "", description: result.message || "Anket tamamlandı", done: false };
+      }
 
       if (!result || !result.actions || result.actions.length === 0) {
-        if (result.status === "already_done" || (result.message && /next_survey|tamamlan|complete|thank you/i.test(result.message))) {
+        if (result.message && /next_survey|tamamlan|complete|thank you/i.test(result.message)) {
           return { action: "next_survey", selector: "", value: "", description: result.message || "Anket tamamlandı", done: false };
         }
         await supabaseInsertLog("DOM Agent aksiyon bulamadı: " + (result.message || ""), "warning");
         return null;
       }
 
-      // 4) İlk aksiyonu standart formata dönüştür
-      var domAction = result.actions[0];
-      var targetElement = elements[domAction.elementIndex];
+      // Tüm aksiyonları standart formata dönüştür
+      var convertedActions = [];
+      for (var ai = 0; ai < result.actions.length; ai++) {
+        var domAction = result.actions[ai];
+        var targetElement = (domAction.elementIndex >= 0 && domAction.elementIndex < elements.length) ? elements[domAction.elementIndex] : null;
 
-      if (domAction.type === "none" || domAction.type === "wait") {
-        if (/next_survey|tamamlan|complete/i.test(domAction.reason || "")) {
-          return { action: "next_survey", selector: "", value: "", description: domAction.reason, done: false };
-        }
-        return { action: "wait", selector: "", value: "", description: domAction.reason || "Bekleniyor", done: false };
-      }
-
-      if (domAction.type === "click" && targetElement) {
-        // Direkt elemente tıkla — selector yerine page.evaluate ile index kullan
-        var selector = "";
-        if (targetElement.id) {
-          selector = "#" + targetElement.id;
-        } else if (targetElement.name) {
-          selector = targetElement.tag + "[name='" + targetElement.name + "']";
-        } else {
-          // Text-based fallback
-          selector = (targetElement.text || "").slice(0, 30);
-        }
-        
-        // DOM Agent'ta direkt koordinat ile tıklama yapacağız — _domClickTarget olarak işaretle
-        return {
-          action: "click",
-          selector: selector,
-          value: "",
-          description: domAction.reason || ("Tıkla: " + (targetElement.text || targetElement.tag).slice(0, 40)),
-          done: false,
-          _domTarget: {
-            x: targetElement.rect.x + Math.round(targetElement.rect.w / 2),
-            y: targetElement.rect.y + Math.round(targetElement.rect.h / 2),
-            index: domAction.elementIndex
+        if (domAction.type === "none" || domAction.type === "wait") {
+          if (/next_survey|tamamlan|complete/i.test(domAction.reason || "")) {
+            convertedActions.push({ action: "next_survey", selector: "", value: "", description: domAction.reason, done: false });
+          } else {
+            convertedActions.push({ action: "wait", selector: "", value: "", description: domAction.reason || "Bekleniyor", done: false });
           }
-        };
-      }
+          continue;
+        }
 
-      if (domAction.type === "type" && targetElement) {
-        var typeSelector = "";
-        if (targetElement.id) typeSelector = "#" + targetElement.id;
-        else if (targetElement.name) typeSelector = targetElement.tag + "[name='" + targetElement.name + "']";
-        else typeSelector = targetElement.tag + "[placeholder='" + (targetElement.placeholder || "") + "']";
+        if (domAction.type === "scroll") {
+          convertedActions.push({ action: "scroll", selector: "", value: domAction.value || "down", description: domAction.reason || "Sayfa kaydırılıyor", done: false });
+          continue;
+        }
 
-        return {
-          action: "type",
-          selector: typeSelector,
+        if (domAction.type === "select" && targetElement) {
+          convertedActions.push({
+            action: "select_dropdown",
+            selector: targetElement.id ? "#" + targetElement.id : (targetElement.name ? "select[name='" + targetElement.name + "']" : "select"),
+            value: domAction.value || "",
+            description: domAction.reason || "Dropdown seçimi",
+            done: false
+          });
+          continue;
+        }
+
+        if (domAction.type === "click" && targetElement) {
+          var selector = "";
+          if (targetElement.id) selector = "#" + targetElement.id;
+          else if (targetElement.name) selector = targetElement.tag + "[name='" + targetElement.name + "']";
+          else selector = (targetElement.text || "").slice(0, 30);
+
+          convertedActions.push({
+            action: "click",
+            selector: selector,
+            value: "",
+            description: domAction.reason || ("Tıkla: " + (targetElement.text || targetElement.tag).slice(0, 40)),
+            done: false,
+            _domTarget: {
+              x: targetElement.rect.x + Math.round(targetElement.rect.w / 2),
+              y: targetElement.rect.y + Math.round(targetElement.rect.h / 2),
+              index: domAction.elementIndex
+            }
+          });
+          continue;
+        }
+
+        if (domAction.type === "type" && targetElement) {
+          var typeSelector = "";
+          if (targetElement.id) typeSelector = "#" + targetElement.id;
+          else if (targetElement.name) typeSelector = targetElement.tag + "[name='" + targetElement.name + "']";
+          else typeSelector = targetElement.tag + "[placeholder='" + (targetElement.placeholder || "") + "']";
+
+          convertedActions.push({
+            action: "type",
+            selector: typeSelector,
+            value: domAction.value || "",
+            description: domAction.reason || ("Yaz: " + (domAction.value || "").slice(0, 30)),
+            done: false,
+            _domTarget: {
+              x: targetElement.rect.x + Math.round(targetElement.rect.w / 2),
+              y: targetElement.rect.y + Math.round(targetElement.rect.h / 2),
+              index: domAction.elementIndex
+            }
+          });
+          continue;
+        }
+
+        // Generic fallback
+        convertedActions.push({
+          action: domAction.type || "click",
+          selector: targetElement ? (targetElement.text || "").slice(0, 30) : "",
           value: domAction.value || "",
-          description: domAction.reason || ("Yaz: " + (domAction.value || "").slice(0, 30)),
-          done: false,
-          _domTarget: {
-            x: targetElement.rect.x + Math.round(targetElement.rect.w / 2),
-            y: targetElement.rect.y + Math.round(targetElement.rect.h / 2),
-            index: domAction.elementIndex
-          }
-        };
+          description: domAction.reason || "DOM Agent aksiyonu",
+          done: false
+        });
       }
 
-      // Fallback
-      return {
-        action: domAction.type || "click",
-        selector: targetElement ? (targetElement.text || "").slice(0, 30) : "",
-        value: domAction.value || "",
-        description: domAction.reason || "DOM Agent aksiyonu",
-        done: false
-      };
+      if (convertedActions.length === 0) {
+        await supabaseInsertLog("DOM Agent: dönüştürülen aksiyon yok", "warning");
+        return null;
+      }
+
+      // İlk aksiyonu döndür, gerisini kuyruğa al
+      var firstAction = convertedActions[0];
+      for (var qi = 1; qi < convertedActions.length; qi++) {
+        _domAgentPendingActions.push(convertedActions[qi]);
+      }
+      if (_domAgentPendingActions.length > 0) {
+        console.log("[DOM-AGENT] " + _domAgentPendingActions.length + " aksiyon kuyruğa alındı");
+      }
+
+      return firstAction;
 
     } catch (err) {
       console.error("[DOM-AGENT] Hata:", err.message);
