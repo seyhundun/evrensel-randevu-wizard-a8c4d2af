@@ -1850,7 +1850,9 @@ async function executeAction(page, action) {
     }
 
     case "scroll":
-      await page.evaluate(function() { window.scrollBy(0, 400); });
+      var scrollDir = (action.value === "up") ? -400 : 400;
+      await page.evaluate(function(d) { window.scrollBy({ top: d, behavior: 'smooth' }); }, scrollDir);
+      await quizDelay(800, 1500);
       break;
 
     case "navigate":
