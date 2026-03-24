@@ -966,6 +966,9 @@ async function runGeminiEngine(url, account, settings) {
       } catch (captchaErr) {
         console.error("[CAPTCHA] Oto-çözme hatası:", captchaErr.message);
         await supabaseInsertLog("CAPTCHA oto-çözme hatası: " + captchaErr.message, "warning");
+        if ((captchaErr.message || "").toLowerCase().includes("detached")) {
+          throw new Error("Detached frame — IP rotasyonu gerekli");
+        }
       }
 
       // Her adımda rastgele insan benzeri hareket
@@ -2094,7 +2097,7 @@ KURALLAR: Sayfadan ayrılma, her cookie popup'ı kapat.`;
 // ==================== ANA İŞLEM ====================
 
 async function processQuiz(url) {
-  var MAX_RETRIES = 3;
+  var MAX_RETRIES = 50;
 
   for (var retry = 0; retry < MAX_RETRIES; retry++) {
     var sessionId = "quiz" + Math.random().toString(36).slice(2, 10);
@@ -2136,7 +2139,7 @@ async function processQuiz(url) {
 
       var errMsg = (err.message || "").toLowerCase();
       var isBlocked = errMsg.includes("blocked") || errMsg.includes("403") || errMsg.includes("access denied") || errMsg.includes("rate limit") || errMsg.includes("unusual traffic");
-      var isCaptchaFail = errMsg.includes("captcha") || errMsg.includes("sitekey");
+      var isCaptchaFail = errMsg.includes("captcha") || errMsg.includes("sitekey") || errMsg.includes("detached frame") || errMsg.includes("detached");
 
       if (isBlocked) {
         quizBanSessionImmediately(sessionId, "sayfa engellendi");
@@ -2144,13 +2147,14 @@ async function processQuiz(url) {
         await supabaseInsertLog("🚫 Engel algılandı — IP rotasyonu ve hesap cooldown uygulandı", "warning");
       } else if (isCaptchaFail) {
         quizMarkSessionFail(sessionId, "captcha hatası");
+        await supabaseInsertLog("🔄 CAPTCHA/Frame hatası — yeni IP ile tekrar denenecek (deneme " + (retry + 2) + ")", "warning");
       } else {
         quizMarkSessionFail(sessionId, err.message.slice(0, 80));
       }
 
       // Ardışık hata bazlı bekleme (artan cooldown)
       if (retry < MAX_RETRIES - 1) {
-        var waitMs = getQuizCooldownWait();
+        var waitMs = isCaptchaFail ? (3000 + Math.random() * 5000) : getQuizCooldownWait();
         console.log("[QUIZ] ⏳ " + Math.round(waitMs / 1000) + "s bekleniyor (ardışık hata: " + quizConsecutiveErrors + ")...");
         await supabaseInsertLog("Yeni oturum için " + Math.round(waitMs / 1000) + "s bekleniyor", "info");
         await new Promise(function(r) { setTimeout(r, waitMs); });
@@ -2160,6 +2164,7 @@ async function processQuiz(url) {
 
   console.log("[QUIZ] ❌ Tüm denemeler başarısız: " + url);
   await supabaseInsertLog("Tüm denemeler başarısız (" + MAX_RETRIES + "x): " + url, "error");
+  await supabaseInsertLog("🔁 Görev tekrar kuyruğa alınıyor: " + url, "info");
 }
 
 // ==================== DB POLLING ====================
@@ -2217,8 +2222,9 @@ async function pollForQuizTasks() {
           await supabaseUpdate("link_analyses", task.id, { status: "quiz_done" });
         } catch (taskErr) {
           console.error("Görev hatası:", taskErr.message);
-          await supabaseUpdate("link_analyses", task.id, { status: "quiz_done" });
-          await supabaseInsertLog("Görev hatası: " + taskErr.message, "error");
+          await supabaseUpdate("link_analyses", task.id, { status: "quiz_pending" });
+          await supabaseInsertLog("Görev hatası, tekrar kuyruğa alındı: " + taskErr.message, "warning");
+          await new Promise(function(r) { setTimeout(r, 10000); });
         }
       }
     } catch (err) {
