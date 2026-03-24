@@ -768,6 +768,7 @@ async function processQuiz(url) {
     if (engine === "browser_use") {
       await runBrowserUseEngine(url, account, settings);
     } else {
+      // gemini, lovable_ai, openai all use the same Puppeteer engine
       await runGeminiEngine(url, account, settings);
     }
 
