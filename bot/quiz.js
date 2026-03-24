@@ -65,6 +65,306 @@ async function getLoginAccount() {
   return acc;
 }
 
+// ==================== CAPTCHA SOLVER (2captcha / Capsolver) ====================
+
+async function detectCaptchaOnPage(page) {
+  // Detect reCAPTCHA v2, hCaptcha, or Turnstile on the page
+  return await page.evaluate(function() {
+    // reCAPTCHA v2 iframe
+    var recaptchaFrame = document.querySelector('iframe[src*="recaptcha"], iframe[src*="google.com/recaptcha"]');
+    var recaptchaSitekey = null;
+    var recaptchaEl = document.querySelector('.g-recaptcha, [data-sitekey]');
+    if (recaptchaEl) recaptchaSitekey = recaptchaEl.getAttribute('data-sitekey');
+    if (!recaptchaSitekey) {
+      var scripts = document.querySelectorAll('script[src*="recaptcha"]');
+      if (scripts.length > 0) {
+        var match = document.documentElement.innerHTML.match(/sitekey['":\s]+['"]([0-9a-zA-Z_-]{20,})['"]/);
+        if (match) recaptchaSitekey = match[1];
+      }
+    }
+
+    // hCaptcha
+    var hcaptchaFrame = document.querySelector('iframe[src*="hcaptcha"]');
+    var hcaptchaSitekey = null;
+    var hcaptchaEl = document.querySelector('.h-captcha, [data-hcaptcha-sitekey], [data-sitekey]');
+    if (hcaptchaEl && hcaptchaFrame) hcaptchaSitekey = hcaptchaEl.getAttribute('data-sitekey') || hcaptchaEl.getAttribute('data-hcaptcha-sitekey');
+
+    // Turnstile
+    var turnstileFrame = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
+    var turnstileSitekey = null;
+    var turnstileEl = document.querySelector('.cf-turnstile, [data-sitekey]');
+    if (turnstileEl && turnstileFrame) turnstileSitekey = turnstileEl.getAttribute('data-sitekey');
+
+    // Image grid challenge (visible reCAPTCHA challenge)
+    var imageGrid = document.querySelector('iframe[title*="recaptcha challenge"], iframe[src*="bframe"]');
+
+    if (recaptchaSitekey || recaptchaFrame) {
+      return { type: "recaptcha_v2", sitekey: recaptchaSitekey, hasFrame: !!recaptchaFrame, hasImageGrid: !!imageGrid };
+    }
+    if (hcaptchaSitekey || hcaptchaFrame) {
+      return { type: "hcaptcha", sitekey: hcaptchaSitekey, hasFrame: !!hcaptchaFrame };
+    }
+    if (turnstileSitekey || turnstileFrame) {
+      return { type: "turnstile", sitekey: turnstileSitekey, hasFrame: !!turnstileFrame };
+    }
+
+    return null;
+  });
+}
+
+async function solveRecaptchaWith2Captcha(apiKey, sitekey, pageUrl) {
+  var fetch = (await import("node-fetch")).default;
+  console.log("[2CAPTCHA] reCAPTCHA v2 çözülüyor: " + sitekey);
+  await supabaseInsertLog("2captcha: reCAPTCHA çözülüyor...", "info");
+
+  // Submit task
+  var submitRes = await fetch("https://2captcha.com/in.php?key=" + apiKey +
+    "&method=userrecaptcha&googlekey=" + sitekey +
+    "&pageurl=" + encodeURIComponent(pageUrl) + "&json=1");
+  var submitData = await submitRes.json();
+
+  if (submitData.status !== 1) {
+    throw new Error("2captcha submit hatası: " + JSON.stringify(submitData));
+  }
+
+  var taskId = submitData.request;
+  console.log("[2CAPTCHA] Task ID: " + taskId);
+
+  // Poll for result (max 120s)
+  for (var i = 0; i < 24; i++) {
+    await new Promise(function(r) { setTimeout(r, 5000); });
+    var pollRes = await fetch("https://2captcha.com/res.php?key=" + apiKey + "&action=get&id=" + taskId + "&json=1");
+    var pollData = await pollRes.json();
+
+    if (pollData.status === 1) {
+      console.log("[2CAPTCHA] Çözüldü! Token uzunluğu: " + pollData.request.length);
+      await supabaseInsertLog("2captcha: reCAPTCHA çözüldü ✓", "success");
+      return pollData.request;
+    }
+    if (pollData.request !== "CAPCHA_NOT_READY") {
+      throw new Error("2captcha polling hatası: " + JSON.stringify(pollData));
+    }
+  }
+  throw new Error("2captcha: Zaman aşımı (120s)");
+}
+
+async function solveHCaptchaWith2Captcha(apiKey, sitekey, pageUrl) {
+  var fetch = (await import("node-fetch")).default;
+  console.log("[2CAPTCHA] hCaptcha çözülüyor: " + sitekey);
+  await supabaseInsertLog("2captcha: hCaptcha çözülüyor...", "info");
+
+  var submitRes = await fetch("https://2captcha.com/in.php?key=" + apiKey +
+    "&method=hcaptcha&sitekey=" + sitekey +
+    "&pageurl=" + encodeURIComponent(pageUrl) + "&json=1");
+  var submitData = await submitRes.json();
+
+  if (submitData.status !== 1) throw new Error("2captcha hcaptcha submit hatası: " + JSON.stringify(submitData));
+
+  var taskId = submitData.request;
+  for (var i = 0; i < 24; i++) {
+    await new Promise(function(r) { setTimeout(r, 5000); });
+    var pollRes = await fetch("https://2captcha.com/res.php?key=" + apiKey + "&action=get&id=" + taskId + "&json=1");
+    var pollData = await pollRes.json();
+    if (pollData.status === 1) {
+      await supabaseInsertLog("2captcha: hCaptcha çözüldü ✓", "success");
+      return pollData.request;
+    }
+    if (pollData.request !== "CAPCHA_NOT_READY") throw new Error("2captcha hcaptcha hatası: " + JSON.stringify(pollData));
+  }
+  throw new Error("2captcha hcaptcha: Zaman aşımı");
+}
+
+async function solveRecaptchaWithCapsolver(apiKey, sitekey, pageUrl) {
+  var fetch = (await import("node-fetch")).default;
+  console.log("[CAPSOLVER] reCAPTCHA v2 çözülüyor: " + sitekey);
+  await supabaseInsertLog("Capsolver: reCAPTCHA çözülüyor...", "info");
+
+  var submitRes = await fetch("https://api.capsolver.com/createTask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clientKey: apiKey,
+      task: { type: "ReCaptchaV2TaskProxyLess", websiteURL: pageUrl, websiteKey: sitekey }
+    })
+  });
+  var submitData = await submitRes.json();
+  if (submitData.errorId !== 0) throw new Error("Capsolver submit hatası: " + (submitData.errorDescription || JSON.stringify(submitData)));
+
+  var taskId = submitData.taskId;
+  for (var i = 0; i < 24; i++) {
+    await new Promise(function(r) { setTimeout(r, 5000); });
+    var pollRes = await fetch("https://api.capsolver.com/getTaskResult", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientKey: apiKey, taskId: taskId })
+    });
+    var pollData = await pollRes.json();
+    if (pollData.status === "ready") {
+      await supabaseInsertLog("Capsolver: reCAPTCHA çözüldü ✓", "success");
+      return pollData.solution.gRecaptchaResponse;
+    }
+    if (pollData.status !== "processing") throw new Error("Capsolver hatası: " + JSON.stringify(pollData));
+  }
+  throw new Error("Capsolver: Zaman aşımı");
+}
+
+async function solveHCaptchaWithCapsolver(apiKey, sitekey, pageUrl) {
+  var fetch = (await import("node-fetch")).default;
+  console.log("[CAPSOLVER] hCaptcha çözülüyor: " + sitekey);
+  await supabaseInsertLog("Capsolver: hCaptcha çözülüyor...", "info");
+
+  var submitRes = await fetch("https://api.capsolver.com/createTask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clientKey: apiKey,
+      task: { type: "HCaptchaTaskProxyLess", websiteURL: pageUrl, websiteKey: sitekey }
+    })
+  });
+  var submitData = await submitRes.json();
+  if (submitData.errorId !== 0) throw new Error("Capsolver hcaptcha hatası: " + (submitData.errorDescription || JSON.stringify(submitData)));
+
+  var taskId = submitData.taskId;
+  for (var i = 0; i < 24; i++) {
+    await new Promise(function(r) { setTimeout(r, 5000); });
+    var pollRes = await fetch("https://api.capsolver.com/getTaskResult", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientKey: apiKey, taskId: taskId })
+    });
+    var pollData = await pollRes.json();
+    if (pollData.status === "ready") {
+      await supabaseInsertLog("Capsolver: hCaptcha çözüldü ✓", "success");
+      return pollData.solution.gRecaptchaResponse;
+    }
+    if (pollData.status !== "processing") throw new Error("Capsolver hcaptcha hatası: " + JSON.stringify(pollData));
+  }
+  throw new Error("Capsolver hcaptcha: Zaman aşımı");
+}
+
+async function injectCaptchaToken(page, captchaType, token) {
+  await page.evaluate(function(type, token) {
+    if (type === "recaptcha_v2") {
+      // Set g-recaptcha-response textarea
+      var textarea = document.querySelector('#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
+      if (textarea) {
+        textarea.style.display = "block";
+        textarea.value = token;
+        textarea.style.display = "none";
+      }
+      // Also try calling the callback
+      try {
+        if (typeof window.___grecaptcha_cfg !== "undefined") {
+          var clients = window.___grecaptcha_cfg.clients;
+          for (var key in clients) {
+            var client = clients[key];
+            // Navigate nested objects to find callback
+            function findCallback(obj, depth) {
+              if (depth > 5) return;
+              for (var k in obj) {
+                if (typeof obj[k] === "function" && k.length < 3) { obj[k](token); return true; }
+                if (typeof obj[k] === "object" && obj[k] !== null) { if (findCallback(obj[k], depth + 1)) return true; }
+              }
+            }
+            findCallback(client, 0);
+          }
+        }
+      } catch (e) {}
+    } else if (type === "hcaptcha") {
+      var textarea = document.querySelector('[name="h-captcha-response"], textarea[name="h-captcha-response"]');
+      if (textarea) { textarea.value = token; }
+      try { if (window.hcaptcha) window.hcaptcha.execute(); } catch (e) {}
+    }
+  }, captchaType, token);
+}
+
+async function tryAutoSolveCaptcha(page, settings) {
+  var captchaInfo = await detectCaptchaOnPage(page);
+  if (!captchaInfo) return false;
+
+  var provider = (settings.captcha_provider || "2captcha").toLowerCase();
+  var twoCaptchaKey = settings.captcha_api_key || process.env.CAPTCHA_API_KEY || "";
+  var capsolverKey = settings.capsolver_api_key || process.env.CAPSOLVER_API_KEY || "";
+  var pageUrl = page.url();
+
+  console.log("[CAPTCHA] Tespit edildi: " + captchaInfo.type + " | sitekey: " + (captchaInfo.sitekey || "bilinmiyor") + " | provider: " + provider);
+  await supabaseInsertLog("CAPTCHA tespit edildi: " + captchaInfo.type + " (provider: " + provider + ")", "info");
+
+  if (!captchaInfo.sitekey) {
+    await supabaseInsertLog("CAPTCHA sitekey bulunamadı, çözülemiyor", "warning");
+    return false;
+  }
+
+  // Turnstile is handled by puppeteer-real-browser's built-in turnstile solver
+  if (captchaInfo.type === "turnstile") {
+    await supabaseInsertLog("Turnstile: puppeteer-real-browser otomatik çözer, bekleniyor...", "info");
+    await new Promise(function(r) { setTimeout(r, 5000); });
+    return true;
+  }
+
+  var token = null;
+
+  try {
+    if (captchaInfo.type === "recaptcha_v2") {
+      if (provider === "capsolver" && capsolverKey) {
+        token = await solveRecaptchaWithCapsolver(capsolverKey, captchaInfo.sitekey, pageUrl);
+      } else if (provider === "2captcha" && twoCaptchaKey) {
+        token = await solveRecaptchaWith2Captcha(twoCaptchaKey, captchaInfo.sitekey, pageUrl);
+      } else if (provider === "auto") {
+        if (capsolverKey) {
+          try { token = await solveRecaptchaWithCapsolver(capsolverKey, captchaInfo.sitekey, pageUrl); } catch (e) {
+            console.log("[CAPTCHA] Capsolver başarısız, 2captcha deneniyor: " + e.message);
+            if (twoCaptchaKey) token = await solveRecaptchaWith2Captcha(twoCaptchaKey, captchaInfo.sitekey, pageUrl);
+          }
+        } else if (twoCaptchaKey) {
+          token = await solveRecaptchaWith2Captcha(twoCaptchaKey, captchaInfo.sitekey, pageUrl);
+        }
+      }
+    } else if (captchaInfo.type === "hcaptcha") {
+      if (provider === "capsolver" && capsolverKey) {
+        token = await solveHCaptchaWithCapsolver(capsolverKey, captchaInfo.sitekey, pageUrl);
+      } else if (provider === "2captcha" && twoCaptchaKey) {
+        token = await solveHCaptchaWith2Captcha(twoCaptchaKey, captchaInfo.sitekey, pageUrl);
+      } else if (provider === "auto") {
+        if (capsolverKey) {
+          try { token = await solveHCaptchaWithCapsolver(capsolverKey, captchaInfo.sitekey, pageUrl); } catch (e) {
+            if (twoCaptchaKey) token = await solveHCaptchaWith2Captcha(twoCaptchaKey, captchaInfo.sitekey, pageUrl);
+          }
+        } else if (twoCaptchaKey) {
+          token = await solveHCaptchaWith2Captcha(twoCaptchaKey, captchaInfo.sitekey, pageUrl);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[CAPTCHA] Çözme hatası:", err.message);
+    await supabaseInsertLog("CAPTCHA çözme hatası: " + err.message, "error");
+    return false;
+  }
+
+  if (!token) {
+    await supabaseInsertLog("CAPTCHA: API key tanımsız veya provider eşleşmiyor", "warning");
+    return false;
+  }
+
+  // Inject token and try to submit
+  await injectCaptchaToken(page, captchaInfo.type, token);
+  await new Promise(function(r) { setTimeout(r, 1500); });
+
+  // Try clicking submit after CAPTCHA solve
+  try {
+    await page.evaluate(function() {
+      var submitBtns = document.querySelectorAll('button[type="submit"], input[type="submit"], button.submit, #submit, .btn-submit');
+      for (var i = 0; i < submitBtns.length; i++) {
+        var rect = submitBtns[i].getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) { submitBtns[i].click(); return; }
+      }
+    });
+  } catch (e) {}
+
+  await supabaseInsertLog("CAPTCHA token enjekte edildi, form gönderildi", "success");
+  return true;
+}
+
 // ==================== MOTOR 1: PUPPETEER + GEMINI VISION ====================
 
 async function runGeminiEngine(url, account, settings) {
@@ -161,6 +461,19 @@ async function runGeminiEngine(url, account, settings) {
     while (stepCount < maxSteps) {
       stepCount++;
       console.log("[" + engineType.toUpperCase() + "] Adım " + stepCount + "/" + maxSteps);
+
+      // === CAPTCHA AUTO-DETECTION ===
+      try {
+        var captchaSolved = await tryAutoSolveCaptcha(page, settings);
+        if (captchaSolved) {
+          console.log("[CAPTCHA] Otomatik çözüldü, 3s bekleniyor...");
+          await new Promise(function(r) { setTimeout(r, 3000); });
+          continue; // Skip AI step, re-evaluate page
+        }
+      } catch (captchaErr) {
+        console.error("[CAPTCHA] Oto-çözme hatası:", captchaErr.message);
+        await supabaseInsertLog("CAPTCHA oto-çözme hatası: " + captchaErr.message, "warning");
+      }
 
       var screenshot = await page.screenshot({ encoding: "base64", type: "jpeg", quality: 70 });
       var currentUrl = page.url();
