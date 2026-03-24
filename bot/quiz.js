@@ -1182,13 +1182,139 @@ async function runGeminiEngine(url, account, settings) {
         }
 
         // === HER TIKLAMADAN SONRA: Sayfanın en altına in ve Continue/Next/Submit ara ===
-...
+        if (action.action === 'click' || action.action === 'select_dropdown' || action.action === 'move_slider') {
+          await quizDelay(500, 1000);
+          // Sayfanın en altına scroll
+          await page.evaluate(function() { window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }); });
+          await quizDelay(600, 1200);
+          
+          // Continue/Next/Submit butonunu bul ve tıkla
+          var autoClicked = await page.evaluate(function() {
+            function normalize(text) {
+              return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            }
+
+            function isDisabled(el) {
+              return !!(el && (el.disabled || el.getAttribute('aria-disabled') === 'true'));
+            }
+
+            function isContinueLike(text) {
+              return /(please click to continue|click to continue|continue|next|submit|verify|devam etmek|devam et|devam|ileri|sonraki|gönder|gonder)/.test(normalize(text));
+            }
+
+            var btns = document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]');
+            for (var i = 0; i < btns.length; i++) {
+              var txt = [btns[i].textContent || '', btns[i].value || '', btns[i].getAttribute('aria-label') || '', btns[i].getAttribute('title') || ''].join(' ');
+              if (isContinueLike(txt) || /^[→»›⟶➜➡➝⮕]+$/.test((btns[i].textContent || '').trim())) {
+                var rect = btns[i].getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0 && !isDisabled(btns[i])) {
+                  btns[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  return { found: true, text: normalize(txt), disabled: false };
+                } else if (isDisabled(btns[i])) {
+                  return { found: true, text: normalize(txt), disabled: true };
+                }
+              }
+            }
+            return { found: false };
+          });
+          
+          if (autoClicked && autoClicked.found && !autoClicked.disabled) {
+            await quizDelay(300, 600);
+            // Fiziksel tıklama
+            var clicked = await page.evaluate(function() {
+              function normalize(text) {
+                return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+              }
+              function isDisabled(el) {
+                return !!(el && (el.disabled || el.getAttribute('aria-disabled') === 'true'));
+              }
+              function isContinueLike(text) {
+                return /(please click to continue|click to continue|continue|next|submit|verify|devam etmek|devam et|devam|ileri|sonraki|gönder|gonder)/.test(normalize(text));
+              }
+              function fireClick(el) {
+                if (!el || isDisabled(el)) return null;
+                var rect = el.getBoundingClientRect();
+                var x = rect.left + rect.width / 2;
+                var y = rect.top + rect.height / 2;
+                var events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+                for (var i = 0; i < events.length; i++) {
+                  try {
+                    el.dispatchEvent(new MouseEvent(events[i], { view: window, bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
+                  } catch (e) {}
+                }
+                try { el.click(); } catch (e) {}
+                return normalize(el.textContent || el.value || el.getAttribute('aria-label') || 'continue');
+              }
+
+              var btns = document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]');
+              for (var i = 0; i < btns.length; i++) {
+                var txt = [btns[i].textContent || '', btns[i].value || '', btns[i].getAttribute('aria-label') || '', btns[i].getAttribute('title') || ''].join(' ');
+                if ((isContinueLike(txt) || /^[→»›⟶➜➡➝⮕]+$/.test((btns[i].textContent || '').trim())) && !isDisabled(btns[i])) {
+                  return fireClick(btns[i]);
+                }
+              }
+              return null;
+            });
+            if (clicked) {
+              console.log('[AUTO-CONTINUE] ✅ ' + clicked + ' butonuna otomatik tıklandı');
+              await supabaseInsertLog('⏩ ' + clicked + ' butonuna otomatik tıklandı', 'info');
+              await quizDelay(1500, 3000);
+            }
+          }
+        }
+
         // Tıklamadan sonra yeni sekme açılmış mı kontrol et
         await quizDelay(1500, 3000);
-...
+        var pagesAfter = browser.targets().filter(function(t) { return t.type() === "page"; });
+
+        if (pagesAfter.length > pagesBeforeCount) {
+          console.log("[TAB] 🆕 Yeni sekme algılandı (" + pagesBeforeCount + " → " + pagesAfter.length + ")");
+          await supabaseInsertLog("Yeni sekme açıldı, geçiş yapılıyor", "info");
+
+          var allPages = await browser.pages();
+          var oldPage = page;
+          var newPage = allPages[allPages.length - 1];
+
+          if (newPage && newPage !== page) {
+            await newPage.bringToFront();
+            try { await newPage.setViewport({ width: 1920, height: 1080 }); } catch (e) {}
+            try {
+              await newPage.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+            } catch (e) {}
+
+            // Eski sekmeyi kapat (ilk sekme korunsun)
+            try {
+              var remainingPages = await browser.pages();
+              if (remainingPages.length > 2 && oldPage !== remainingPages[0]) {
+                await oldPage.close();
+                console.log("[TAB] 🗑️ Eski sekme kapatıldı");
+              }
+            } catch (closeErr) {
+              console.log("[TAB] Eski sekme kapatma hatası:", closeErr.message);
+            }
+
+            page = newPage;
+            console.log("[TAB] ✅ Yeni sekmeye geçildi: " + page.url());
+            await supabaseInsertLog("Yeni sekmeye geçildi: " + page.url().slice(0, 80), "success");
+
+            await humanIdle(1500, 3000);
+            await humanMove(page);
+          }
 
           // Fazla sekmeleri temizle (maks 3 sekme kalsın)
-...
+          try {
+            var currentPages = await browser.pages();
+            if (currentPages.length > 3) {
+              console.log("[TAB] 🧹 Fazla sekme temizleniyor: " + currentPages.length + " açık");
+              for (var pi = 1; pi < currentPages.length - 1; pi++) {
+                if (currentPages[pi] !== page) {
+                  try { await currentPages[pi].close(); } catch (e) {}
+                }
+              }
+              var afterClean = await browser.pages();
+              console.log("[TAB] ✅ Temizlik sonrası: " + afterClean.length + " sekme");
+            }
+          } catch (cleanErr) {}
         } else {
           await humanIdle(1000, 2500);
         }
