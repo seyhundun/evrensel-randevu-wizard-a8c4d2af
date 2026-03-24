@@ -42,41 +42,50 @@ Deno.serve(async (req) => {
 
     const data = await response.json();
 
-    // Extract regions for the selected country (default TR)
+    // Extract country from request body
     const body = await req.json().catch(() => ({}));
     const country = (body.country || map.proxy_country || "TR").toUpperCase();
     
-    // Determine product type from proxy host
-    const host = map.proxy_host || "";
-    let product = "rpc"; // core residential default
-    if (host.includes("rp.evomi") || host.includes("premium")) product = "rp";
+    // Always use core residential (rpc)
+    const product = "rpc";
 
     const productData = data?.data?.[product];
     if (!productData) {
       return new Response(
-        JSON.stringify({ ok: true, regions: [], cities: [], countries: productData?.countries || {} }),
+        JSON.stringify({ ok: true, regions: [], cities: [], countries: {} }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Get regions
-    const allRegions: string[] = productData.regions?.data || [];
-    
-    // Get cities - filter by country if possible
+    // Get cities - filter by country (case-insensitive comparison)
     const allCities: any[] = productData.cities?.data || [];
-    const countryCities = allCities.filter((c: any) => c.countryCode === country);
+    const countryCities = allCities.filter((c: any) => {
+      const cc = (c.countryCode || c.country_code || "").toUpperCase();
+      return cc === country;
+    });
     
-    // Get countries
+    // Map cities to consistent format with id for proxy _city- parameter
+    const mappedCities = countryCities.map((c: any) => {
+      const cityName = c.city || c.name || "";
+      // id = lowercase, dots instead of spaces (Evomi format)
+      const cityId = cityName.toLowerCase().replace(/\s+/g, ".");
+      return { id: cityId, name: cityName, region: c.region || "" };
+    });
+
+    // Get countries list
     const countries = productData.countries || {};
 
+    // Return cities as both "regions" and "cities" for backward compatibility
     return new Response(
       JSON.stringify({
         ok: true,
-        regions: allRegions,
-        cities: countryCities.map((c: any) => ({ name: c.city || c.name, region: c.region })),
+        regions: mappedCities,
+        cities: mappedCities,
         countries,
         product,
         selectedCountry: country,
+        totalCities: allCities.length,
+        filteredCities: mappedCities.length,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
