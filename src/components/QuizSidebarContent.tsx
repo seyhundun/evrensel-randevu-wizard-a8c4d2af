@@ -38,6 +38,9 @@ async function upsertSetting(key: string, value: string, label?: string) {
 export default function QuizSidebarContent() {
   const [proxyHost, setProxyHost] = useState("—");
   const [proxyPort, setProxyPort] = useState("1000");
+  const [proxyUsername, setProxyUsername] = useState("");
+  const [proxyPassword, setProxyPassword] = useState("");
+  const [proxyPassVisible, setProxyPassVisible] = useState(false);
   const [proxyCountry, setProxyCountry] = useState("US");
   const [proxyRegion, setProxyRegion] = useState("");
   const [quizProxyEnabled, setQuizProxyEnabled] = useState(true);
@@ -76,6 +79,8 @@ export default function QuizSidebarContent() {
       const map = Object.fromEntries(data.map(d => [d.key, d.value]));
       setProxyHost(map.proxy_host || "core-residential.evomi-proxy.com");
       setProxyPort(map.proxy_port || "1000");
+      setProxyUsername(map.proxy_username || "");
+      setProxyPassword(map.proxy_password || "");
       setProxyCountry(map.quiz_proxy_country || map.proxy_country || "US");
       setProxyRegion(map.quiz_proxy_region || "");
       setQuizProxyEnabled(map.quiz_proxy_enabled !== "false");
@@ -184,6 +189,8 @@ export default function QuizSidebarContent() {
     try {
       await upsertSetting("quiz_proxy_country", proxyCountry, "Quiz Proxy Ülke");
       await upsertSetting("quiz_proxy_region", proxyRegion, "Quiz Proxy Bölge");
+      await upsertSetting("proxy_username", proxyUsername, "Proxy Kullanıcı Adı");
+      await upsertSetting("proxy_password", proxyPassword, "Proxy Şifre");
       setDirty(false);
       toast.success("Quiz proxy ayarları kaydedildi");
     } catch (err: any) {
@@ -391,6 +398,47 @@ export default function QuizSidebarContent() {
               <p className="text-[10px] font-mono font-semibold text-foreground truncate">
                 {proxyHost}
               </p>
+            </div>
+
+            {/* Proxy Username */}
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">Proxy Kullanıcı Adı</Label>
+              <Input
+                value={proxyUsername}
+                onChange={(e) => { setProxyUsername(e.target.value); setDirty(true); }}
+                placeholder="evomi_user"
+                className="h-7 text-[11px] font-mono"
+              />
+            </div>
+
+            {/* Proxy Password */}
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">Proxy Şifre</Label>
+              <div className="relative">
+                <Input
+                  type={proxyPassVisible ? "text" : "password"}
+                  value={proxyPassword}
+                  onChange={(e) => { setProxyPassword(e.target.value); setDirty(true); }}
+                  placeholder="proxy şifre"
+                  className="h-7 text-[11px] font-mono pr-7"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-7 w-7 p-0"
+                  onClick={() => setProxyPassVisible(!proxyPassVisible)}
+                >
+                  {proxyPassVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                </Button>
+              </div>
+            </div>
+
+            {/* Proxy durum */}
+            <div className="flex items-center justify-between bg-secondary/40 rounded px-2 py-1 text-[10px]">
+              <span className="text-muted-foreground">Proxy Auth</span>
+              <span className={`font-medium ${proxyUsername && proxyPassword ? "text-emerald-600" : "text-destructive"}`}>
+                {proxyUsername && proxyPassword ? "✓ Tanımlı" : "✗ Eksik"}
+              </span>
             </div>
 
             {/* Country Picker */}
