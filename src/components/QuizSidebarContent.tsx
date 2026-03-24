@@ -384,7 +384,7 @@ export default function QuizSidebarContent() {
       <Card className="p-3 space-y-2">
         <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
           <Key className="w-3.5 h-3.5 text-muted-foreground" />
-          {quizEngine === "gemini" ? "Gemini API Key" : quizEngine === "openai" ? "OpenAI API Key" : quizEngine === "lovable_ai" ? "Lovable API Key" : "Browser Use API Key"}
+          {quizEngine === "gemini" ? "Gemini API Key" : quizEngine === "openai" ? "OpenAI API Key" : quizEngine === "lovable_ai" ? "Lovable API Key" : quizEngine === "dom_agent" ? "Lovable API Key (DOM)" : "Browser Use API Key"}
         </h3>
         <div className="space-y-1.5">
           <Label className="text-[10px] text-muted-foreground">API Key</Label>
