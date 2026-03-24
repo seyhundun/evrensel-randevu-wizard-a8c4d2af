@@ -1116,7 +1116,7 @@ async function runGeminiEngine(url, account, settings) {
     }
 
     var finalScreenshot = await page.screenshot({ encoding: "base64", type: "jpeg", quality: 70 });
-    await supabaseInsertLog("Quiz tamamlandı - " + stepCount + " adım", "success", "data:image/jpeg;base64," + finalScreenshot);
+    await supabaseInsertLog("Quiz oturumu tamamlandı - " + stepCount + " adım, " + surveysCompleted + " anket çözüldü", "success", "data:image/jpeg;base64," + finalScreenshot);
   } catch (err) {
     console.error("[GEMINI] Hata:", err.message);
     await supabaseInsertLog("Hata: " + err.message, "error");
