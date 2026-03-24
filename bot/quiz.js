@@ -911,35 +911,7 @@ async function askGeminiVision(apiKey, screenshotBase64, currentUrl, account, st
     ? recentActions.map(function(a, i) { return (i + 1) + ". " + a; }).join("\n")
     : "Yok";
 
-  var systemPrompt = `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip SADECE TEK BİR aksiyon belirle.
-
-GÖREV: Anket sitesine gir, giriş yap, anketleri bul ve çöz.
-
-HESAP BİLGİLERİ:
-- Email: ${account.email}
-- Şifre: ${account.password}
-
-SON DENEMELER:
-${recentText}
-
-KRİTİK KURALLAR:
-1. Aynı butona tekrar tekrar basma. Son 2-3 adım aynıysa FARKLI bir aksiyon seç.
-2. Eğer 'Log In' tıklandıysa ama sayfa değişmediyse sonraki adım email alanını doldurmak, giriş modalını açmak veya login sayfasına gitmek olmalı.
-3. Çerez popup varsa önce onu kapat.
-4. Giriş gerekiyorsa email/şifre ile giriş yap. Google/Facebook KULLANMA.
-5. Sadece ekranda gerçekten görünen öğeleri hedefle.
-6. JSON dışında hiçbir şey yazma.
-7. ANKET TIKLAMA: Anket listesi (Swagbucks, vb.) gördüğünde İLK ankete tıkla. selector olarak CSS selector kullan: "a[href*='survey'], a[href*='answer'], .sb-card, [data-survey-id], li a" gibi. Eğer CSS bilmiyorsan, anketteki kısa metni (örn "15 min") selector olarak ver.
-8. Anket kartı/satırına tıklamak için selector olarak sadece kart içindeki KISA bir metin ver (örn: "15 min", "Survey #108293587", "8 min"). Uzun cümleler KULLANMA.
-
-JSON formatı:
-{
-  "action": "click" | "type" | "scroll" | "wait" | "navigate",
-  "selector": "CSS selector VEYA kısa hedef metni (max 3 kelime)",
-  "value": "type/navigate için değer",
-  "description": "çok kısa açıklama",
-  "done": false
-}`;
+  var systemPrompt = buildSurveySystemPrompt(account, recentText);
 
   var body = {
     contents: [{
