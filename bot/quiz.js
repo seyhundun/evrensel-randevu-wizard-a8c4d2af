@@ -455,6 +455,52 @@ async function tryAutoSolveCaptcha(page, settings) {
   return true;
 }
 
+// ==================== TEMP PROFILE (VFS'den) ====================
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
+
+function createTempUserDataDir() {
+  var dir = path.join(os.tmpdir(), "quiz-chrome-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8));
+  fs.mkdirSync(dir, { recursive: true });
+  console.log("[BROWSER] 🧹 Temiz profil: " + dir);
+  return dir;
+}
+
+function cleanupUserDataDir(dir) {
+  try {
+    if (dir && fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      console.log("[BROWSER] 🗑 Profil temizlendi: " + dir);
+    }
+  } catch (e) {
+    console.warn("[BROWSER] Profil temizleme hatası: " + e.message);
+  }
+}
+
+// ==================== PROXY REGION ROTATION (VFS'den) ====================
+var QUIZ_PROXY_REGIONS_BY_COUNTRY = {
+  TR: ["ankara", "istanbul", "izmir", "bursa", "antalya", "adana", "konya"],
+  US: ["new.york", "los.angeles", "chicago", "houston", "phoenix", "philadelphia"],
+  GB: ["london", "manchester", "birmingham", "leeds", "glasgow"],
+  DE: ["berlin", "munich", "hamburg", "frankfurt", "cologne"],
+  FR: ["paris", "lyon", "marseille", "toulouse", "nice", "bordeaux"],
+  NL: ["amsterdam", "rotterdam", "the.hague", "utrecht", "eindhoven"],
+  PL: ["warsaw", "krakow", "wroclaw", "gdansk", "poznan", "lodz"],
+  IT: ["rome", "milan", "naples", "turin", "florence"],
+  DK: ["copenhagen", "aarhus", "odense", "aalborg"],
+};
+var quizRegionIndex = -1;
+
+function getQuizFallbackRegion(countryCode) {
+  var cc = (countryCode || "US").toUpperCase();
+  var regions = QUIZ_PROXY_REGIONS_BY_COUNTRY[cc] || QUIZ_PROXY_REGIONS_BY_COUNTRY.US;
+  quizRegionIndex = (quizRegionIndex + 1) % regions.length;
+  var region = regions[quizRegionIndex];
+  console.log("[PROXY] 🏙 Fallback bölge rotasyonu: " + region + " (" + (quizRegionIndex + 1) + "/" + regions.length + ") [" + cc + "]");
+  return region;
+}
+
 // ==================== ANTİ-DETECTİON HELPERS (VFS'den) ====================
 
 function quizDelay(min, max) {
@@ -559,9 +605,13 @@ async function runGeminiEngine(url, account, settings) {
   const { connect } = require("puppeteer-real-browser");
   var browser = null;
   var page = null;
+  var tempDir = null;
 
   var geminiApiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || "";
   if (!geminiApiKey) throw new Error("Gemini API key bulunamadı! bot_settings'e gemini_api_key ekleyin.");
+
+  // Temiz tarayıcı profili oluştur (VFS ile aynı)
+  tempDir = createTempUserDataDir();
 
   var args = [
     "--no-sandbox",
@@ -569,6 +619,7 @@ async function runGeminiEngine(url, account, settings) {
     "--disable-dev-shm-usage",
     "--window-size=1920,1080",
     "--start-maximized",
+    "--user-data-dir=" + tempDir,
   ];
 
   var useProxy = settings.quiz_proxy_enabled !== "false";
@@ -577,55 +628,67 @@ async function runGeminiEngine(url, account, settings) {
   if (useProxy) {
     var proxyHost = settings.proxy_host || "core-residential.evomi-proxy.com";
     var proxyPort = settings.proxy_port || "1000";
-    var proxyUser = settings.quiz_proxy_username || settings.proxy_username || process.env.PROXY_USERNAME || "";
-    var proxyPass = settings.quiz_proxy_password || settings.proxy_password || process.env.PROXY_PASSWORD || "";
+    // VFS ile aynı alan adları: proxy_user / proxy_pass
+    var proxyUser = settings.proxy_user || settings.proxy_username || process.env.PROXY_USERNAME || "";
+    var proxyPass = settings.proxy_pass || settings.proxy_password || process.env.PROXY_PASSWORD || "";
 
     if (!proxyUser || !proxyPass) {
-      throw new Error("Proxy aktif ama kullanıcı adı/şifre eksik. bot_settings'e proxy_username ve proxy_password ekleyin.");
+      throw new Error("Proxy aktif ama kullanıcı adı/şifre eksik. bot_settings'e proxy_user ve proxy_pass ekleyin.");
     }
 
-    var country = (settings.quiz_proxy_country || settings.proxy_country || "US").toLowerCase();
-    var sessionId = Math.random().toString(36).replace(/[^a-z0-9]/g, "").slice(0, 8) || "quiz0001";
+    var country = (settings.quiz_proxy_country || settings.proxy_country || "US").toUpperCase();
+    // Session ID: 8 karakter alfanumerik (Evomi uyumlu, VFS ile aynı)
+    var sessionId = Math.random().toString(36).slice(2, 10) || "quiz0001";
 
     // Dinamik bölge rotasyonu: Evomi API'den şehir listesi çek, rastgele seç
     var region = "";
-    try {
-      var evomiApiKey = settings.evomi_api_key || "";
-      if (evomiApiKey) {
-        var fetch2 = (await import("node-fetch")).default;
-        var evomiRes = await fetch2("https://api.evomi.com/public/settings", {
-          headers: { "x-apikey": evomiApiKey },
-        });
-        if (evomiRes.ok) {
-          var evomiData = await evomiRes.json();
-          var product = "rpc";
-          if (proxyHost.includes("premium")) product = "rp";
-          var productData = evomiData?.data?.[product];
-          var allCities = productData?.cities?.data || [];
-          var countryCities = allCities.filter(function(c) { return (c.countryCode || "").toUpperCase() === country.toUpperCase(); });
-          if (countryCities.length > 0) {
-            var randomCity = countryCities[Math.floor(Math.random() * countryCities.length)];
-            region = (randomCity.city || randomCity.name || "").toLowerCase();
-            console.log("[PROXY] Evomi API: " + countryCities.length + " şehir bulundu, rastgele seçim: " + region);
-          } else {
-            console.log("[PROXY] Evomi API: " + country.toUpperCase() + " için şehir bulunamadı, rastgele IP kullanılacak");
+    
+    // Önce dashboard'dan seçilen sabit bölge var mı kontrol et
+    var dbRegion = (settings.quiz_proxy_region || "").trim().toLowerCase();
+    if (dbRegion) {
+      region = dbRegion;
+      console.log("[PROXY] 🏙 Dashboard bölgesi kullanılıyor: " + region);
+    } else {
+      // Evomi API'den dinamik şehir çek
+      try {
+        var evomiApiKey = settings.evomi_api_key || "";
+        if (evomiApiKey) {
+          var fetch2 = (await import("node-fetch")).default;
+          var evomiRes = await fetch2("https://api.evomi.com/public/settings", {
+            headers: { "x-apikey": evomiApiKey },
+          });
+          if (evomiRes.ok) {
+            var evomiData = await evomiRes.json();
+            var product = "rpc";
+            if (proxyHost.includes("premium")) product = "rp";
+            var productData = evomiData?.data?.[product];
+            var allCities = productData?.cities?.data || [];
+            var countryCities = allCities.filter(function(c) { return (c.countryCode || "").toUpperCase() === country; });
+            if (countryCities.length > 0) {
+              var randomCity = countryCities[Math.floor(Math.random() * countryCities.length)];
+              region = (randomCity.city || randomCity.name || "").toLowerCase().replace(/\s+/g, ".");
+              console.log("[PROXY] Evomi API: " + countryCities.length + " şehir bulundu, rastgele seçim: " + region);
+            } else {
+              console.log("[PROXY] Evomi API: " + country + " için şehir bulunamadı, fallback kullanılacak");
+            }
           }
         }
+      } catch (evomiErr) {
+        console.log("[PROXY] Evomi bölge çekme hatası: " + evomiErr.message + " — fallback kullanılacak");
       }
-    } catch (evomiErr) {
-      console.log("[PROXY] Evomi bölge çekme hatası: " + evomiErr.message + " — rastgele IP kullanılacak");
+
+      // Fallback: VFS ile aynı ülke bazlı bölge rotasyonu
+      if (!region) {
+        region = getQuizFallbackRegion(country);
+      }
     }
 
-    // Fallback: settings'den gelen sabit bölge
-    if (!region) {
-      region = (settings.quiz_proxy_region || "").trim().toLowerCase();
-    }
-
-    var suffix = "_country-" + country;
+    // Proxy password oluşturma (VFS ile aynı format)
+    var basePass = proxyPass.split("_country-")[0].split("_session-")[0].split("_city-")[0];
+    var suffix = "_country-" + country.toLowerCase();
+    suffix += "_session-quiz" + sessionId;
     if (region) suffix += "_city-" + region;
-    suffix += "_session-" + sessionId;
-
-    proxyPass = proxyPass.split("_country-")[0].split("_session-")[0].split("_city-")[0] + suffix;
+    proxyPass = basePass + suffix;
 
     proxyConfig = {
       host: proxyHost,
@@ -634,7 +697,7 @@ async function runGeminiEngine(url, account, settings) {
       password: proxyPass,
     };
 
-    console.log("[GEMINI] Proxy: " + proxyHost + ":" + proxyPort + " | ülke=" + country + " | şehir=" + (region || "rastgele") + " | session=" + sessionId);
+    console.log("[QUIZ] Proxy: " + proxyHost + ":" + proxyPort + " | ülke=" + country + " | şehir=" + (region || "rastgele") + " | session=quiz" + sessionId);
     await supabaseInsertLog("Proxy aktif: " + proxyHost + ":" + proxyPort + " | ülke=" + country + " | şehir=" + (region || "rastgele"), "info");
   }
 
@@ -749,8 +812,15 @@ async function runGeminiEngine(url, account, settings) {
     await supabaseInsertLog("Hata: " + err.message, "error");
     throw err;
   } finally {
-    console.log("[GEMINI] Tarayıcı açık bırakıldı (VNC)");
-    await supabaseInsertLog("Tarayıcı açık bırakıldı (VNC izleme)", "info");
+    // VFS ile aynı: tarayıcıyı kapat ve temiz profili sil
+    try {
+      if (browser) {
+        await browser.close().catch(function() {});
+        console.log("[QUIZ] 🔒 Tarayıcı kapatıldı");
+      }
+    } catch (e) {}
+    if (tempDir) cleanupUserDataDir(tempDir);
+    await supabaseInsertLog("Tarayıcı kapatıldı ve profil temizlendi", "info");
   }
 }
 
