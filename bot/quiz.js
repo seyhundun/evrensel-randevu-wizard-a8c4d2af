@@ -929,11 +929,13 @@ KRİTİK KURALLAR:
 4. Giriş gerekiyorsa email/şifre ile giriş yap. Google/Facebook KULLANMA.
 5. Sadece ekranda gerçekten görünen öğeleri hedefle.
 6. JSON dışında hiçbir şey yazma.
+7. ANKET TIKLAMA: Anket listesi (Swagbucks, vb.) gördüğünde İLK ankete tıkla. selector olarak CSS selector kullan: "a[href*='survey'], a[href*='answer'], .sb-card, [data-survey-id], li a" gibi. Eğer CSS bilmiyorsan, anketteki kısa metni (örn "15 min") selector olarak ver.
+8. Anket kartı/satırına tıklamak için selector olarak sadece kart içindeki KISA bir metin ver (örn: "15 min", "Survey #108293587", "8 min"). Uzun cümleler KULLANMA.
 
 JSON formatı:
 {
   "action": "click" | "type" | "scroll" | "wait" | "navigate",
-  "selector": "Kısa hedef metni veya CSS selector",
+  "selector": "CSS selector VEYA kısa hedef metni (max 3 kelime)",
   "value": "type/navigate için değer",
   "description": "çok kısa açıklama",
   "done": false
@@ -1037,11 +1039,12 @@ KRİTİK KURALLAR:
 4. Giriş gerekiyorsa email/şifre ile giriş yap. Google/Facebook KULLANMA.
 5. Sadece ekranda gerçekten görünen öğeleri hedefle.
 6. JSON dışında hiçbir şey yazma.
+7. ANKET TIKLAMA: Anket listesi gördüğünde İLK ankete tıkla. selector olarak kısa metin ver (örn: "15 min", "Survey #108293587"). Uzun cümleler KULLANMA.
 
 JSON formatı:
 {
   "action": "click" | "type" | "scroll" | "wait" | "navigate",
-  "selector": "Kısa hedef metni veya CSS selector",
+  "selector": "CSS selector VEYA kısa hedef metni (max 3 kelime)",
   "value": "type/navigate için değer",
   "description": "çok kısa açıklama",
   "done": false
@@ -1141,11 +1144,12 @@ KRİTİK KURALLAR:
 2. Çerez popup varsa önce kapat.
 3. Email/şifre ile giriş yap. Google/Facebook KULLANMA.
 4. JSON dışında hiçbir şey yazma.
+5. ANKET TIKLAMA: Anket listesi gördüğünde İLK ankete tıkla. selector olarak kısa metin ver (örn: "15 min", "Survey #108293587").
 
 JSON formatı:
 {
   "action": "click" | "type" | "scroll" | "wait" | "navigate",
-  "selector": "Kısa hedef metni veya CSS selector",
+  "selector": "CSS selector VEYA kısa hedef metni (max 3 kelime)",
   "value": "type/navigate için değer",
   "description": "çok kısa açıklama",
   "done": false
@@ -1295,7 +1299,7 @@ async function executeAction(page, action) {
       }
 
       var phrases = (candidates || []).map(normalize).filter(Boolean);
-      var weakWords = { button: true, buton: true, tıkla: true, tikla: true, click: true, link: true, için: true, icin: true, yap: true, bas: true, press: true, kareye: true, kare: true, olduğu: true };
+      var weakWords = { button: true, buton: true, tıkla: true, tikla: true, click: true, link: true, için: true, icin: true, yap: true, bas: true, press: true, kareye: true, kare: true, olduğu: true, kazandıran: true, anketi: true, başlat: true, çözmek: true, tiklayın: true, tıklayın: true };
       var words = [];
       for (var p = 0; p < phrases.length; p++) {
         var parts = phrases[p].split(" ");
@@ -1305,9 +1309,19 @@ async function executeAction(page, action) {
         }
       }
 
+      // Survey/anket kartı eşleşme anahtar kelimeleri
+      var surveyKeywords = ["survey", "anket", "earn", "sb", "min", "answer"];
+      var isSurveyAction = false;
+      for (var sk = 0; sk < surveyKeywords.length; sk++) {
+        for (var sp = 0; sp < phrases.length; sp++) {
+          if (phrases[sp].includes(surveyKeywords[sk])) { isSurveyAction = true; break; }
+        }
+        if (isSurveyAction) break;
+      }
+
       var selectors = [
         "button, a, input[type=submit], input[type=button], [role=button], label, [onclick], [tabindex]",
-        "div, span"
+        "li, article, section, div, span, tr, td"
       ];
       var elements = Array.from(document.querySelectorAll(selectors.join(","))).filter(isVisible);
 
@@ -1322,6 +1336,15 @@ async function executeAction(page, action) {
 
         if (isCaptchaLike(el)) score += 35;
 
+        // Survey/anket kartı bonus: eğer element bir <a> veya <li> ise ve survey kelimesi varsa
+        if (isSurveyAction) {
+          var tag = (el.tagName || "").toLowerCase();
+          var href = normalize(el.getAttribute("href") || "");
+          if ((tag === "a" || tag === "li" || tag === "article") && (href.includes("survey") || href.includes("answer") || text.includes("survey") || text.includes("min") || text.includes("earn"))) {
+            score += 25;
+          }
+        }
+
         for (var j = 0; j < phrases.length; j++) {
           var phrase = phrases[j];
           if (!phrase) continue;
@@ -1331,21 +1354,31 @@ async function executeAction(page, action) {
 
         if (words.length > 0) {
           var matched = 0;
-          var blob = [text, normalize(el.className || ""), normalize(el.getAttribute("aria-label") || ""), normalize(el.getAttribute("title") || "")].join(" ");
+          var blob = [text, normalize(el.className || ""), normalize(el.getAttribute("aria-label") || ""), normalize(el.getAttribute("title") || ""), normalize(el.getAttribute("href") || "")].join(" ");
           for (var k = 0; k < words.length; k++) {
             if (blob.includes(words[k])) matched++;
           }
           if (matched > 0) score = Math.max(score, matched * 20);
         }
 
+        // Anket numarası eşleşmesi (#108xxxxx)
+        for (var np = 0; np < phrases.length; np++) {
+          var numMatch = phrases[np].match(/\d{5,}/);
+          if (numMatch && text.includes(numMatch[0])) {
+            score = Math.max(score, 90);
+          }
+        }
+
         if (score > bestScore) {
           best = el;
           bestScore = score;
-          bestText = text || normalize(el.className || "");
+          bestText = text ? text.slice(0, 80) : normalize(el.className || "");
         }
       }
 
-      if (best && bestScore >= 40) {
+      // Daha düşük eşik: survey aksiyonlarında 25, diğerlerinde 40
+      var threshold = isSurveyAction ? 25 : 40;
+      if (best && bestScore >= threshold) {
         best.click();
         return { clicked: true, matchedText: bestText, score: bestScore };
       }
@@ -1367,6 +1400,48 @@ async function executeAction(page, action) {
           var clickResult = await trySmartClick(frames[i], searchTexts);
           if (clickResult.clicked) return;
         } catch (e) {}
+      }
+
+      // Survey/anket fallback: eğer aksiyon survey ile ilgiliyse ilk survey linkine tıkla
+      var descLower = ((action.description || "") + " " + (action.selector || "")).toLowerCase();
+      var isSurveyClick = /survey|anket|earn|sb|min|answer/.test(descLower);
+      if (isSurveyClick) {
+        for (var sf = 0; sf < frames.length; sf++) {
+          try {
+            var surveyClicked = await frames[sf].evaluate(function() {
+              // Survey linklerini bul — href veya metin bazlı
+              var links = Array.from(document.querySelectorAll('a[href*="survey"], a[href*="answer"], a[href*="earn"]'));
+              if (links.length === 0) {
+                // Fallback: "Survey #" veya "min" içeren görünür linkleri ara
+                var allLinks = Array.from(document.querySelectorAll("a"));
+                links = allLinks.filter(function(a) {
+                  var text = (a.textContent || "").toLowerCase();
+                  var rect = a.getBoundingClientRect();
+                  return rect.width > 0 && rect.height > 0 && (text.includes("survey") || text.includes("min") || text.includes("earn"));
+                });
+              }
+              if (links.length > 0) {
+                links[0].click();
+                return true;
+              }
+              // Son çare: survey kartı gibi görünen div/li'leri ara
+              var cards = Array.from(document.querySelectorAll('[class*="survey"], [class*="card"], [data-survey-id], li'));
+              for (var c = 0; c < cards.length; c++) {
+                var cardText = (cards[c].textContent || "").toLowerCase();
+                var cardRect = cards[c].getBoundingClientRect();
+                if (cardRect.width > 100 && cardRect.height > 30 && (cardText.includes("survey") || cardText.includes("min") || cardText.includes("earn"))) {
+                  cards[c].click();
+                  return true;
+                }
+              }
+              return false;
+            });
+            if (surveyClicked) {
+              console.log("[CLICK] 🎯 Survey fallback tıklama başarılı");
+              return;
+            }
+          } catch (e) {}
+        }
       }
 
       throw new Error("Tıklanabilir öğe bulunamadı: " + searchTexts.join(" | "));
