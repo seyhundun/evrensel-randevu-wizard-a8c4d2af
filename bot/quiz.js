@@ -812,8 +812,15 @@ async function runGeminiEngine(url, account, settings) {
     await supabaseInsertLog("Hata: " + err.message, "error");
     throw err;
   } finally {
-    console.log("[GEMINI] Tarayıcı açık bırakıldı (VNC)");
-    await supabaseInsertLog("Tarayıcı açık bırakıldı (VNC izleme)", "info");
+    // VFS ile aynı: tarayıcıyı kapat ve temiz profili sil
+    try {
+      if (browser) {
+        await browser.close().catch(function() {});
+        console.log("[QUIZ] 🔒 Tarayıcı kapatıldı");
+      }
+    } catch (e) {}
+    if (tempDir) cleanupUserDataDir(tempDir);
+    await supabaseInsertLog("Tarayıcı kapatıldı ve profil temizlendi", "info");
   }
 }
 
