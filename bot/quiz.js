@@ -673,6 +673,69 @@ async function humanType(page, selector, text) {
   }
 }
 
+// ==================== ANKET ÇÖZME PROMPT BUILDER ====================
+
+function buildSurveySystemPrompt(account, recentText) {
+  return `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip SADECE TEK BİR aksiyon belirle.
+
+GÖREV: Anket sitesine gir, giriş yap, anketleri bul ve SORULARI CEVAPLA.
+
+HESAP BİLGİLERİ:
+- Email: ${account.email}
+- Şifre: ${account.password}
+
+SON DENEMELER:
+${recentText}
+
+KRİTİK KURALLAR:
+1. Aynı butona tekrar tekrar basma. Son 2-3 adım aynıysa FARKLI bir aksiyon seç.
+2. Çerez popup varsa önce onu kapat.
+3. Giriş gerekiyorsa email/şifre ile giriş yap. Google/Facebook KULLANMA.
+4. Sadece ekranda gerçekten görünen öğeleri hedefle.
+5. JSON dışında hiçbir şey yazma.
+6. ANKET TIKLAMA: Anket listesi gördüğünde İLK ankete tıkla. Kısa metin ver selector olarak.
+
+=== ANKET SORU TİPLERİ VE CEVAPLAMA ===
+
+ÇOKTAN SEÇMELİ (Radio/Checkbox):
+- Soruyu oku, mantıklı/tutarlı bir seçenek tıkla
+- action: "click", selector: seçenek metninin ilk 2-3 kelimesi
+- Demografik sorularda: yaş 25-34, gelir orta, eğitim üniversite, meslek profesyonel seç
+- "Prefer not to answer" veya "None of the above" KULLANMA — gerçekçi cevap ver
+- Matris/grid sorusunda: her satır için ayrı tıkla, genelde ortadaki seçeneği seç
+
+AÇIK UÇLU (Textarea/Input):
+- action: "type", selector: textarea veya input CSS selectörü
+- value: 1-2 cümle anlamlı, İngilizce cevap yaz
+- Örnek: "I think quality is important for daily use products" gibi genel cevaplar
+- ASLA boş bırakma, en az 10 kelime yaz
+
+SLIDER / RANGE:
+- action: "move_slider", selector: slider CSS selectörü veya yakın metin
+- value: "70" gibi sayısal değer (0-100 arası, genelde 60-80 arası ver)
+- Memnuniyet sorusunda yüksek (75-85), önem sorusunda orta-yüksek (65-80)
+
+DROPDOWN / SELECT:
+- action: "select_dropdown", selector: select elementi CSS selectörü
+- value: seçilecek option metni (kısa, ilk 2-3 kelime)
+
+NEXT/CONTINUE/SUBMIT BUTONLARI:
+- Soruyu cevapladıktan sonra Next/Continue/Submit butonuna tıkla
+- action: "click", selector: "Next" veya "Continue" veya "Submit"
+
+COMPLETION/DONE SAYFASI:
+- "Thank you", "Survey complete", "Congratulations" görünce done: true yap
+
+JSON formatı:
+{
+  "action": "click" | "type" | "scroll" | "wait" | "navigate" | "move_slider" | "select_dropdown",
+  "selector": "CSS selector VEYA kısa hedef metni (max 3 kelime)",
+  "value": "type/navigate/slider/dropdown için değer",
+  "description": "çok kısa açıklama",
+  "done": false
+}`;
+}
+
 // ==================== MOTOR 1: PUPPETEER + GEMINI VISION ====================
 
 async function runGeminiEngine(url, account, settings) {
@@ -813,7 +876,7 @@ async function runGeminiEngine(url, account, settings) {
     await humanMove(page);
     await humanScroll(page);
 
-    var maxSteps = 30;
+    var maxSteps = 50;
     var stepCount = 0;
     var recentActions = [];
 
@@ -911,35 +974,7 @@ async function askGeminiVision(apiKey, screenshotBase64, currentUrl, account, st
     ? recentActions.map(function(a, i) { return (i + 1) + ". " + a; }).join("\n")
     : "Yok";
 
-  var systemPrompt = `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip SADECE TEK BİR aksiyon belirle.
-
-GÖREV: Anket sitesine gir, giriş yap, anketleri bul ve çöz.
-
-HESAP BİLGİLERİ:
-- Email: ${account.email}
-- Şifre: ${account.password}
-
-SON DENEMELER:
-${recentText}
-
-KRİTİK KURALLAR:
-1. Aynı butona tekrar tekrar basma. Son 2-3 adım aynıysa FARKLI bir aksiyon seç.
-2. Eğer 'Log In' tıklandıysa ama sayfa değişmediyse sonraki adım email alanını doldurmak, giriş modalını açmak veya login sayfasına gitmek olmalı.
-3. Çerez popup varsa önce onu kapat.
-4. Giriş gerekiyorsa email/şifre ile giriş yap. Google/Facebook KULLANMA.
-5. Sadece ekranda gerçekten görünen öğeleri hedefle.
-6. JSON dışında hiçbir şey yazma.
-7. ANKET TIKLAMA: Anket listesi (Swagbucks, vb.) gördüğünde İLK ankete tıkla. selector olarak CSS selector kullan: "a[href*='survey'], a[href*='answer'], .sb-card, [data-survey-id], li a" gibi. Eğer CSS bilmiyorsan, anketteki kısa metni (örn "15 min") selector olarak ver.
-8. Anket kartı/satırına tıklamak için selector olarak sadece kart içindeki KISA bir metin ver (örn: "15 min", "Survey #108293587", "8 min"). Uzun cümleler KULLANMA.
-
-JSON formatı:
-{
-  "action": "click" | "type" | "scroll" | "wait" | "navigate",
-  "selector": "CSS selector VEYA kısa hedef metni (max 3 kelime)",
-  "value": "type/navigate için değer",
-  "description": "çok kısa açıklama",
-  "done": false
-}`;
+  var systemPrompt = buildSurveySystemPrompt(account, recentText);
 
   var body = {
     contents: [{
@@ -1021,34 +1056,7 @@ async function askLovableAIVision(apiKey, screenshotBase64, currentUrl, account,
     ? recentActions.map(function(a, i) { return (i + 1) + ". " + a; }).join("\n")
     : "Yok";
 
-  var systemPrompt = `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip SADECE TEK BİR aksiyon belirle.
-
-GÖREV: Anket sitesine gir, giriş yap, anketleri bul ve çöz.
-
-HESAP BİLGİLERİ:
-- Email: ${account.email}
-- Şifre: ${account.password}
-
-SON DENEMELER:
-${recentText}
-
-KRİTİK KURALLAR:
-1. Aynı butona tekrar tekrar basma. Son 2-3 adım aynıysa FARKLI bir aksiyon seç.
-2. Eğer 'Log In' tıklandıysa ama sayfa değişmediyse sonraki adım email alanını doldurmak olmalı.
-3. Çerez popup varsa önce onu kapat.
-4. Giriş gerekiyorsa email/şifre ile giriş yap. Google/Facebook KULLANMA.
-5. Sadece ekranda gerçekten görünen öğeleri hedefle.
-6. JSON dışında hiçbir şey yazma.
-7. ANKET TIKLAMA: Anket listesi gördüğünde İLK ankete tıkla. selector olarak kısa metin ver (örn: "15 min", "Survey #108293587"). Uzun cümleler KULLANMA.
-
-JSON formatı:
-{
-  "action": "click" | "type" | "scroll" | "wait" | "navigate",
-  "selector": "CSS selector VEYA kısa hedef metni (max 3 kelime)",
-  "value": "type/navigate için değer",
-  "description": "çok kısa açıklama",
-  "done": false
-}`;
+  var systemPrompt = buildSurveySystemPrompt(account, recentText);
 
   var body = {
     model: "google/gemini-2.5-flash",
@@ -1128,32 +1136,7 @@ async function askOpenAIVision(apiKey, screenshotBase64, currentUrl, account, st
     ? recentActions.map(function(a, i) { return (i + 1) + ". " + a; }).join("\n")
     : "Yok";
 
-  var systemPrompt = `Sen bir web otomasyon asistanısın. Ekran görüntüsünü analiz edip SADECE TEK BİR aksiyon belirle.
-
-GÖREV: Anket sitesine gir, giriş yap, anketleri bul ve çöz.
-
-HESAP BİLGİLERİ:
-- Email: ${account.email}
-- Şifre: ${account.password}
-
-SON DENEMELER:
-${recentText}
-
-KRİTİK KURALLAR:
-1. Aynı butona tekrar tekrar basma.
-2. Çerez popup varsa önce kapat.
-3. Email/şifre ile giriş yap. Google/Facebook KULLANMA.
-4. JSON dışında hiçbir şey yazma.
-5. ANKET TIKLAMA: Anket listesi gördüğünde İLK ankete tıkla. selector olarak kısa metin ver (örn: "15 min", "Survey #108293587").
-
-JSON formatı:
-{
-  "action": "click" | "type" | "scroll" | "wait" | "navigate",
-  "selector": "CSS selector VEYA kısa hedef metni (max 3 kelime)",
-  "value": "type/navigate için değer",
-  "description": "çok kısa açıklama",
-  "done": false
-}`;
+  var systemPrompt = buildSurveySystemPrompt(account, recentText);
 
   var body = {
     model: "gpt-4o-mini",
@@ -1527,6 +1510,180 @@ async function executeAction(page, action) {
               await page.keyboard.type(action.value[ch]);
               await new Promise(function(r) { setTimeout(r, 30 + Math.random() * 70); });
             }
+            return;
+          }
+        } catch (e) {}
+      }
+      // Strategy 4: Survey textarea fallback — find any visible textarea/input and type
+      if (!isPasswordField && !isEmailField && action.value) {
+        for (var tf3 = 0; tf3 < typeFrames.length; tf3++) {
+          try {
+            var surveyTyped = await typeFrames[tf3].evaluate(function(val) {
+              function setNativeValue(el, value) {
+                var valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
+                if (valueSetter) valueSetter.call(el, value);
+                else el.value = value;
+                el.dispatchEvent(new Event("input", {bubbles: true}));
+                el.dispatchEvent(new Event("change", {bubbles: true}));
+              }
+              // Find visible textarea first, then text inputs
+              var fields = Array.from(document.querySelectorAll("textarea, input[type='text'], input:not([type])"));
+              for (var i = 0; i < fields.length; i++) {
+                var f = fields[i];
+                var rect = f.getBoundingClientRect();
+                var style = window.getComputedStyle(f);
+                if (rect.width > 50 && rect.height > 10 && style.display !== "none" && style.visibility !== "hidden") {
+                  var type = (f.type || "").toLowerCase();
+                  // Skip password/email/hidden fields
+                  if (type === "password" || type === "email" || type === "hidden" || type === "submit") continue;
+                  f.focus();
+                  f.value = "";
+                  setNativeValue(f, val);
+                  return true;
+                }
+              }
+              return false;
+            }, action.value);
+            if (surveyTyped) {
+              console.log("[TYPE] 📝 Survey textarea fallback ile yazıldı");
+              return;
+            }
+          } catch (e) {}
+        }
+      }
+      break;
+    }
+
+    case "move_slider": {
+      var sliderFrames = await getCandidateFrames();
+      var targetValue = parseInt(action.value) || 50;
+      
+      for (var sf = 0; sf < sliderFrames.length; sf++) {
+        try {
+          var sliderMoved = await sliderFrames[sf].evaluate(function(selector, targetVal) {
+            function isVisible(el) {
+              var rect = el.getBoundingClientRect();
+              var style = window.getComputedStyle(el);
+              return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+            }
+
+            // Try CSS selector first
+            var slider = null;
+            try { slider = document.querySelector(selector); } catch(e) {}
+            
+            // Fallback: find any visible range input
+            if (!slider || !isVisible(slider)) {
+              var ranges = Array.from(document.querySelectorAll('input[type="range"], [role="slider"]'));
+              for (var i = 0; i < ranges.length; i++) {
+                if (isVisible(ranges[i])) { slider = ranges[i]; break; }
+              }
+            }
+            
+            if (!slider) return false;
+            
+            // For input[type=range]
+            if (slider.tagName === "INPUT" && slider.type === "range") {
+              var min = parseFloat(slider.min) || 0;
+              var max = parseFloat(slider.max) || 100;
+              var newVal = min + (max - min) * (targetVal / 100);
+              var valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(slider), 'value')?.set;
+              if (valueSetter) valueSetter.call(slider, String(newVal));
+              else slider.value = String(newVal);
+              slider.dispatchEvent(new Event("input", {bubbles: true}));
+              slider.dispatchEvent(new Event("change", {bubbles: true}));
+              return true;
+            }
+            
+            // For custom sliders (role=slider) — simulate click at percentage position
+            var rect = slider.getBoundingClientRect();
+            var x = rect.left + (rect.width * targetVal / 100);
+            var y = rect.top + rect.height / 2;
+            var clickEvent = new MouseEvent("click", {
+              clientX: x, clientY: y, bubbles: true
+            });
+            slider.dispatchEvent(clickEvent);
+            return true;
+          }, action.selector || "", targetValue);
+          
+          if (sliderMoved) {
+            console.log("[SLIDER] 🎚 Slider değeri ayarlandı: " + targetValue);
+            return;
+          }
+        } catch (e) {}
+      }
+      
+      // Physical mouse fallback for custom sliders
+      try {
+        var sliderEl = await page.$(action.selector || 'input[type="range"]');
+        if (sliderEl) {
+          var box = await sliderEl.boundingBox();
+          if (box) {
+            var clickX = box.x + (box.width * targetValue / 100);
+            var clickY = box.y + box.height / 2;
+            await page.mouse.click(clickX, clickY);
+            console.log("[SLIDER] 🎚 Fiziksel tıklama ile slider ayarlandı");
+          }
+        }
+      } catch (e) {}
+      break;
+    }
+
+    case "select_dropdown": {
+      var ddFrames = await getCandidateFrames();
+      
+      for (var df = 0; df < ddFrames.length; df++) {
+        try {
+          var ddSelected = await ddFrames[df].evaluate(function(selector, optionText) {
+            function isVisible(el) {
+              var rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0;
+            }
+            
+            var selectEl = null;
+            try { selectEl = document.querySelector(selector); } catch(e) {}
+            
+            // Fallback: find any visible select element
+            if (!selectEl || selectEl.tagName !== "SELECT") {
+              var selects = Array.from(document.querySelectorAll("select"));
+              for (var i = 0; i < selects.length; i++) {
+                if (isVisible(selects[i])) { selectEl = selects[i]; break; }
+              }
+            }
+            
+            if (!selectEl) return false;
+            
+            var options = Array.from(selectEl.options);
+            var optLower = (optionText || "").toLowerCase().trim();
+            var target = null;
+            
+            // Exact match first
+            for (var i = 0; i < options.length; i++) {
+              if ((options[i].text || "").toLowerCase().trim() === optLower) { target = options[i]; break; }
+            }
+            // Partial match
+            if (!target) {
+              for (var i = 0; i < options.length; i++) {
+                if ((options[i].text || "").toLowerCase().includes(optLower)) { target = options[i]; break; }
+              }
+            }
+            // First non-empty option fallback
+            if (!target) {
+              for (var i = 0; i < options.length; i++) {
+                if (options[i].value && !options[i].disabled && i > 0) { target = options[i]; break; }
+              }
+            }
+            
+            if (target) {
+              selectEl.value = target.value;
+              selectEl.dispatchEvent(new Event("change", {bubbles: true}));
+              selectEl.dispatchEvent(new Event("input", {bubbles: true}));
+              return true;
+            }
+            return false;
+          }, action.selector || "", action.value || "");
+          
+          if (ddSelected) {
+            console.log("[DROPDOWN] 📋 Dropdown seçimi yapıldı: " + action.value);
             return;
           }
         } catch (e) {}
