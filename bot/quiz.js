@@ -931,6 +931,38 @@ async function runGeminiEngine(url, account, settings) {
     await humanMove(page);
     await humanScroll(page);
 
+    // === OTOMATİK GİRİŞ KONTROLÜ ===
+    // Kalıcı profil sayesinde zaten login olmuş olabilir — login sayfasında değilsek direkt anketlere başla
+    var currentUrl = page.url();
+    var isLoginPage = //login|/p/login|signin|sign-in/i.test(currentUrl);
+    var isAlreadyLoggedIn = await page.evaluate(function() {
+      var body = document.body ? document.body.innerText : '';
+      // Swagbucks dashboard göstergeleri
+      var dashboardIndicators = ['My SB', 'Earn SB', 'Daily Goal', 'Survey', 'Discover', 'Your Surveys', 'Answer', 'Gold Surveys'];
+      for (var i = 0; i < dashboardIndicators.length; i++) {
+        if (body.includes(dashboardIndicators[i])) return true;
+      }
+      // Login formu yoksa muhtemelen giriş yapılmış
+      var hasLoginForm = document.querySelector('input[type="password"]') || document.querySelector('form[action*="login"]');
+      return !hasLoginForm && !body.includes('Log In') && !body.includes('Sign In') && body.length > 200;
+    }).catch(function() { return false; });
+
+    if (!isLoginPage && isAlreadyLoggedIn) {
+      console.log('[QUIZ] ✅ Zaten giriş yapılmış! Login atlanıyor, direkt anketlere geçiliyor.');
+      await supabaseInsertLog('✅ Otomatik giriş algılandı — login atlanıyor, direkt anketlere başlanıyor', 'success');
+      // Anket sayfasına yönlendir (Swagbucks answer sayfası)
+      var surveyUrl = 'https://www.swagbucks.com/surveys';
+      try {
+        await page.goto(surveyUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+        await supabaseInsertLog('Anket sayfasına yönlendirildi: ' + surveyUrl, 'info');
+        await humanIdle(1000, 2000);
+      } catch (navErr) {
+        console.log('[QUIZ] Anket sayfasına yönlendirme başarısız, mevcut sayfada devam ediliyor');
+      }
+    } else if (isLoginPage || !isAlreadyLoggedIn) {
+      console.log('[QUIZ] Login sayfası tespit edildi, giriş yapılacak');
+    }
+
     var maxSteps = 500; // Sürekli anket çözme — kapanmayacak
     var surveysCompleted = 0;
     var stepCount = 0;
