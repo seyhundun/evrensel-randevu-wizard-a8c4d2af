@@ -83,13 +83,14 @@ async function detectCaptchaOnPage(page) {
     try { frameUrl = frame.url(); } catch (e) {}
 
     var infoFromUrl = {
-      recaptchaSitekey: getQueryParam(frameUrl, "k"),
-      hcaptchaSitekey: getQueryParam(frameUrl, "sitekey"),
-      turnstileSitekey: getQueryParam(frameUrl, "sitekey"),
+      recaptchaSitekey: /recaptcha|google\.com\/recaptcha/i.test(frameUrl) ? getQueryParam(frameUrl, "k") : null,
+      hcaptchaSitekey: /hcaptcha/i.test(frameUrl) ? getQueryParam(frameUrl, "sitekey") : null,
+      turnstileSitekey: /challenges\.cloudflare\.com/i.test(frameUrl) ? getQueryParam(frameUrl, "sitekey") : null,
       hasRecaptchaFrame: /recaptcha|google\.com\/recaptcha/i.test(frameUrl),
       hasHCaptchaFrame: /hcaptcha/i.test(frameUrl),
       hasTurnstileFrame: /challenges\.cloudflare\.com/i.test(frameUrl),
-      hasImageGrid: /recaptcha\/api2\/bframe|recaptcha challenge/i.test(frameUrl),
+      hasRecaptchaGrid: /recaptcha\/api2\/bframe|recaptcha challenge/i.test(frameUrl),
+      hasHCaptchaGrid: /hcaptcha/i.test(frameUrl),
     };
 
     var infoFromDom = {};
@@ -101,16 +102,19 @@ async function detectCaptchaOnPage(page) {
         }
 
         var html = document.documentElement ? document.documentElement.innerHTML : "";
-        var sitekeyMatch = html.match(/(?:data-sitekey|sitekey)['"\s:=]+['"]?([0-9A-Za-z_-]{20,})/i);
+        var recaptchaSitekeyMatch = html.match(/grecaptcha\.render\([\s\S]*?sitekey["'\s:=,]+["']?([0-9A-Za-z_-]{20,})/i);
+        var hcaptchaSitekeyMatch = html.match(/(?:data-hcaptcha-sitekey|hcaptcha\.render\([\s\S]*?sitekey)["'\s:=,]+["']?([0-9A-Za-z_-]{20,})/i);
+        var turnstileSitekeyMatch = html.match(/turnstile\.render\([\s\S]*?sitekey["'\s:=,]+["']?([0-9A-Za-z_-]{20,})/i);
 
         return {
-          recaptchaSitekey: getAttr('.g-recaptcha, [data-sitekey]', 'data-sitekey') || (sitekeyMatch ? sitekeyMatch[1] : null),
-          hcaptchaSitekey: getAttr('.h-captcha, [data-hcaptcha-sitekey], [data-sitekey]', 'data-hcaptcha-sitekey') || getAttr('.h-captcha, [data-hcaptcha-sitekey], [data-sitekey]', 'data-sitekey') || null,
-          turnstileSitekey: getAttr('.cf-turnstile, [data-sitekey]', 'data-sitekey') || null,
-          hasRecaptchaFrame: !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="google.com/recaptcha"], .g-recaptcha, [data-sitekey]'),
-          hasHCaptchaFrame: !!document.querySelector('iframe[src*="hcaptcha"], .h-captcha, [data-hcaptcha-sitekey]'),
-          hasTurnstileFrame: !!document.querySelector('iframe[src*="challenges.cloudflare.com"], .cf-turnstile'),
-          hasImageGrid: !!document.querySelector('iframe[title*="recaptcha challenge" i], iframe[src*="bframe"], .rc-imageselect-table-33, .rc-imageselect-table-44, .rc-imageselect-table, #rc-imageselect, .rc-imageselect-desc-wrapper, .rc-imageselect-instructions'),
+          recaptchaSitekey: getAttr('.g-recaptcha', 'data-sitekey') || (recaptchaSitekeyMatch ? recaptchaSitekeyMatch[1] : null),
+          hcaptchaSitekey: getAttr('.h-captcha, [data-hcaptcha-sitekey]', 'data-hcaptcha-sitekey') || getAttr('.h-captcha[data-sitekey]', 'data-sitekey') || (hcaptchaSitekeyMatch ? hcaptchaSitekeyMatch[1] : null),
+          turnstileSitekey: getAttr('.cf-turnstile', 'data-sitekey') || (turnstileSitekeyMatch ? turnstileSitekeyMatch[1] : null),
+          hasRecaptchaFrame: !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="google.com/recaptcha"], .g-recaptcha, textarea[name="g-recaptcha-response"]'),
+          hasHCaptchaFrame: !!document.querySelector('iframe[src*="hcaptcha"], iframe[title*="hcaptcha" i], .h-captcha, [data-hcaptcha-sitekey], textarea[name="h-captcha-response"]'),
+          hasTurnstileFrame: !!document.querySelector('iframe[src*="challenges.cloudflare.com"], .cf-turnstile, input[name="cf-turnstile-response"]'),
+          hasRecaptchaGrid: !!document.querySelector('iframe[title*="recaptcha challenge" i], iframe[src*="bframe"], .rc-imageselect-table-33, .rc-imageselect-table-44, .rc-imageselect-table, #rc-imageselect, .rc-imageselect-desc-wrapper, .rc-imageselect-instructions'),
+          hasHCaptchaGrid: !!document.querySelector('iframe[title*="hcaptcha" i], .challenge-container, .challenge-image-grid, [class*="challenge-image"]'),
         };
       });
     } catch (e) {}
@@ -122,7 +126,8 @@ async function detectCaptchaOnPage(page) {
       hasRecaptchaFrame: !!(infoFromDom.hasRecaptchaFrame || infoFromUrl.hasRecaptchaFrame),
       hasHCaptchaFrame: !!(infoFromDom.hasHCaptchaFrame || infoFromUrl.hasHCaptchaFrame),
       hasTurnstileFrame: !!(infoFromDom.hasTurnstileFrame || infoFromUrl.hasTurnstileFrame),
-      hasImageGrid: !!(infoFromDom.hasImageGrid || infoFromUrl.hasImageGrid),
+      hasRecaptchaGrid: !!(infoFromDom.hasRecaptchaGrid || infoFromUrl.hasRecaptchaGrid),
+      hasHCaptchaGrid: !!(infoFromDom.hasHCaptchaGrid || infoFromUrl.hasHCaptchaGrid),
       frameUrl: frameUrl,
     };
   }
@@ -140,7 +145,8 @@ async function detectCaptchaOnPage(page) {
     hasRecaptchaFrame: false,
     hasHCaptchaFrame: false,
     hasTurnstileFrame: false,
-    hasImageGrid: false,
+    hasRecaptchaGrid: false,
+    hasHCaptchaGrid: false,
   };
 
   for (var i = 0; i < frames.length; i++) {
@@ -151,22 +157,24 @@ async function detectCaptchaOnPage(page) {
     combined.hasRecaptchaFrame = combined.hasRecaptchaFrame || info.hasRecaptchaFrame;
     combined.hasHCaptchaFrame = combined.hasHCaptchaFrame || info.hasHCaptchaFrame;
     combined.hasTurnstileFrame = combined.hasTurnstileFrame || info.hasTurnstileFrame;
-    combined.hasImageGrid = combined.hasImageGrid || info.hasImageGrid;
+    combined.hasRecaptchaGrid = combined.hasRecaptchaGrid || info.hasRecaptchaGrid;
+    combined.hasHCaptchaGrid = combined.hasHCaptchaGrid || info.hasHCaptchaGrid;
   }
 
-  if (combined.recaptchaSitekey || combined.hasRecaptchaFrame || combined.hasImageGrid) {
-    return {
-      type: "recaptcha_v2",
-      sitekey: combined.recaptchaSitekey,
-      hasFrame: combined.hasRecaptchaFrame,
-      hasImageGrid: combined.hasImageGrid,
-    };
-  }
-  if (combined.hcaptchaSitekey || combined.hasHCaptchaFrame) {
+  if (combined.hcaptchaSitekey || combined.hasHCaptchaFrame || combined.hasHCaptchaGrid) {
     return {
       type: "hcaptcha",
       sitekey: combined.hcaptchaSitekey,
       hasFrame: combined.hasHCaptchaFrame,
+      hasImageGrid: combined.hasHCaptchaGrid,
+    };
+  }
+  if (combined.recaptchaSitekey || combined.hasRecaptchaFrame || combined.hasRecaptchaGrid) {
+    return {
+      type: "recaptcha_v2",
+      sitekey: combined.recaptchaSitekey,
+      hasFrame: combined.hasRecaptchaFrame,
+      hasImageGrid: combined.hasRecaptchaGrid,
     };
   }
   if (combined.turnstileSitekey || combined.hasTurnstileFrame) {
@@ -364,7 +372,9 @@ async function tryAutoSolveCaptcha(page, settings) {
 
   if (!sitekey) {
     if (captchaInfo.type === "recaptcha_v2" && captchaInfo.hasImageGrid) {
-      await supabaseInsertLog("reCAPTCHA image-grid açık ama sitekey bulunamadı, AI'a bırakılıyor", "warning");
+      await supabaseInsertLog("reCAPTCHA image-grid açık ama sitekey bulunamadı, API çağrısı atlanıyor", "warning");
+    } else if (captchaInfo.type === "hcaptcha" && captchaInfo.hasImageGrid) {
+      await supabaseInsertLog("hCaptcha image-grid açık ama sitekey bulunamadı, yanlış provider çağrısı engellendi", "warning");
     } else {
       await supabaseInsertLog("CAPTCHA sitekey bulunamadı (googlekey eksik), API çağrısı yapılmıyor", "warning");
     }
