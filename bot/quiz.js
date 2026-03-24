@@ -1021,6 +1021,9 @@ async function runGeminiEngine(url, account, settings) {
     var stepStartTime = Date.now();
     var consecutiveFailures = 0;
     var STEP_TIMEOUT_MS = 30000; // 30 saniye adım zaman aşımı
+    var sameActionStreak = 0;
+    var lastActionSummary = "";
+    var repeatedStuckRecoveries = 0;
 
     while (stepCount < maxSteps) {
       stepCount++;
@@ -1095,17 +1098,48 @@ async function runGeminiEngine(url, account, settings) {
       }
 
       var actionSummary = [action.action || "?", action.selector || action.value || action.description || ""].join(": ");
+      var actionText = String(actionSummary + " " + (action.description || "")).toLowerCase();
+      var isPopupCloseAction = /(popup|geri bildirim|feedback|close|kapat|dismiss|skip|not now|×|✕|çarpı|anket deneyimi)/.test(actionText);
+
+      if (actionSummary === lastActionSummary) {
+        sameActionStreak++;
+      } else {
+        sameActionStreak = 1;
+        repeatedStuckRecoveries = 0;
+        lastActionSummary = actionSummary;
+      }
+
       recentActions.push(actionSummary);
       if (recentActions.length > 5) recentActions.shift();
+
+      if (isPopupCloseAction && sameActionStreak >= 4) {
+        console.log("[POPUP-LOOP] Aynı popup kapatma adımı çok tekrar etti, oturum yeniden başlatılıyor");
+        await supabaseInsertLog("🔄 Popup kapatma döngüsü algılandı, tarayıcı tamamen kapatılıp yeni oturum başlatılıyor", "warning");
+        throw new Error("Popup close loop detected — restart session");
+      }
+
+      if (sameActionStreak >= 6) {
+        console.log("[ACTION-LOOP] Aynı aksiyon çok tekrar etti, oturum yeniden başlatılıyor:", actionSummary);
+        await supabaseInsertLog("🔄 Aynı adım sürekli tekrar ediyor, tarayıcı tamamen kapatılıp yeni oturum başlatılıyor", "warning");
+        throw new Error("Repeated action loop detected — restart session");
+      }
 
       // Stuck detection: son 3 aksiyon aynıysa zorla scroll yap
       if (recentActions.length >= 3) {
         var last3 = recentActions.slice(-3);
         if (last3[0] === last3[1] && last3[1] === last3[2]) {
+          repeatedStuckRecoveries++;
           console.log("[STUCK] Son 3 aksiyon aynı, zorla scroll yapılıyor");
           await supabaseInsertLog("⚠️ Takılma algılandı, sayfayı kaydırıyor", "warning");
           await page.evaluate(function() { window.scrollBy({ top: 600, behavior: 'smooth' }); });
           await quizDelay(1000, 2000);
+
+          if (repeatedStuckRecoveries >= 2 || (isPopupCloseAction && sameActionStreak >= 3)) {
+            console.log("[STUCK] Scroll ile açılamadı, oturum tamamen yeniden başlatılıyor");
+            await supabaseInsertLog("🔄 Takılma tekrarladı, mevcut tarayıcı kapatılıp yeni oturum başlatılıyor", "warning");
+            throw new Error("Stuck loop detected — restart session");
+          }
+
           recentActions.push("scroll: forced_unstuck");
           continue;
         }
