@@ -238,46 +238,62 @@ JSON formatı:
     }
   };
 
-  try {
-    var res = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+  var maxRetries = 3;
+  for (var attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      var res = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (res.status === 429) {
+        var waitSec = (attempt + 1) * 10;
+        console.log("[GEMINI] Rate limit (429), " + waitSec + "s bekleniyor... (deneme " + (attempt + 1) + "/" + maxRetries + ")");
+        await supabaseInsertLog("Rate limit, " + waitSec + "s bekleniyor (deneme " + (attempt + 1) + ")", "warning");
+        await new Promise(function(r) { setTimeout(r, waitSec * 1000); });
+        continue;
       }
-    );
 
-    if (!res.ok) {
-      var errText = await res.text();
-      console.error("[GEMINI] API hata:", res.status, errText);
-      throw new Error("Gemini API hata: " + res.status);
-    }
+      if (!res.ok) {
+        var errText = await res.text();
+        console.error("[GEMINI] API hata:", res.status, errText);
+        throw new Error("Gemini API hata: " + res.status);
+      }
 
-    var data = await res.json();
-    var text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      var data = await res.json();
+      var text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-    if (!text || !text.trim()) {
-      await supabaseInsertLog("Gemini boş cevap döndürdü", "warning");
+      if (!text || !text.trim()) {
+        await supabaseInsertLog("Gemini boş cevap döndürdü", "warning");
+        return null;
+      }
+
+      var jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (parseErr) {
+          await supabaseInsertLog("Gemini JSON parse hatası: " + String(parseErr.message || parseErr).slice(0, 120), "warning");
+        }
+      }
+
+      await supabaseInsertLog("Gemini parse edilemeyen cevap: " + text.slice(0, 180), "warning");
+      return null;
+    } catch (err) {
+      console.error("[GEMINI] Vision hata:", err.message);
+      await supabaseInsertLog("Gemini vision hata: " + err.message, "warning");
+      if (attempt < maxRetries - 1) {
+        await new Promise(function(r) { setTimeout(r, 5000); });
+        continue;
+      }
       return null;
     }
-
-    var jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch (parseErr) {
-        await supabaseInsertLog("Gemini JSON parse hatası: " + String(parseErr.message || parseErr).slice(0, 120), "warning");
-      }
-    }
-
-    await supabaseInsertLog("Gemini parse edilemeyen cevap: " + text.slice(0, 180), "warning");
-    return null;
-  } catch (err) {
-    console.error("[GEMINI] Vision hata:", err.message);
-    await supabaseInsertLog("Gemini vision hata: " + err.message, "warning");
-    return null;
   }
+  return null;
 }
 
 function buildClickSearchTexts(action) {
