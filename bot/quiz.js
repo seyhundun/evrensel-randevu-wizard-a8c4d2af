@@ -356,6 +356,233 @@ async function injectCaptchaToken(page, captchaType, token) {
   }, captchaType, token);
 }
 
+// ==================== DRAG-DROP CAPTCHA SOLVER ====================
+
+async function tryAutoSolveDragDropCaptcha(page, settings) {
+  // Sayfada "drag and drop" talimatı var mı kontrol et
+  var dragInfo = await page.evaluate(function() {
+    var body = (document.body ? document.body.innerText : "").toLowerCase();
+    // "drag and drop" veya "sürükle" ifadesi ara
+    var hasDragText = /drag\s*(and|&)?\s*drop|sürükle/i.test(body);
+    if (!hasDragText) return null;
+
+    // Talimat metnini bul
+    var instruction = "";
+    var allText = document.body ? document.body.innerText : "";
+    var lines = allText.split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      if (/drag\s*(and|&)?\s*drop|sürükle/i.test(lines[i])) {
+        instruction = lines[i].trim();
+        break;
+      }
+    }
+
+    // Sürüklenebilir elemanları bul
+    var draggables = [];
+    var allEls = document.querySelectorAll("[draggable='true'], .draggable, [data-drag], img");
+    for (var j = 0; j < allEls.length; j++) {
+      var el = allEls[j];
+      var rect = el.getBoundingClientRect();
+      if (rect.width < 30 || rect.height < 20 || rect.width > 400 || rect.height > 300) continue;
+      var style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      // Navigasyon/logo görselleri hariç tut
+      var src = (el.src || "").toLowerCase();
+      if (/logo|icon|favicon|nav|header|footer|brand/i.test(src)) continue;
+      var alt = el.alt || el.getAttribute("aria-label") || (el.textContent || "").trim();
+      draggables.push({
+        index: j,
+        x: Math.round(rect.x + rect.width / 2),
+        y: Math.round(rect.y + rect.height / 2),
+        w: Math.round(rect.width),
+        h: Math.round(rect.height),
+        text: alt.slice(0, 50),
+        src: (el.src || "").slice(0, 100)
+      });
+    }
+
+    // Drop zone bul (dashed border, drop class vb.)
+    var dropZone = null;
+    var dropCandidates = document.querySelectorAll("[class*='drop'], [class*='target'], [class*='placeholder'], [data-drop], [data-droppable]");
+    for (var k = 0; k < dropCandidates.length; k++) {
+      var dr = dropCandidates[k].getBoundingClientRect();
+      if (dr.width > 30 && dr.height > 30) {
+        dropZone = { x: Math.round(dr.x + dr.width / 2), y: Math.round(dr.y + dr.height / 2) };
+        break;
+      }
+    }
+    // Fallback: dashed border olan elemanları ara
+    if (!dropZone) {
+      var allVisible = document.querySelectorAll("div, section, span, td");
+      for (var m = 0; m < allVisible.length; m++) {
+        var cs = window.getComputedStyle(allVisible[m]);
+        if (cs.borderStyle === "dashed" || cs.outlineStyle === "dashed") {
+          var dRect = allVisible[m].getBoundingClientRect();
+          if (dRect.width > 40 && dRect.height > 40) {
+            dropZone = { x: Math.round(dRect.x + dRect.width / 2), y: Math.round(dRect.y + dRect.height / 2) };
+            break;
+          }
+        }
+      }
+    }
+
+    if (draggables.length === 0 || !dropZone) return null;
+
+    return {
+      instruction: instruction,
+      draggables: draggables,
+      dropZone: dropZone
+    };
+  }).catch(function() { return null; });
+
+  if (!dragInfo) return false;
+
+  console.log("[DRAG-CAPTCHA] 🎯 Drag-drop CAPTCHA tespit edildi: " + dragInfo.instruction);
+  await supabaseInsertLog("🎯 Drag-drop CAPTCHA: " + dragInfo.instruction.slice(0, 80), "info");
+
+  // Talimatı parse et — hangi sayı/metin isteniyor?
+  // "drag and drop the number 37" → "37"
+  var targetValue = null;
+  var match = dragInfo.instruction.match(/(?:number|the)\s+(\d+)/i);
+  if (match) {
+    targetValue = match[1];
+  } else {
+    // Genel metin eşleşmesi: tırnak içi veya bold metin
+    var quoteMatch = dragInfo.instruction.match(/["'"](.+?)["'"]/);
+    if (quoteMatch) targetValue = quoteMatch[1];
+  }
+
+  if (!targetValue) {
+    // Screenshot alıp AI'ya sor
+    try {
+      var ssBase64 = await page.screenshot({ encoding: "base64", fullPage: false });
+      var fetch = (await import("node-fetch")).default;
+      var aiRes = await fetch(SUPABASE_URL + "/functions/v1/solve-captcha", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + (process.env.SUPABASE_KEY || SUPABASE_KEY)
+        },
+        body: JSON.stringify({ image_base64: ssBase64 })
+      });
+      var aiData = await aiRes.json();
+      if (aiData.ok && aiData.code) {
+        targetValue = aiData.code;
+      }
+    } catch (aiErr) {
+      console.log("[DRAG-CAPTCHA] AI analiz hatası:", aiErr.message);
+    }
+  }
+
+  if (!targetValue) {
+    // Talimat metnini dom-agent'a gönder — o karar versin
+    console.log("[DRAG-CAPTCHA] Hedef değer parse edilemedi, DOM Agent'a bırakılıyor");
+    return false;
+  }
+
+  console.log("[DRAG-CAPTCHA] Hedef: " + targetValue);
+  await supabaseInsertLog("Drag-drop hedef: " + targetValue, "info");
+
+  // Doğru sürüklenebilir elemanı bul
+  var sourceCoords = null;
+
+  // Önce metin eşleşmesi dene
+  for (var d = 0; d < dragInfo.draggables.length; d++) {
+    if (dragInfo.draggables[d].text && dragInfo.draggables[d].text.includes(targetValue)) {
+      sourceCoords = dragInfo.draggables[d];
+      break;
+    }
+  }
+
+  // Metin eşleşmesi yoksa (sayılar resim olarak gösteriliyor), AI ile her görseli oku
+  if (!sourceCoords) {
+    console.log("[DRAG-CAPTCHA] Metin eşleşmesi yok, görselleri AI ile okuyacağım...");
+    var fetch = (await import("node-fetch")).default;
+
+    for (var di = 0; di < dragInfo.draggables.length; di++) {
+      var drag = dragInfo.draggables[di];
+      try {
+        // Her sürüklenebilir elemanın screenshot'ını al
+        var elSs = await page.screenshot({
+          encoding: "base64",
+          clip: {
+            x: drag.x - drag.w / 2,
+            y: drag.y - drag.h / 2,
+            width: drag.w,
+            height: drag.h
+          }
+        });
+
+        var readRes = await fetch(SUPABASE_URL + "/functions/v1/solve-captcha", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + (process.env.SUPABASE_KEY || SUPABASE_KEY)
+          },
+          body: JSON.stringify({ image_base64: elSs })
+        });
+        var readData = await readRes.json();
+        if (readData.ok && readData.code) {
+          console.log("[DRAG-CAPTCHA] Görsel " + di + " okuması: " + readData.code);
+          if (readData.code === targetValue || readData.code.includes(targetValue) || targetValue.includes(readData.code)) {
+            sourceCoords = drag;
+            console.log("[DRAG-CAPTCHA] ✅ Eşleşme bulundu: görsel " + di + " = " + readData.code);
+            break;
+          }
+        }
+      } catch (readErr) {
+        console.log("[DRAG-CAPTCHA] Görsel okuma hatası:", readErr.message);
+      }
+    }
+  }
+
+  if (!sourceCoords) {
+    console.log("[DRAG-CAPTCHA] ❌ Doğru eleman bulunamadı");
+    await supabaseInsertLog("Drag-drop: doğru eleman bulunamadı", "warning");
+    return false;
+  }
+
+  // Sürükle-bırak yap (fiziksel fare ile)
+  try {
+    var sx = sourceCoords.x;
+    var sy = sourceCoords.y;
+    var tx = dragInfo.dropZone.x;
+    var ty = dragInfo.dropZone.y;
+
+    console.log("[DRAG-CAPTCHA] Sürükleniyor: (" + sx + "," + sy + ") → (" + tx + "," + ty + ")");
+
+    // İnsan benzeri fare hareketi
+    await page.mouse.move(sx, sy, { steps: 5 + Math.floor(Math.random() * 5) });
+    await new Promise(function(r) { setTimeout(r, 200 + Math.floor(Math.random() * 300)); });
+    await page.mouse.down();
+    await new Promise(function(r) { setTimeout(r, 150 + Math.floor(Math.random() * 200)); });
+
+    // Kademeli hareket (daha gerçekçi)
+    var steps = 15 + Math.floor(Math.random() * 10);
+    for (var si = 1; si <= steps; si++) {
+      var progress = si / steps;
+      var cx = sx + (tx - sx) * progress + (Math.random() - 0.5) * 3;
+      var cy = sy + (ty - sy) * progress + (Math.random() - 0.5) * 3;
+      await page.mouse.move(cx, cy);
+      await new Promise(function(r) { setTimeout(r, 10 + Math.floor(Math.random() * 20)); });
+    }
+
+    await page.mouse.move(tx, ty);
+    await new Promise(function(r) { setTimeout(r, 100 + Math.floor(Math.random() * 150)); });
+    await page.mouse.up();
+
+    console.log("[DRAG-CAPTCHA] ✅ Sürükle-bırak tamamlandı!");
+    await supabaseInsertLog("✅ Drag-drop CAPTCHA çözüldü: " + targetValue, "success");
+
+    await new Promise(function(r) { setTimeout(r, 1000); });
+    return true;
+  } catch (dragErr) {
+    console.error("[DRAG-CAPTCHA] Sürükleme hatası:", dragErr.message);
+    await supabaseInsertLog("Drag-drop sürükleme hatası: " + dragErr.message, "error");
+    return false;
+  }
+}
+
 // ==================== TEXT/IMAGE CAPTCHA SOLVER ====================
 
 async function tryAutoSolveTextCaptcha(page, settings) {
