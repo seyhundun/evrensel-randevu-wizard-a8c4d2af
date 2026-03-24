@@ -1635,6 +1635,16 @@ async function executeAction(page, action) {
         return { clicked: fireSmartClick(best), matchedText: bestText, score: bestScore };
       }
 
+      // Checkbox/radio fallback: metin bazlı arama
+      if (!best || bestScore < threshold) {
+        for (var cf = 0; cf < phrases.length; cf++) {
+          var cbEl = findCheckboxByText(phrases[cf]);
+          if (cbEl) {
+            return { clicked: fireSmartClick(cbEl), matchedText: normalize(cbEl.textContent || "").slice(0, 60), score: 75, checkboxFallback: true };
+          }
+        }
+      }
+
       return { clicked: false, matchedText: bestText, score: bestScore };
     }, candidates);
   }
