@@ -48,17 +48,25 @@ export default function QuizSidebarContent() {
   const [captchaApiKey, setCaptchaApiKey] = useState(false);
 
   // Engine selection
-  const [quizEngine, setQuizEngine] = useState<"gemini" | "browser_use">("gemini");
+  type QuizEngineType = "gemini" | "browser_use" | "lovable_ai" | "openai";
+  const [quizEngine, setQuizEngine] = useState<QuizEngineType>("gemini");
 
-  // Gemini API key
+  // API keys
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [geminiKeyVisible, setGeminiKeyVisible] = useState(false);
   const [savingGeminiKey, setSavingGeminiKey] = useState(false);
 
-  // Browser Use API key
   const [browserUseKeyValue, setBrowserUseKeyValue] = useState("");
   const [browserUseKeyVisible, setBrowserUseKeyVisible] = useState(false);
   const [savingBuKey, setSavingBuKey] = useState(false);
+
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [openaiKeyVisible, setOpenaiKeyVisible] = useState(false);
+  const [savingOpenaiKey, setSavingOpenaiKey] = useState(false);
+
+  const [lovableApiKey, setLovableApiKey] = useState("");
+  const [lovableKeyVisible, setLovableKeyVisible] = useState(false);
+  const [savingLovableKey, setSavingLovableKey] = useState(false);
 
   const [quizStatus, setQuizStatus] = useState<"idle" | "running">("idle");
   const [lastLog, setLastLog] = useState<{ message: string; time: string; status: string } | null>(null);
