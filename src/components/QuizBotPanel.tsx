@@ -112,6 +112,7 @@ export default function QuizBotPanel() {
   async function startAllActive() {
     const activeLinks = quizLinks.filter(l => l.status === "active");
     if (activeLinks.length === 0) { toast.error("Aktif link yok"); return; }
+    setQuizLinks(prev => prev.map(l => l.status === "active" ? { ...l, status: "quiz_pending" } : l));
     for (const link of activeLinks) {
       await supabase.from("link_analyses").update({ status: "quiz_pending" }).eq("id", link.id);
     }
