@@ -79,6 +79,8 @@ export default function QuizSidebarContent() {
       const map = Object.fromEntries(data.map(d => [d.key, d.value]));
       setProxyHost(map.proxy_host || "core-residential.evomi-proxy.com");
       setProxyPort(map.proxy_port || "1000");
+      setProxyUsername(map.proxy_username || "");
+      setProxyPassword(map.proxy_password || "");
       setProxyCountry(map.quiz_proxy_country || map.proxy_country || "US");
       setProxyRegion(map.quiz_proxy_region || "");
       setQuizProxyEnabled(map.quiz_proxy_enabled !== "false");
