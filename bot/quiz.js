@@ -1457,20 +1457,71 @@ async function executeAction(page, action) {
         var tag = (el.tagName || "").toLowerCase();
         var role = normalize(el.getAttribute("role") || "");
         var href = el.getAttribute("href");
-        return tag === "a" || tag === "button" || tag === "label" || !!href || role === "button" || el.hasAttribute("onclick") || el.hasAttribute("tabindex");
+        var type = (el.getAttribute("type") || "").toLowerCase();
+        return tag === "a" || tag === "button" || tag === "label" || tag === "input" || !!href || role === "button" || role === "checkbox" || role === "radio" || role === "option" || el.hasAttribute("onclick") || el.hasAttribute("tabindex") || type === "checkbox" || type === "radio";
       }
 
       function getClickableTarget(el) {
         if (!el) return null;
         if (looksClickable(el) && isVisible(el)) return el;
 
-        var closest = el.closest('a, button, label, [role="button"], [onclick], [tabindex]');
+        var closest = el.closest('a, button, label, [role="button"], [role="checkbox"], [role="radio"], [role="option"], [onclick], [tabindex], input[type="checkbox"], input[type="radio"]');
         if (closest && isVisible(closest)) return closest;
 
-        var child = el.querySelector('a, button, label, [role="button"], [onclick], [tabindex]');
+        // Checkbox/radio'nun label'ına tıklamak için parent'ı da kontrol et
+        var parent = el.parentElement;
+        if (parent) {
+          var parentTag = (parent.tagName || "").toLowerCase();
+          if (parentTag === "label" && isVisible(parent)) return parent;
+          // Container div tıklanabilir olabilir
+          if (parent.hasAttribute("onclick") || parent.hasAttribute("tabindex")) return parent;
+        }
+
+        var child = el.querySelector('a, button, label, [role="button"], [onclick], [tabindex], input[type="checkbox"], input[type="radio"]');
         if (child && isVisible(child)) return child;
 
         return isVisible(el) ? el : null;
+      }
+
+      // Checkbox/radio elemanlarını metin bazlı bul
+      function findCheckboxByText(searchText) {
+        var normalSearch = normalize(searchText);
+        // Tüm label, div, span'ları tara
+        var allEls = document.querySelectorAll('label, div, span, li, td, p');
+        var bestEl = null;
+        var bestScore = 0;
+        for (var i = 0; i < allEls.length; i++) {
+          var el = allEls[i];
+          if (!isVisible(el)) continue;
+          var text = normalize(el.textContent || "");
+          if (!text) continue;
+          
+          // Exact match veya contains
+          var score = 0;
+          if (text === normalSearch) score = 100;
+          else if (text.indexOf(normalSearch) !== -1) score = 80;
+          else if (normalSearch.indexOf(text) !== -1 && text.length > 3) score = 60;
+          
+          if (score <= bestScore) continue;
+          
+          // Yakınında checkbox/radio var mı?
+          var input = el.querySelector('input[type="checkbox"], input[type="radio"]');
+          if (!input) {
+            var prev = el.previousElementSibling;
+            if (prev && (prev.tagName || "").toLowerCase() === "input") input = prev;
+          }
+          if (!input && el.parentElement) {
+            input = el.parentElement.querySelector('input[type="checkbox"], input[type="radio"]');
+          }
+          
+          if (input) { score += 20; }
+          
+          if (score > bestScore) {
+            bestScore = score;
+            bestEl = input || el;
+          }
+        }
+        return bestEl;
       }
 
       function fireSmartClick(el) {
