@@ -36,14 +36,14 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: "You are an OCR specialist. Read ONLY the CAPTCHA characters or numbers from the verification image and return only the code. Ignore logos, brand text, headers, watermarks, and decorative text. No explanation, no quotes. The CAPTCHA is usually 2-6 alphanumeric characters. Be precise for similar pairs (0/O, 1/l/I, 5/S, 8/B, 9/g, 2/Z). If the image contains a single number, return that number."
+            content: "You are a CAPTCHA OCR specialist. Read ONLY the CAPTCHA text from the image and return only the exact code. CAPTCHA matching is CASE-SENSITIVE, so preserve uppercase/lowercase exactly as seen. Ignore logos, labels, headers, helper text, watermarks, and decorative strokes crossing the letters. Do not correct, normalize, explain, or add quotes. Be precise for confusing pairs like 0/O/o, 1/l/I, 5/S/s, 8/B, 9/g/q, 2/Z/z, 6/G. If one character is uncertain, choose the most visually likely character while preserving case."
           },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: "Read the CAPTCHA code in this image. Return ONLY the characters, nothing else.",
+                text: "Read the CAPTCHA code in this image. Return ONLY the exact characters with original uppercase/lowercase preserved.",
               },
               {
                 type: "image_url",
@@ -85,22 +85,23 @@ serve(async (req) => {
     const data = await response.json();
     const rawText = data.choices?.[0]?.message?.content?.trim() || "";
 
-    // Clean: only keep alphanumeric characters + normalize uppercase
-    const code = rawText.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    // Clean: only keep alphanumeric characters, preserve original case
+    const code = rawText.replace(/[^a-zA-Z0-9]/g, "");
+    const normalizedCode = code.toUpperCase();
     const blockedTokens = new Set(["IDATA", "ITALYA", "ITALIA", "LOGIN", "REGISTER", "CAPTCHA"]);
-    const isValidCode = code.length >= 2 && code.length <= 8 && !blockedTokens.has(code) && !/^(.)\1{3,}$/.test(code);
+    const isValidCode = code.length >= 1 && code.length <= 8 && !blockedTokens.has(normalizedCode) && !/^(.)\1{3,}$/i.test(code);
 
     console.log(`CAPTCHA solved: raw="${rawText}" clean="${code}" valid=${isValidCode}`);
 
     if (!isValidCode) {
       return new Response(
-        JSON.stringify({ ok: false, error: "invalid_captcha_read", raw: rawText, code }),
+        JSON.stringify({ ok: false, error: "invalid_captcha_read", raw: rawText, code, normalized_code: normalizedCode }),
         { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     return new Response(
-      JSON.stringify({ ok: true, code, raw: rawText }),
+      JSON.stringify({ ok: true, code, normalized_code: normalizedCode, raw: rawText }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
