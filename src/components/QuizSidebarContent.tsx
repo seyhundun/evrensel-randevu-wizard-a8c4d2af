@@ -167,9 +167,10 @@ export default function QuizSidebarContent() {
       console.log("[QuizSidebar] Evomi response:", JSON.stringify(data)?.slice(0, 300), "error:", error);
       if (error) throw error;
       if (data?.ok) {
-        setEvomiCities(
-          (data.cities || []).map((c: any) => typeof c === "string" ? { name: c } : { name: c.name || c.city, region: c.region })
+        const cityList = (data.cities || data.regions || []).map((c: any) => 
+          typeof c === "string" ? { name: c } : { name: c.name || c.city || c.id, region: c.region, id: c.id }
         );
+        setEvomiCities(cityList);
         const countriesObj = data.countries || {};
         const countryList = Object.entries(countriesObj).map(([code, name]) => ({
           code: code.toUpperCase(),
@@ -177,7 +178,7 @@ export default function QuizSidebarContent() {
         }));
         countryList.sort((a, b) => a.name.localeCompare(b.name));
         if (countryList.length > 0) setEvomiCountries(countryList);
-        console.log("[QuizSidebar] Ülkeler:", countryList.length, "Şehirler:", (data.cities || []).length);
+        console.log("[QuizSidebar] Ülkeler:", countryList.length, "Şehirler:", cityList.length);
       } else {
         console.error("[QuizSidebar] Evomi ok=false:", data?.error || JSON.stringify(data)?.slice(0, 200));
         if (data?.error) toast.error("Evomi: " + data.error);
