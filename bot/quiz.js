@@ -1018,8 +1018,13 @@ async function runGeminiEngine(url, account, settings) {
       visionFn = function(ss, url, acc, st, ra) { return askGeminiVision(geminiApiKey, ss, url, acc, st, ra); };
     }
 
+    var stepStartTime = Date.now();
+    var consecutiveFailures = 0;
+    var STEP_TIMEOUT_MS = 30000; // 30 saniye adım zaman aşımı
+
     while (stepCount < maxSteps) {
       stepCount++;
+      stepStartTime = Date.now();
       console.log("[" + engineType.toUpperCase() + "] Adım " + stepCount + "/" + maxSteps);
 
       // === CAPTCHA AUTO-DETECTION ===
@@ -1028,6 +1033,7 @@ async function runGeminiEngine(url, account, settings) {
         if (captchaSolved) {
           console.log("[CAPTCHA] Otomatik çözüldü, 3s bekleniyor...");
           await quizDelay(2000, 4000);
+          consecutiveFailures = 0;
           continue;
         }
       } catch (captchaErr) {
@@ -1146,7 +1152,34 @@ async function runGeminiEngine(url, account, settings) {
         var pagesBefore = browser.targets().filter(function(t) { return t.type() === "page"; });
         var pagesBeforeCount = pagesBefore.length;
 
-        await executeAction(page, action);
+        // === 30 SANİYE ZAMAN AŞIMI İLE executeAction ===
+        var actionPromise = executeAction(page, action);
+        var timeoutPromise = new Promise(function(_, reject) {
+          setTimeout(function() { reject(new Error("STEP_TIMEOUT")); }, STEP_TIMEOUT_MS);
+        });
+        
+        try {
+          await Promise.race([actionPromise, timeoutPromise]);
+          consecutiveFailures = 0; // Başarılı adım, sıfırla
+        } catch (timeoutErr) {
+          if (timeoutErr.message === "STEP_TIMEOUT") {
+            consecutiveFailures++;
+            console.log("[TIMEOUT] ⏱️ Adım " + stepCount + " 30s zaman aşımı (" + consecutiveFailures + " ardışık hata)");
+            await supabaseInsertLog("⏱️ 30s zaman aşımı, adım atlanıyor (" + consecutiveFailures + "/5)", "warning");
+            
+            if (consecutiveFailures >= 5) {
+              console.log("[TIMEOUT] 🔄 5 ardışık hata, yeniden başlatılıyor");
+              await supabaseInsertLog("🔄 5 ardışık hata, oturumu yeniden başlatıyor", "warning");
+              throw new Error("Too many consecutive failures — restart");
+            }
+            
+            // Sayfayı scroll edip devam et
+            await page.evaluate(function() { window.scrollBy({ top: 300, behavior: 'smooth' }); }).catch(function(){});
+            await quizDelay(1000, 2000);
+            continue;
+          }
+          throw timeoutErr;
+        }
 
         // === HER TIKLAMADAN SONRA: Sayfanın en altına in ve Continue/Next/Submit ara ===
         if (action.action === 'click' || action.action === 'select_dropdown' || action.action === 'move_slider') {
@@ -1169,37 +1202,6 @@ async function runGeminiEngine(url, account, settings) {
               return /(please click to continue|click to continue|continue|next|submit|verify|devam etmek|devam et|devam|ileri|sonraki|gönder|gonder)/.test(normalize(text));
             }
 
-            function findPromptButton() {
-              var prompt = Array.from(document.querySelectorAll('h1, h2, h3, h4, p, span, div')).find(function(node) {
-                var rect = node.getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0) return false;
-                return /(please click to continue|click to continue|devam etmek için|devam etmek icin)/.test(normalize(node.textContent || ''));
-              });
-              if (!prompt) return null;
-
-              var promptRect = prompt.getBoundingClientRect();
-              var controls = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]'));
-              var best = null;
-              var bestScore = 0;
-              for (var i = 0; i < controls.length; i++) {
-                var el = controls[i];
-                var rect = el.getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0 || isDisabled(el)) continue;
-                var blob = normalize([el.textContent || '', el.value || '', el.getAttribute('aria-label') || '', el.getAttribute('title') || '', el.className || ''].join(' '));
-                var score = 0;
-                if (isContinueLike(blob)) score += 100;
-                if (/^[→»›⟶➜➡➝⮕]+$/.test((el.textContent || '').trim())) score += 70;
-                if (rect.top >= promptRect.bottom - 12) score += 30;
-                if (Math.abs((rect.left + rect.width / 2) - (promptRect.left + promptRect.width / 2)) < Math.max(220, promptRect.width)) score += 20;
-                if (prompt.parentElement && (prompt.parentElement.contains(el) || el.parentElement === prompt.parentElement)) score += 60;
-                if (score > bestScore) {
-                  best = el;
-                  bestScore = score;
-                }
-              }
-              return bestScore >= 60 ? best : null;
-            }
-
             var btns = document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]');
             for (var i = 0; i < btns.length; i++) {
               var txt = [btns[i].textContent || '', btns[i].value || '', btns[i].getAttribute('aria-label') || '', btns[i].getAttribute('title') || ''].join(' ');
@@ -1213,11 +1215,6 @@ async function runGeminiEngine(url, account, settings) {
                 }
               }
             }
-            var promptBtn = findPromptButton();
-            if (promptBtn) {
-              promptBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              return { found: true, text: normalize(promptBtn.textContent || promptBtn.value || promptBtn.getAttribute('aria-label') || 'continue prompt'), disabled: false, promptFallback: true };
-            }
             return { found: false };
           });
           
@@ -1228,15 +1225,12 @@ async function runGeminiEngine(url, account, settings) {
               function normalize(text) {
                 return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
               }
-
               function isDisabled(el) {
                 return !!(el && (el.disabled || el.getAttribute('aria-disabled') === 'true'));
               }
-
               function isContinueLike(text) {
                 return /(please click to continue|click to continue|continue|next|submit|verify|devam etmek|devam et|devam|ileri|sonraki|gönder|gonder)/.test(normalize(text));
               }
-
               function fireClick(el) {
                 if (!el || isDisabled(el)) return null;
                 var rect = el.getBoundingClientRect();
@@ -1259,36 +1253,6 @@ async function runGeminiEngine(url, account, settings) {
                   return fireClick(btns[i]);
                 }
               }
-
-              var prompt = Array.from(document.querySelectorAll('h1, h2, h3, h4, p, span, div')).find(function(node) {
-                var rect = node.getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0) return false;
-                return /(please click to continue|click to continue|devam etmek için|devam etmek icin)/.test(normalize(node.textContent || ''));
-              });
-              if (prompt) {
-                var promptRect = prompt.getBoundingClientRect();
-                var controls = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]'));
-                var best = null;
-                var bestScore = 0;
-                for (var j = 0; j < controls.length; j++) {
-                  var el = controls[j];
-                  var rect = el.getBoundingClientRect();
-                  if (rect.width <= 0 || rect.height <= 0 || isDisabled(el)) continue;
-                  var blob = normalize([el.textContent || '', el.value || '', el.getAttribute('aria-label') || '', el.getAttribute('title') || '', el.className || ''].join(' '));
-                  var score = 0;
-                  if (isContinueLike(blob)) score += 100;
-                  if (/^[→»›⟶➜➡➝⮕]+$/.test((el.textContent || '').trim())) score += 70;
-                  if (rect.top >= promptRect.bottom - 12) score += 30;
-                  if (Math.abs((rect.left + rect.width / 2) - (promptRect.left + promptRect.width / 2)) < Math.max(220, promptRect.width)) score += 20;
-                  if (prompt.parentElement && (prompt.parentElement.contains(el) || el.parentElement === prompt.parentElement)) score += 60;
-                  if (score > bestScore) {
-                    best = el;
-                    bestScore = score;
-                  }
-                }
-                if (best && bestScore >= 60) return fireClick(best);
-              }
-
               return null;
             });
             if (clicked) {
@@ -1358,8 +1322,15 @@ async function runGeminiEngine(url, account, settings) {
         // Bazen scroll yap
         if (Math.random() > 0.6) await humanScroll(page);
       } catch (actionErr) {
-        console.error("[GEMINI] Aksiyon hatası:", actionErr.message);
-        await supabaseInsertLog("Aksiyon hatası: " + actionErr.message, "warning");
+        consecutiveFailures++;
+        console.error("[GEMINI] Aksiyon hatası (" + consecutiveFailures + "/5):", actionErr.message);
+        await supabaseInsertLog("Aksiyon hatası (" + consecutiveFailures + "/5): " + actionErr.message, "warning");
+        
+        if (consecutiveFailures >= 5) {
+          console.log("[ERROR] 🔄 5 ardışık hata, oturumu yeniden başlatıyor");
+          await supabaseInsertLog("🔄 5 ardışık hata, oturumu yeniden başlatıyor", "error");
+          throw new Error("Too many consecutive failures — restart");
+        }
       }
     }
 
@@ -1758,11 +1729,20 @@ async function executeAction(page, action) {
         return isVisible(el) ? el : null;
       }
 
-      // Checkbox/radio elemanlarını metin bazlı bul
+      // Checkbox/radio elemanlarını metin bazlı bul (custom div-based checkboxlar dahil)
       function findCheckboxByText(searchText) {
         var normalSearch = normalize(searchText);
-        // Tüm label, div, span'ları tara
-        var allEls = document.querySelectorAll('label, div, span, li, td, p');
+        // Önce role="checkbox/radio/option" ve aria- bazlı elementleri tara
+        var roleEls = document.querySelectorAll('[role="checkbox"], [role="radio"], [role="option"], [role="listitem"], [aria-checked], [data-value]');
+        for (var r = 0; r < roleEls.length; r++) {
+          var rEl = roleEls[r];
+          if (!isVisible(rEl)) continue;
+          var rText = normalize(rEl.textContent || rEl.getAttribute("aria-label") || "");
+          if (rText && (rText === normalSearch || rText.indexOf(normalSearch) !== -1)) return rEl;
+        }
+
+        // Geniş arama: tüm label, div, span, li, td, p
+        var allEls = document.querySelectorAll('label, div, span, li, td, p, a');
         var bestEl = null;
         var bestScore = 0;
         for (var i = 0; i < allEls.length; i++) {
@@ -1788,12 +1768,29 @@ async function executeAction(page, action) {
           if (!input && el.parentElement) {
             input = el.parentElement.querySelector('input[type="checkbox"], input[type="radio"]');
           }
+
+          // Custom checkbox: container'a bakarak anla (border, card-like div)
+          var isCustomCheckbox = false;
+          var container = el.closest('[class*="check"], [class*="option"], [class*="answer"], [class*="choice"], [class*="select"], [class*="item"], [class*="card"]');
+          if (!container) {
+            // Parent div'in kendisi tıklanabilir container olabilir
+            var par = el.parentElement;
+            if (par && par.tagName === "DIV") {
+              var parStyle = window.getComputedStyle(par);
+              if (parStyle.cursor === "pointer" || parStyle.borderStyle !== "none" || par.hasAttribute("tabindex") || par.hasAttribute("onclick")) {
+                container = par;
+              }
+            }
+          }
+          if (container && isVisible(container)) isCustomCheckbox = true;
           
           if (input) { score += 20; }
+          if (isCustomCheckbox) { score += 15; }
           
           if (score > bestScore) {
             bestScore = score;
-            bestEl = input || el;
+            // Tıklama önceliği: input > custom container > element
+            bestEl = input || (isCustomCheckbox ? container : el);
           }
         }
         return bestEl;
