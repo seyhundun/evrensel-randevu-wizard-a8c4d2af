@@ -1008,18 +1008,25 @@ async function runGeminiEngine(url, account, settings) {
 
       // Sayfanın kaydırılabilir olup olmadığını kontrol et ve tam sayfa screenshot al
       var pageScrollInfo = await page.evaluate(function() {
+        function normalize(text) {
+          return String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
+        }
+
+        function isContinueLike(text) {
+          return /(please click to continue|click to continue|continue|next|submit|verify|devam etmek|devam et|devam|ileri|sonraki|gönder|gonder)/.test(normalize(text));
+        }
+
         var scrollable = document.documentElement.scrollHeight > window.innerHeight + 50;
         var atBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 100);
         // Continue/Next/Submit butonu ekranın altında mı kontrol et
         var submitBtn = null;
-        var btns = document.querySelectorAll('button, input[type="submit"], a');
+        var btns = document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]');
         for (var i = 0; i < btns.length; i++) {
-          var txt = (btns[i].textContent || btns[i].value || "").trim().toLowerCase();
-          if (/^(continue|next|submit|devam|ileri|gönder|sonraki)$/i.test(txt) || 
-              (txt.length < 20 && /continue|next|submit/i.test(txt))) {
+          var txt = [btns[i].textContent || "", btns[i].value || "", btns[i].getAttribute("aria-label") || "", btns[i].getAttribute("title") || ""].join(" ");
+          if (isContinueLike(txt) || /^[→»›⟶➜➡➝⮕]+$/.test((btns[i].textContent || "").trim())) {
             var rect = btns[i].getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0) {
-              submitBtn = { text: txt, visible: rect.top < window.innerHeight && rect.bottom > 0, top: rect.top };
+              submitBtn = { text: normalize(txt), visible: rect.top < window.innerHeight && rect.bottom > 0, top: rect.top };
               break;
             }
           }
@@ -1115,18 +1122,66 @@ async function runGeminiEngine(url, account, settings) {
           
           // Continue/Next/Submit butonunu bul ve tıkla
           var autoClicked = await page.evaluate(function() {
-            var btns = document.querySelectorAll('button, input[type="submit"], a.btn, a.button');
-            for (var i = 0; i < btns.length; i++) {
-              var txt = (btns[i].textContent || btns[i].value || '').trim();
-              if (/^(Continue|Next|Submit|Devam|İleri|Gönder|Sonraki|CONTINUE|NEXT|SUBMIT|Verify)$/i.test(txt)) {
-                var rect = btns[i].getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0 && !btns[i].disabled) {
-                  btns[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  return { found: true, text: txt, disabled: false };
-                } else if (btns[i].disabled) {
-                  return { found: true, text: txt, disabled: true };
+            function normalize(text) {
+              return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            }
+
+            function isDisabled(el) {
+              return !!(el && (el.disabled || el.getAttribute('aria-disabled') === 'true'));
+            }
+
+            function isContinueLike(text) {
+              return /(please click to continue|click to continue|continue|next|submit|verify|devam etmek|devam et|devam|ileri|sonraki|gönder|gonder)/.test(normalize(text));
+            }
+
+            function findPromptButton() {
+              var prompt = Array.from(document.querySelectorAll('h1, h2, h3, h4, p, span, div')).find(function(node) {
+                var rect = node.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return false;
+                return /(please click to continue|click to continue|devam etmek için|devam etmek icin)/.test(normalize(node.textContent || ''));
+              });
+              if (!prompt) return null;
+
+              var promptRect = prompt.getBoundingClientRect();
+              var controls = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]'));
+              var best = null;
+              var bestScore = 0;
+              for (var i = 0; i < controls.length; i++) {
+                var el = controls[i];
+                var rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0 || isDisabled(el)) continue;
+                var blob = normalize([el.textContent || '', el.value || '', el.getAttribute('aria-label') || '', el.getAttribute('title') || '', el.className || ''].join(' '));
+                var score = 0;
+                if (isContinueLike(blob)) score += 100;
+                if (/^[→»›⟶➜➡➝⮕]+$/.test((el.textContent || '').trim())) score += 70;
+                if (rect.top >= promptRect.bottom - 12) score += 30;
+                if (Math.abs((rect.left + rect.width / 2) - (promptRect.left + promptRect.width / 2)) < Math.max(220, promptRect.width)) score += 20;
+                if (prompt.parentElement && (prompt.parentElement.contains(el) || el.parentElement === prompt.parentElement)) score += 60;
+                if (score > bestScore) {
+                  best = el;
+                  bestScore = score;
                 }
               }
+              return bestScore >= 60 ? best : null;
+            }
+
+            var btns = document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]');
+            for (var i = 0; i < btns.length; i++) {
+              var txt = [btns[i].textContent || '', btns[i].value || '', btns[i].getAttribute('aria-label') || '', btns[i].getAttribute('title') || ''].join(' ');
+              if (isContinueLike(txt) || /^[→»›⟶➜➡➝⮕]+$/.test((btns[i].textContent || '').trim())) {
+                var rect = btns[i].getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0 && !isDisabled(btns[i])) {
+                  btns[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  return { found: true, text: normalize(txt), disabled: false };
+                } else if (isDisabled(btns[i])) {
+                  return { found: true, text: normalize(txt), disabled: true };
+                }
+              }
+            }
+            var promptBtn = findPromptButton();
+            if (promptBtn) {
+              promptBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              return { found: true, text: normalize(promptBtn.textContent || promptBtn.value || promptBtn.getAttribute('aria-label') || 'continue prompt'), disabled: false, promptFallback: true };
             }
             return { found: false };
           });
@@ -1135,14 +1190,70 @@ async function runGeminiEngine(url, account, settings) {
             await quizDelay(300, 600);
             // Fiziksel tıklama
             var clicked = await page.evaluate(function() {
-              var btns = document.querySelectorAll('button, input[type="submit"], a.btn, a.button');
+              function normalize(text) {
+                return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+              }
+
+              function isDisabled(el) {
+                return !!(el && (el.disabled || el.getAttribute('aria-disabled') === 'true'));
+              }
+
+              function isContinueLike(text) {
+                return /(please click to continue|click to continue|continue|next|submit|verify|devam etmek|devam et|devam|ileri|sonraki|gönder|gonder)/.test(normalize(text));
+              }
+
+              function fireClick(el) {
+                if (!el || isDisabled(el)) return null;
+                var rect = el.getBoundingClientRect();
+                var x = rect.left + rect.width / 2;
+                var y = rect.top + rect.height / 2;
+                var events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+                for (var i = 0; i < events.length; i++) {
+                  try {
+                    el.dispatchEvent(new MouseEvent(events[i], { view: window, bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
+                  } catch (e) {}
+                }
+                try { el.click(); } catch (e) {}
+                return normalize(el.textContent || el.value || el.getAttribute('aria-label') || 'continue');
+              }
+
+              var btns = document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]');
               for (var i = 0; i < btns.length; i++) {
-                var txt = (btns[i].textContent || btns[i].value || '').trim();
-                if (/^(Continue|Next|Submit|Devam|İleri|Gönder|Sonraki|CONTINUE|NEXT|SUBMIT|Verify)$/i.test(txt) && !btns[i].disabled) {
-                  btns[i].click();
-                  return txt;
+                var txt = [btns[i].textContent || '', btns[i].value || '', btns[i].getAttribute('aria-label') || '', btns[i].getAttribute('title') || ''].join(' ');
+                if ((isContinueLike(txt) || /^[→»›⟶➜➡➝⮕]+$/.test((btns[i].textContent || '').trim())) && !isDisabled(btns[i])) {
+                  return fireClick(btns[i]);
                 }
               }
+
+              var prompt = Array.from(document.querySelectorAll('h1, h2, h3, h4, p, span, div')).find(function(node) {
+                var rect = node.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return false;
+                return /(please click to continue|click to continue|devam etmek için|devam etmek icin)/.test(normalize(node.textContent || ''));
+              });
+              if (prompt) {
+                var promptRect = prompt.getBoundingClientRect();
+                var controls = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a, [role="button"], [onclick], [tabindex]'));
+                var best = null;
+                var bestScore = 0;
+                for (var j = 0; j < controls.length; j++) {
+                  var el = controls[j];
+                  var rect = el.getBoundingClientRect();
+                  if (rect.width <= 0 || rect.height <= 0 || isDisabled(el)) continue;
+                  var blob = normalize([el.textContent || '', el.value || '', el.getAttribute('aria-label') || '', el.getAttribute('title') || '', el.className || ''].join(' '));
+                  var score = 0;
+                  if (isContinueLike(blob)) score += 100;
+                  if (/^[→»›⟶➜➡➝⮕]+$/.test((el.textContent || '').trim())) score += 70;
+                  if (rect.top >= promptRect.bottom - 12) score += 30;
+                  if (Math.abs((rect.left + rect.width / 2) - (promptRect.left + promptRect.width / 2)) < Math.max(220, promptRect.width)) score += 20;
+                  if (prompt.parentElement && (prompt.parentElement.contains(el) || el.parentElement === prompt.parentElement)) score += 60;
+                  if (score > bestScore) {
+                    best = el;
+                    bestScore = score;
+                  }
+                }
+                if (best && bestScore >= 60) return fireClick(best);
+              }
+
               return null;
             });
             if (clicked) {
