@@ -233,9 +233,8 @@ JSON formatı:
     }],
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 400,
-      responseMimeType: "application/json"
+      temperature: 0.2,
+      maxOutputTokens: 1024
     }
   };
 
