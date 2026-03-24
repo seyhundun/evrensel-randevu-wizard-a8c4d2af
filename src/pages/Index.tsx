@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { LogOut, Clock, PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, Network, Globe, Settings, BookOpen, Menu } from "lucide-react";
+import { LogOut, Clock, PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, Network, Globe, Settings, BookOpen, Menu, Cpu } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
