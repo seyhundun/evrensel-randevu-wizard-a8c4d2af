@@ -1758,11 +1758,20 @@ async function executeAction(page, action) {
         return isVisible(el) ? el : null;
       }
 
-      // Checkbox/radio elemanlarını metin bazlı bul
+      // Checkbox/radio elemanlarını metin bazlı bul (custom div-based checkboxlar dahil)
       function findCheckboxByText(searchText) {
         var normalSearch = normalize(searchText);
-        // Tüm label, div, span'ları tara
-        var allEls = document.querySelectorAll('label, div, span, li, td, p');
+        // Önce role="checkbox/radio/option" ve aria- bazlı elementleri tara
+        var roleEls = document.querySelectorAll('[role="checkbox"], [role="radio"], [role="option"], [role="listitem"], [aria-checked], [data-value]');
+        for (var r = 0; r < roleEls.length; r++) {
+          var rEl = roleEls[r];
+          if (!isVisible(rEl)) continue;
+          var rText = normalize(rEl.textContent || rEl.getAttribute("aria-label") || "");
+          if (rText && (rText === normalSearch || rText.indexOf(normalSearch) !== -1)) return rEl;
+        }
+
+        // Geniş arama: tüm label, div, span, li, td, p
+        var allEls = document.querySelectorAll('label, div, span, li, td, p, a');
         var bestEl = null;
         var bestScore = 0;
         for (var i = 0; i < allEls.length; i++) {
@@ -1788,12 +1797,29 @@ async function executeAction(page, action) {
           if (!input && el.parentElement) {
             input = el.parentElement.querySelector('input[type="checkbox"], input[type="radio"]');
           }
+
+          // Custom checkbox: container'a bakarak anla (border, card-like div)
+          var isCustomCheckbox = false;
+          var container = el.closest('[class*="check"], [class*="option"], [class*="answer"], [class*="choice"], [class*="select"], [class*="item"], [class*="card"]');
+          if (!container) {
+            // Parent div'in kendisi tıklanabilir container olabilir
+            var par = el.parentElement;
+            if (par && par.tagName === "DIV") {
+              var parStyle = window.getComputedStyle(par);
+              if (parStyle.cursor === "pointer" || parStyle.borderStyle !== "none" || par.hasAttribute("tabindex") || par.hasAttribute("onclick")) {
+                container = par;
+              }
+            }
+          }
+          if (container && isVisible(container)) isCustomCheckbox = true;
           
           if (input) { score += 20; }
+          if (isCustomCheckbox) { score += 15; }
           
           if (score > bestScore) {
             bestScore = score;
-            bestEl = input || el;
+            // Tıklama önceliği: input > custom container > element
+            bestEl = input || (isCustomCheckbox ? container : el);
           }
         }
         return bestEl;
