@@ -357,6 +357,14 @@ async function injectCaptchaToken(page, captchaType, token) {
 }
 
 async function tryAutoSolveCaptcha(page, settings) {
+  // === TEXT/IMAGE CAPTCHA TESPİTİ (öncelikli) ===
+  try {
+    var textCaptchaSolved = await tryAutoSolveTextCaptcha(page, settings);
+    if (textCaptchaSolved) return true;
+  } catch (tcErr) {
+    console.log("[TEXT-CAPTCHA] Hata:", tcErr.message);
+  }
+
   var captchaInfo = await detectCaptchaOnPage(page);
   if (!captchaInfo) return false;
 
