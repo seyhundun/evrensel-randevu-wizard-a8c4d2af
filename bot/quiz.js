@@ -166,7 +166,7 @@ async function runGeminiEngine(url, account, settings) {
 
       try {
         await executeAction(page, action);
-        await page.waitForTimeout(1500);
+        await new Promise(function(resolve) { setTimeout(resolve, 1500); });
       } catch (actionErr) {
         console.error("[GEMINI] Aksiyon hatası:", actionErr.message);
         await supabaseInsertLog("Aksiyon hatası: " + actionErr.message, "warning");
