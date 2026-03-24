@@ -359,11 +359,11 @@ async function tryAutoSolveCaptcha(page, settings) {
 
   if (!captchaInfo.sitekey) {
     if (captchaInfo.type === "recaptcha_v2" && captchaInfo.hasImageGrid) {
-      await supabaseInsertLog("reCAPTCHA image-grid açık ama sitekey bulunamadı; challenge iframe yeniden taranıyor", "warning");
+      await supabaseInsertLog("reCAPTCHA image-grid açık ama sitekey bulunamadı, AI'a bırakılıyor", "warning");
     } else {
       await supabaseInsertLog("CAPTCHA sitekey bulunamadı, çözülemiyor", "warning");
-      return false;
     }
+    return false;
   }
 
   // Turnstile is handled by puppeteer-real-browser's built-in turnstile solver
@@ -1062,6 +1062,11 @@ async function executeAction(page, action) {
 
     case "type": {
       var typeFrames = await getCandidateFrames();
+      var desc = (action.description || action.selector || "").toLowerCase();
+      var isPasswordField = /password|şifre|sifre|parola/i.test(desc);
+      var isEmailField = /email|e-posta|eposta|mail/i.test(desc);
+
+      // Strategy 1: Try CSS selector click + keyboard type
       for (var tf = 0; tf < typeFrames.length; tf++) {
         try {
           await typeFrames[tf].click(action.selector);
@@ -1077,24 +1082,66 @@ async function executeAction(page, action) {
         } catch (typeErr) {}
       }
 
+      // Strategy 2: Smart field detection - find by type/placeholder/label
       for (var tfi = 0; tfi < typeFrames.length; tfi++) {
         try {
-          await typeFrames[tfi].evaluate(function(val, desc) {
+          var typed = await typeFrames[tfi].evaluate(function(val, isPass, isEmail) {
+            function setNativeValue(el, value) {
+              var valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
+              if (valueSetter) valueSetter.call(el, value);
+              else el.value = value;
+              el.dispatchEvent(new Event("input", {bubbles: true}));
+              el.dispatchEvent(new Event("change", {bubbles: true}));
+            }
+
             var inputs = document.querySelectorAll("input, textarea");
             for (var i = 0; i < inputs.length; i++) {
               var inp = inputs[i];
               var placeholder = (inp.placeholder || "").toLowerCase();
               var label = (inp.getAttribute("aria-label") || "").toLowerCase();
+              var name = (inp.name || "").toLowerCase();
+              var id = (inp.id || "").toLowerCase();
               var type = (inp.type || "").toLowerCase();
-              if (desc.toLowerCase().includes("email") && (type === "email" || placeholder.includes("email") || label.includes("email"))) {
-                inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
+              var rect = inp.getBoundingClientRect();
+              if (rect.width === 0 || rect.height === 0) continue;
+
+              var matchesPassword = type === "password" || placeholder.includes("password") || label.includes("password") || name.includes("password") || id.includes("password") || placeholder.includes("şifre") || placeholder.includes("parola");
+              var matchesEmail = type === "email" || placeholder.includes("email") || label.includes("email") || name.includes("email") || id.includes("email");
+
+              if (isPass && matchesPassword) {
+                inp.focus();
+                setNativeValue(inp, val);
+                return true;
               }
-              if (desc.toLowerCase().includes("password") && (type === "password" || placeholder.includes("password") || label.includes("password"))) {
-                inp.value = val; inp.dispatchEvent(new Event("input", {bubbles: true})); return;
+              if (isEmail && matchesEmail) {
+                inp.focus();
+                setNativeValue(inp, val);
+                return true;
               }
             }
-          }, action.value, action.description || action.selector || "");
-          return;
+            return false;
+          }, action.value, isPasswordField, isEmailField);
+          if (typed) return;
+        } catch (e) {}
+      }
+
+      // Strategy 3: Click the field by smart match, then keyboard type
+      for (var tf2 = 0; tf2 < typeFrames.length; tf2++) {
+        try {
+          var selector = isPasswordField ? 'input[type="password"]' : isEmailField ? 'input[type="email"], input[name*="email"], input[placeholder*="email" i]' : null;
+          if (selector) {
+            await typeFrames[tf2].click(selector);
+            await typeFrames[tf2].evaluate(function(sel) {
+              var el = document.querySelector(sel);
+              if (el) el.value = "";
+            }, selector);
+            await new Promise(function(r) { setTimeout(r, 200); });
+            for (var ch = 0; ch < action.value.length; ch++) {
+              await page.keyboard.type(action.value[ch]);
+              await new Promise(function(r) { setTimeout(r, 30 + Math.random() * 70); });
+            }
+            return;
+          }
         } catch (e) {}
       }
       break;
