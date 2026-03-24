@@ -189,6 +189,8 @@ export default function QuizSidebarContent() {
     try {
       await upsertSetting("quiz_proxy_country", proxyCountry, "Quiz Proxy Ülke");
       await upsertSetting("quiz_proxy_region", proxyRegion, "Quiz Proxy Bölge");
+      await upsertSetting("proxy_username", proxyUsername, "Proxy Kullanıcı Adı");
+      await upsertSetting("proxy_password", proxyPassword, "Proxy Şifre");
       setDirty(false);
       toast.success("Quiz proxy ayarları kaydedildi");
     } catch (err: any) {
