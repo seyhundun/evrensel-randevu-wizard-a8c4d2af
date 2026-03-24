@@ -472,8 +472,41 @@ async function runGeminiEngine(url, account, settings) {
     }
 
     var country = (settings.quiz_proxy_country || settings.proxy_country || "US").toLowerCase();
-    var region = (settings.quiz_proxy_region || "").trim().toLowerCase();
     var sessionId = Math.random().toString(36).replace(/[^a-z0-9]/g, "").slice(0, 8) || "quiz0001";
+
+    // Dinamik bölge rotasyonu: Evomi API'den şehir listesi çek, rastgele seç
+    var region = "";
+    try {
+      var evomiApiKey = settings.evomi_api_key || "";
+      if (evomiApiKey) {
+        var fetch2 = (await import("node-fetch")).default;
+        var evomiRes = await fetch2("https://api.evomi.com/public/settings", {
+          headers: { "x-apikey": evomiApiKey },
+        });
+        if (evomiRes.ok) {
+          var evomiData = await evomiRes.json();
+          var product = "rpc";
+          if (proxyHost.includes("premium")) product = "rp";
+          var productData = evomiData?.data?.[product];
+          var allCities = productData?.cities?.data || [];
+          var countryCities = allCities.filter(function(c) { return (c.countryCode || "").toUpperCase() === country.toUpperCase(); });
+          if (countryCities.length > 0) {
+            var randomCity = countryCities[Math.floor(Math.random() * countryCities.length)];
+            region = (randomCity.city || randomCity.name || "").toLowerCase();
+            console.log("[PROXY] Evomi API: " + countryCities.length + " şehir bulundu, rastgele seçim: " + region);
+          } else {
+            console.log("[PROXY] Evomi API: " + country.toUpperCase() + " için şehir bulunamadı, rastgele IP kullanılacak");
+          }
+        }
+      }
+    } catch (evomiErr) {
+      console.log("[PROXY] Evomi bölge çekme hatası: " + evomiErr.message + " — rastgele IP kullanılacak");
+    }
+
+    // Fallback: settings'den gelen sabit bölge
+    if (!region) {
+      region = (settings.quiz_proxy_region || "").trim().toLowerCase();
+    }
 
     var suffix = "_country-" + country;
     if (region) suffix += "_city-" + region;
@@ -488,8 +521,8 @@ async function runGeminiEngine(url, account, settings) {
       password: proxyPass,
     };
 
-    console.log("[GEMINI] Proxy config: " + proxyHost + ":" + proxyPort + " | user=" + proxyUser + " | ülke=" + country + (region ? " | şehir=" + region : ""));
-    await supabaseInsertLog("Proxy aktif: " + proxyHost + ":" + proxyPort + " | ülke=" + country + (region ? " | şehir=" + region : ""), "info");
+    console.log("[GEMINI] Proxy: " + proxyHost + ":" + proxyPort + " | ülke=" + country + " | şehir=" + (region || "rastgele") + " | session=" + sessionId);
+    await supabaseInsertLog("Proxy aktif: " + proxyHost + ":" + proxyPort + " | ülke=" + country + " | şehir=" + (region || "rastgele"), "info");
   }
 
   var connectOptions = {
