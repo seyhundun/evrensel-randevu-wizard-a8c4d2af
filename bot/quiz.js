@@ -368,7 +368,8 @@ async function tryAutoSolveCaptcha(page, settings) {
   captchaInfo.sitekey = sitekey || null;
 
   console.log("[CAPTCHA] Tespit edildi: " + captchaInfo.type + " | sitekey: " + (sitekey || "YOK") + " | provider: " + provider);
-  await supabaseInsertLog("CAPTCHA tespit edildi: " + captchaInfo.type + " | sitekey: " + (sitekey ? sitekey.slice(0,20) + "..." : "YOK") + " (provider: " + provider + ")", "info");
+  await supabaseInsertLog("CAPTCHA tespit edildi: " + captchaInfo.type + " | sitekey: " + (sitekey || "YOK") + " | hasFrame: " + !!captchaInfo.hasFrame + " | hasGrid: " + !!captchaInfo.hasImageGrid + " | provider: " + provider + " | pageUrl: " + pageUrl.slice(0, 80), "info");
+  await supabaseInsertLog("CAPTCHA detay: 2captchaKey=" + (twoCaptchaKey ? twoCaptchaKey.slice(0,6) + "..." : "YOK") + " | capsolverKey=" + (capsolverKey ? capsolverKey.slice(0,6) + "..." : "YOK"), "info");
 
   if (!sitekey) {
     if (captchaInfo.type === "recaptcha_v2" && captchaInfo.hasImageGrid) {
