@@ -356,7 +356,205 @@ async function injectCaptchaToken(page, captchaType, token) {
   }, captchaType, token);
 }
 
-async function tryAutoSolveCaptcha(page, settings) {
+// ==================== TEXT/IMAGE CAPTCHA SOLVER ====================
+
+async function tryAutoSolveTextCaptcha(page, settings) {
+  // Sayfada captcha yazılı input + yakınında görsel var mı
+  var captchaData = await page.evaluate(function() {
+    var inputs = document.querySelectorAll('input[type="text"], input:not([type])');
+    var captchaInput = null;
+    var captchaImage = null;
+
+    for (var i = 0; i < inputs.length; i++) {
+      var inp = inputs[i];
+      var rect = inp.getBoundingClientRect();
+      if (rect.width < 20 || rect.height < 10) continue;
+      var style = window.getComputedStyle(inp);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+
+      var placeholder = (inp.placeholder || "").toLowerCase();
+      var name = (inp.name || "").toLowerCase();
+      var id = (inp.id || "").toLowerCase();
+      var ariaLabel = (inp.getAttribute("aria-label") || "").toLowerCase();
+
+      var parent = inp.parentElement;
+      var parentText = "";
+      for (var p = 0; p < 4 && parent; p++) {
+        parentText += " " + (parent.textContent || "").toLowerCase();
+        parent = parent.parentElement;
+      }
+
+      var combined = placeholder + " " + name + " " + id + " " + ariaLabel + " " + parentText.slice(0, 500);
+      var isCaptchaField = /captcha|verification.?code|verify|type.*text.*box|enter.*text|type.*character|enter.*character|enter.*code|image.*code|security.?code/i.test(combined);
+
+      if (!isCaptchaField) continue;
+
+      // Yakınındaki img'yi bul
+      var container = inp.parentElement;
+      for (var cp = 0; cp < 6 && container; cp++) {
+        var imgs = container.querySelectorAll("img");
+        for (var j = 0; j < imgs.length; j++) {
+          var imgRect = imgs[j].getBoundingClientRect();
+          if (imgRect.width >= 60 && imgRect.height >= 20 && imgRect.width < 500 && imgRect.height < 200) {
+            captchaImage = imgs[j];
+            captchaInput = inp;
+            break;
+          }
+        }
+        if (captchaImage) break;
+        container = container.parentElement;
+      }
+      if (captchaImage) break;
+    }
+
+    if (!captchaInput || !captchaImage) return null;
+
+    // Canvas ile base64
+    var base64 = null;
+    try {
+      var canvas = document.createElement("canvas");
+      canvas.width = captchaImage.naturalWidth || captchaImage.width;
+      canvas.height = captchaImage.naturalHeight || captchaImage.height;
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(captchaImage, 0, 0);
+      base64 = canvas.toDataURL("image/png").split(",")[1];
+    } catch (e) {}
+
+    var inputRect = captchaInput.getBoundingClientRect();
+    return {
+      hasTextCaptcha: true,
+      base64: base64,
+      imageSrc: captchaImage.src || null,
+      inputSelector: captchaInput.id ? "#" + captchaInput.id : (captchaInput.name ? "input[name='" + captchaInput.name + "']" : null),
+      inputRect: { x: Math.round(inputRect.x + inputRect.width / 2), y: Math.round(inputRect.y + inputRect.height / 2) },
+      currentValue: captchaInput.value || ""
+    };
+  }).catch(function() { return null; });
+
+  if (!captchaData || !captchaData.hasTextCaptcha) return false;
+  if (captchaData.currentValue && captchaData.currentValue.length >= 4) return false;
+
+  console.log("[TEXT-CAPTCHA] 🔍 Text CAPTCHA tespit edildi!");
+  await supabaseInsertLog("🔍 Text CAPTCHA tespit edildi — AI ile çözülüyor...", "info");
+
+  var imageBase64 = captchaData.base64;
+
+  // Canvas çalışmadıysa URL'den indir
+  if (!imageBase64 && captchaData.imageSrc) {
+    try {
+      var fetch = (await import("node-fetch")).default;
+      var cookies = await page.cookies();
+      var cookieStr = cookies.map(function(c) { return c.name + "=" + c.value; }).join("; ");
+      var imgRes = await fetch(captchaData.imageSrc, {
+        headers: {
+          "Cookie": cookieStr,
+          "Referer": page.url(),
+          "User-Agent": await page.evaluate(function() { return navigator.userAgent; })
+        }
+      });
+      if (imgRes.ok) {
+        var buf = await imgRes.buffer();
+        imageBase64 = buf.toString("base64");
+      }
+    } catch (dlErr) {
+      console.log("[TEXT-CAPTCHA] Görsel indirme hatası:", dlErr.message);
+    }
+  }
+
+  // Son çare: element screenshot
+  if (!imageBase64) {
+    try {
+      var captchaImgEl = await page.evaluateHandle(function(sel) {
+        var input = sel ? document.querySelector(sel) : null;
+        if (!input) return null;
+        var container = input.parentElement;
+        for (var p = 0; p < 6 && container; p++) {
+          var img = container.querySelector("img");
+          if (img) return img;
+          container = container.parentElement;
+        }
+        return null;
+      }, captchaData.inputSelector);
+      if (captchaImgEl && captchaImgEl.asElement()) {
+        imageBase64 = await captchaImgEl.asElement().screenshot({ encoding: "base64" });
+      }
+    } catch (ssErr) {
+      console.log("[TEXT-CAPTCHA] Screenshot hatası:", ssErr.message);
+    }
+  }
+
+  if (!imageBase64) {
+    await supabaseInsertLog("Text CAPTCHA görseli alınamadı", "warning");
+    return false;
+  }
+
+  // solve-captcha edge function ile çöz
+  try {
+    var fetch = (await import("node-fetch")).default;
+    var solveRes = await fetch(SUPABASE_URL + "/functions/v1/solve-captcha", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + (process.env.SUPABASE_KEY || SUPABASE_KEY)
+      },
+      body: JSON.stringify({ image_base64: imageBase64 })
+    });
+
+    var solveData = await solveRes.json();
+
+    if (!solveData.ok || !solveData.code) {
+      console.log("[TEXT-CAPTCHA] ❌ Çözüm başarısız: " + (solveData.error || "bilinmeyen"));
+      await supabaseInsertLog("Text CAPTCHA başarısız: " + (solveData.error || "?") + " raw=" + (solveData.raw || ""), "warning");
+      return false;
+    }
+
+    var captchaCode = solveData.code;
+    console.log("[TEXT-CAPTCHA] ✅ Çözüm: " + captchaCode);
+    await supabaseInsertLog("✅ Text CAPTCHA çözüldü: " + captchaCode, "success");
+
+    // Input'a tıkla
+    if (captchaData.inputSelector) {
+      try { await page.click(captchaData.inputSelector); } catch (e) {
+        await page.mouse.click(captchaData.inputRect.x, captchaData.inputRect.y);
+      }
+    } else {
+      await page.mouse.click(captchaData.inputRect.x, captchaData.inputRect.y);
+    }
+    await new Promise(function(r) { setTimeout(r, 300); });
+
+    // Temizle
+    await page.keyboard.down("Control");
+    await page.keyboard.press("a");
+    await page.keyboard.up("Control");
+    await page.keyboard.press("Backspace");
+    await new Promise(function(r) { setTimeout(r, 200); });
+
+    // İnsan benzeri yaz
+    for (var ci = 0; ci < captchaCode.length; ci++) {
+      await page.keyboard.type(captchaCode[ci], { delay: 80 + Math.floor(Math.random() * 120) });
+    }
+
+    await new Promise(function(r) { setTimeout(r, 500); });
+    console.log("[TEXT-CAPTCHA] ✅ Kod girildi: " + captchaCode);
+    await supabaseInsertLog("Text CAPTCHA kodu girildi: " + captchaCode, "success");
+    return true;
+
+  } catch (solveErr) {
+    console.error("[TEXT-CAPTCHA] Çözme hatası:", solveErr.message);
+    await supabaseInsertLog("Text CAPTCHA hatası: " + solveErr.message, "error");
+    return false;
+  }
+}
+
+
+  // === TEXT/IMAGE CAPTCHA TESPİTİ (öncelikli) ===
+  try {
+    var textCaptchaSolved = await tryAutoSolveTextCaptcha(page, settings);
+    if (textCaptchaSolved) return true;
+  } catch (tcErr) {
+    console.log("[TEXT-CAPTCHA] Hata:", tcErr.message);
+  }
+
   var captchaInfo = await detectCaptchaOnPage(page);
   if (!captchaInfo) return false;
 
