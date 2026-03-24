@@ -1267,6 +1267,7 @@ async function executeAction(page, action) {
       }
 
       function isVisible(el) {
+        if (!el) return false;
         var rect = el.getBoundingClientRect();
         var style = window.getComputedStyle(el);
         return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
@@ -1281,8 +1282,58 @@ async function executeAction(page, action) {
         return /(challenge|captcha|tile|grid|traffic|crosswalk|bus|car|bicycle|hydrant|motorcycle)/.test(combined);
       }
 
+      function looksClickable(el) {
+        if (!el) return false;
+        var tag = (el.tagName || "").toLowerCase();
+        var role = normalize(el.getAttribute("role") || "");
+        var href = el.getAttribute("href");
+        return tag === "a" || tag === "button" || tag === "label" || !!href || role === "button" || el.hasAttribute("onclick") || el.hasAttribute("tabindex");
+      }
+
+      function getClickableTarget(el) {
+        if (!el) return null;
+        if (looksClickable(el) && isVisible(el)) return el;
+
+        var closest = el.closest('a, button, label, [role="button"], [onclick], [tabindex]');
+        if (closest && isVisible(closest)) return closest;
+
+        var child = el.querySelector('a, button, label, [role="button"], [onclick], [tabindex]');
+        if (child && isVisible(child)) return child;
+
+        return isVisible(el) ? el : null;
+      }
+
+      function fireSmartClick(el) {
+        if (!el) return false;
+        var target = getClickableTarget(el);
+        if (!target) return false;
+
+        var rect = target.getBoundingClientRect();
+        var x = rect.left + rect.width / 2;
+        var y = rect.top + rect.height / 2;
+        var events = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
+
+        try { target.scrollIntoView({ block: "center", inline: "center" }); } catch (e) {}
+
+        for (var i = 0; i < events.length; i++) {
+          try {
+            target.dispatchEvent(new MouseEvent(events[i], {
+              view: window,
+              bubbles: true,
+              cancelable: true,
+              clientX: x,
+              clientY: y,
+              button: 0
+            }));
+          } catch (e) {}
+        }
+
+        try { target.click(); } catch (e) {}
+        return true;
+      }
+
       var phrases = (candidates || []).map(normalize).filter(Boolean);
-      var weakWords = { button: true, buton: true, tıkla: true, tikla: true, click: true, link: true, için: true, icin: true, yap: true, bas: true, press: true, kareye: true, kare: true, olduğu: true, kazandıran: true, anketi: true, başlat: true, çözmek: true, tiklayın: true, tıklayın: true };
+      var weakWords = { button: true, buton: true, tıkla: true, tikla: true, click: true, link: true, için: true, icin: true, yap: true, bas: true, press: true, kareye: true, kare: true, olduğu: true, kazandıran: true, anketi: true, başlat: true, çözmek: true, tiklayın: true, tıklayın: true, ilk: true, liste: true, listesindeki: true };
       var words = [];
       for (var p = 0; p < phrases.length; p++) {
         var parts = phrases[p].split(" ");
@@ -1292,7 +1343,6 @@ async function executeAction(page, action) {
         }
       }
 
-      // Survey/anket kartı eşleşme anahtar kelimeleri
       var surveyKeywords = ["survey", "anket", "earn", "sb", "min", "answer"];
       var isSurveyAction = false;
       for (var sk = 0; sk < surveyKeywords.length; sk++) {
@@ -1315,59 +1365,108 @@ async function executeAction(page, action) {
       for (var i = 0; i < elements.length; i++) {
         var el = elements[i];
         var text = normalize(el.textContent || el.value || el.getAttribute("aria-label") || el.getAttribute("title") || "");
+        var href = normalize(el.getAttribute("href") || "");
+        var cls = normalize(el.className || "");
+        var tag = (el.tagName || "").toLowerCase();
         var score = 0;
 
         if (isCaptchaLike(el)) score += 35;
 
-        // Survey/anket kartı bonus: eğer element bir <a> veya <li> ise ve survey kelimesi varsa
         if (isSurveyAction) {
-          var tag = (el.tagName || "").toLowerCase();
-          var href = normalize(el.getAttribute("href") || "");
-          if ((tag === "a" || tag === "li" || tag === "article") && (href.includes("survey") || href.includes("answer") || text.includes("survey") || text.includes("min") || text.includes("earn"))) {
-            score += 25;
-          }
+          if ((text.includes("earn") && text.includes("sb")) || (text.includes("survey #") || /survey\s*#?\d+/i.test(text))) score += 35;
+          if (text.includes("min")) score += 20;
+          if (href.includes("survey") || href.includes("answer") || href.includes("offer")) score += 30;
+          if (cls.includes("survey") || cls.includes("card") || cls.includes("offer")) score += 18;
+          if (tag === "a" || tag === "article" || tag === "li") score += 12;
         }
 
         for (var j = 0; j < phrases.length; j++) {
           var phrase = phrases[j];
           if (!phrase) continue;
           if (text && text === phrase) score = Math.max(score, 100);
-          else if (text && (text.includes(phrase) || phrase.includes(text))) score = Math.max(score, 80);
+          else if (text && text.includes(phrase)) score = Math.max(score, 82);
+          else if (phrase && text && phrase.split(" ").every(function(part) { return !part || text.includes(part); })) score = Math.max(score, 70);
         }
 
         if (words.length > 0) {
           var matched = 0;
-          var blob = [text, normalize(el.className || ""), normalize(el.getAttribute("aria-label") || ""), normalize(el.getAttribute("title") || ""), normalize(el.getAttribute("href") || "")].join(" ");
+          var blob = [text, cls, normalize(el.getAttribute("aria-label") || ""), normalize(el.getAttribute("title") || ""), href].join(" ");
           for (var k = 0; k < words.length; k++) {
             if (blob.includes(words[k])) matched++;
           }
           if (matched > 0) score = Math.max(score, matched * 20);
         }
 
-        // Anket numarası eşleşmesi (#108xxxxx)
         for (var np = 0; np < phrases.length; np++) {
           var numMatch = phrases[np].match(/\d{5,}/);
-          if (numMatch && text.includes(numMatch[0])) {
-            score = Math.max(score, 90);
-          }
+          if (numMatch && text.includes(numMatch[0])) score = Math.max(score, 92);
         }
 
         if (score > bestScore) {
           best = el;
           bestScore = score;
-          bestText = text ? text.slice(0, 80) : normalize(el.className || "");
+          bestText = text ? text.slice(0, 120) : cls;
         }
       }
 
-      // Daha düşük eşik: survey aksiyonlarında 25, diğerlerinde 40
-      var threshold = isSurveyAction ? 25 : 40;
+      var threshold = isSurveyAction ? 24 : 40;
       if (best && bestScore >= threshold) {
-        best.click();
-        return { clicked: true, matchedText: bestText, score: bestScore };
+        return { clicked: fireSmartClick(best), matchedText: bestText, score: bestScore };
       }
 
       return { clicked: false, matchedText: bestText, score: bestScore };
     }, candidates);
+  }
+
+  async function trySurveyCardFallback(targetPage) {
+    return await targetPage.evaluate(function() {
+      function isVisible(el) {
+        if (!el) return false;
+        var rect = el.getBoundingClientRect();
+        var style = window.getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      }
+
+      function clickLikeHuman(el) {
+        if (!el || !isVisible(el)) return false;
+        var rect = el.getBoundingClientRect();
+        var x = rect.left + rect.width / 2;
+        var y = rect.top + rect.height / 2;
+        var events = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
+        try { el.scrollIntoView({ block: "center", inline: "center" }); } catch (e) {}
+        for (var i = 0; i < events.length; i++) {
+          try {
+            el.dispatchEvent(new MouseEvent(events[i], {
+              view: window,
+              bubbles: true,
+              cancelable: true,
+              clientX: x,
+              clientY: y,
+              button: 0
+            }));
+          } catch (e) {}
+        }
+        try { el.click(); } catch (e) {}
+        return true;
+      }
+
+      var cardCandidates = Array.from(document.querySelectorAll('a, article, li, section, div'))
+        .filter(isVisible)
+        .filter(function(el) {
+          var text = String(el.textContent || "").toLowerCase();
+          return (text.includes("earn") && text.includes("sb") && text.includes("min")) || /survey\s*#?\d+/i.test(text);
+        })
+        .sort(function(a, b) { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; });
+
+      if (cardCandidates.length === 0) return false;
+
+      var first = cardCandidates[0];
+      var clickable = first.matches('a, button, [role="button"]')
+        ? first
+        : first.querySelector('a, button, [role="button"], [onclick], [tabindex]') || first.closest('a, button, [role="button"], [onclick], [tabindex]') || first;
+
+      return clickLikeHuman(clickable);
+    });
   }
 
   switch (action.action) {
@@ -1385,42 +1484,14 @@ async function executeAction(page, action) {
         } catch (e) {}
       }
 
-      // Survey/anket fallback: eğer aksiyon survey ile ilgiliyse ilk survey linkine tıkla
       var descLower = ((action.description || "") + " " + (action.selector || "")).toLowerCase();
       var isSurveyClick = /survey|anket|earn|sb|min|answer/.test(descLower);
       if (isSurveyClick) {
         for (var sf = 0; sf < frames.length; sf++) {
           try {
-            var surveyClicked = await frames[sf].evaluate(function() {
-              // Survey linklerini bul — href veya metin bazlı
-              var links = Array.from(document.querySelectorAll('a[href*="survey"], a[href*="answer"], a[href*="earn"]'));
-              if (links.length === 0) {
-                // Fallback: "Survey #" veya "min" içeren görünür linkleri ara
-                var allLinks = Array.from(document.querySelectorAll("a"));
-                links = allLinks.filter(function(a) {
-                  var text = (a.textContent || "").toLowerCase();
-                  var rect = a.getBoundingClientRect();
-                  return rect.width > 0 && rect.height > 0 && (text.includes("survey") || text.includes("min") || text.includes("earn"));
-                });
-              }
-              if (links.length > 0) {
-                links[0].click();
-                return true;
-              }
-              // Son çare: survey kartı gibi görünen div/li'leri ara
-              var cards = Array.from(document.querySelectorAll('[class*="survey"], [class*="card"], [data-survey-id], li'));
-              for (var c = 0; c < cards.length; c++) {
-                var cardText = (cards[c].textContent || "").toLowerCase();
-                var cardRect = cards[c].getBoundingClientRect();
-                if (cardRect.width > 100 && cardRect.height > 30 && (cardText.includes("survey") || cardText.includes("min") || cardText.includes("earn"))) {
-                  cards[c].click();
-                  return true;
-                }
-              }
-              return false;
-            });
+            var surveyClicked = await trySurveyCardFallback(frames[sf]);
             if (surveyClicked) {
-              console.log("[CLICK] 🎯 Survey fallback tıklama başarılı");
+              console.log("[CLICK] 🎯 Survey card fallback başarılı");
               return;
             }
           } catch (e) {}
