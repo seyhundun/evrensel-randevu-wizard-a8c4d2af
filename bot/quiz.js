@@ -358,8 +358,12 @@ async function tryAutoSolveCaptcha(page, settings) {
   await supabaseInsertLog("CAPTCHA tespit edildi: " + captchaInfo.type + " (provider: " + provider + ")", "info");
 
   if (!captchaInfo.sitekey) {
-    await supabaseInsertLog("CAPTCHA sitekey bulunamadı, çözülemiyor", "warning");
-    return false;
+    if (captchaInfo.type === "recaptcha_v2" && captchaInfo.hasImageGrid) {
+      await supabaseInsertLog("reCAPTCHA image-grid açık ama sitekey bulunamadı; challenge iframe yeniden taranıyor", "warning");
+    } else {
+      await supabaseInsertLog("CAPTCHA sitekey bulunamadı, çözülemiyor", "warning");
+      return false;
+    }
   }
 
   // Turnstile is handled by puppeteer-real-browser's built-in turnstile solver
@@ -373,6 +377,10 @@ async function tryAutoSolveCaptcha(page, settings) {
 
   try {
     if (captchaInfo.type === "recaptcha_v2") {
+      if (!captchaInfo.sitekey) {
+        await supabaseInsertLog("reCAPTCHA challenge tespit edildi ama sitekey çözülemedi", "error");
+        return false;
+      }
       if (provider === "capsolver" && capsolverKey) {
         token = await solveRecaptchaWithCapsolver(capsolverKey, captchaInfo.sitekey, pageUrl);
       } else if (provider === "2captcha" && twoCaptchaKey) {
