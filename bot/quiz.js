@@ -647,8 +647,17 @@ async function runGeminiEngine(url, account, settings) {
 
   try {
     await page.setViewport({ width: 1920, height: 1080 });
+
+    // İlk sayfa yüklemeden önce insan benzeri hareket
+    await humanMove(page);
+
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
     await supabaseInsertLog("Sayfa yüklendi: " + url, "info");
+
+    // Sayfa yüklendikten sonra insan benzeri davranış
+    await humanIdle(1500, 3000);
+    await humanMove(page);
+    await humanScroll(page);
 
     var maxSteps = 30;
     var stepCount = 0;
@@ -678,13 +687,16 @@ async function runGeminiEngine(url, account, settings) {
         var captchaSolved = await tryAutoSolveCaptcha(page, settings);
         if (captchaSolved) {
           console.log("[CAPTCHA] Otomatik çözüldü, 3s bekleniyor...");
-          await new Promise(function(r) { setTimeout(r, 3000); });
-          continue; // Skip AI step, re-evaluate page
+          await quizDelay(2000, 4000);
+          continue;
         }
       } catch (captchaErr) {
         console.error("[CAPTCHA] Oto-çözme hatası:", captchaErr.message);
         await supabaseInsertLog("CAPTCHA oto-çözme hatası: " + captchaErr.message, "warning");
       }
+
+      // Her adımda rastgele insan benzeri hareket
+      if (Math.random() > 0.4) await humanMove(page);
 
       var screenshot = await page.screenshot({ encoding: "base64", type: "jpeg", quality: 70 });
       var currentUrl = page.url();
@@ -710,7 +722,10 @@ async function runGeminiEngine(url, account, settings) {
 
       try {
         await executeAction(page, action);
-        await new Promise(function(resolve) { setTimeout(resolve, 2500); });
+        // İnsan benzeri bekleme — sabit değil rastgele
+        await humanIdle(2000, 4000);
+        // Bazen scroll yap
+        if (Math.random() > 0.6) await humanScroll(page);
       } catch (actionErr) {
         console.error("[GEMINI] Aksiyon hatası:", actionErr.message);
         await supabaseInsertLog("Aksiyon hatası: " + actionErr.message, "warning");
