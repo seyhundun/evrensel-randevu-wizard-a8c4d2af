@@ -189,12 +189,12 @@ export default function QuizSidebarContent() {
     setLoadingRegions(false);
   };
 
-  // Proxy açıldığında veya ülke değiştiğinde otomatik çek
+  // Settings yüklendikten sonra ve ülke değiştiğinde otomatik çek
   useEffect(() => {
-    if (quizProxyEnabled) {
+    if (settingsLoaded && quizProxyEnabled) {
       fetchEvomiRegions(proxyCountry && proxyCountry !== "—" ? proxyCountry : "US");
     }
-  }, [quizProxyEnabled, proxyCountry]);
+  }, [settingsLoaded, quizProxyEnabled, proxyCountry]);
 
   const toggleQuizProxy = async () => {
     const newVal = !quizProxyEnabled;
