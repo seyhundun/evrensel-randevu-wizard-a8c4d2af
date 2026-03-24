@@ -1546,29 +1546,72 @@ KURALLAR: Sayfadan ayrılma, her cookie popup'ı kapat.`;
 // ==================== ANA İŞLEM ====================
 
 async function processQuiz(url) {
-  try {
-    var account = await getLoginAccount();
-    if (!account) return;
+  var MAX_RETRIES = 3;
 
-    var settings = await getSettings();
-    var engine = settings.quiz_engine || "gemini";
+  for (var retry = 0; retry < MAX_RETRIES; retry++) {
+    var sessionId = "quiz" + Math.random().toString(36).slice(2, 10);
 
-    console.log("=== Quiz Bot v4.0 — Motor: " + engine.toUpperCase() + " ===");
-    console.log("URL: " + url);
-    console.log("Hesap: " + account.email);
-    await supabaseInsertLog("Quiz başlatılıyor [" + engine + "]: " + url + " | Hesap: " + account.email, "info");
+    try {
+      var account = await getLoginAccount();
+      if (!account) return;
 
-    if (engine === "browser_use") {
-      await runBrowserUseEngine(url, account, settings);
-    } else {
-      // gemini, lovable_ai, openai all use the same Puppeteer engine
-      await runGeminiEngine(url, account, settings);
+      // Hesap cooldown kontrolü
+      if (isQuizAccountInCooldown(account.id)) {
+        var remainMs = (quizAccountCooldowns.get(account.id) || 0) - Date.now();
+        console.log("[ACCOUNT] ⏳ " + account.email + " cooldown'da (" + Math.round(remainMs / 1000) + "s), atlanıyor...");
+        await supabaseInsertLog(account.email + " cooldown'da, atlanıyor", "warning");
+        continue;
+      }
+
+      var settings = await getSettings();
+      var engine = settings.quiz_engine || "gemini";
+
+      console.log("=== Quiz Bot v5.1 — Motor: " + engine.toUpperCase() + " | Deneme: " + (retry + 1) + "/" + MAX_RETRIES + " | Session: " + sessionId + " ===");
+      console.log("URL: " + url);
+      console.log("Hesap: " + account.email);
+      await supabaseInsertLog("Quiz başlatılıyor [" + engine + "]: " + url + " | Hesap: " + account.email + " | Deneme: " + (retry + 1), "info");
+
+      if (engine === "browser_use") {
+        await runBrowserUseEngine(url, account, settings);
+      } else {
+        await runGeminiEngine(url, account, settings);
+      }
+
+      // Başarılı — session ve hesap sıfırla
+      quizMarkSessionSuccess(sessionId);
+      quizConsecutiveErrors = 0;
+      return; // Başarılı, çık
+
+    } catch (err) {
+      console.error("[QUIZ] Hata (deneme " + (retry + 1) + "):", err.message);
+      await supabaseInsertLog("Hata (deneme " + (retry + 1) + "): " + err.message, "error");
+
+      var errMsg = (err.message || "").toLowerCase();
+      var isBlocked = errMsg.includes("blocked") || errMsg.includes("403") || errMsg.includes("access denied") || errMsg.includes("rate limit") || errMsg.includes("unusual traffic");
+      var isCaptchaFail = errMsg.includes("captcha") || errMsg.includes("sitekey");
+
+      if (isBlocked) {
+        quizBanSessionImmediately(sessionId, "sayfa engellendi");
+        if (account) quizMarkAccountFail(account.id);
+        await supabaseInsertLog("🚫 Engel algılandı — IP rotasyonu ve hesap cooldown uygulandı", "warning");
+      } else if (isCaptchaFail) {
+        quizMarkSessionFail(sessionId, "captcha hatası");
+      } else {
+        quizMarkSessionFail(sessionId, err.message.slice(0, 80));
+      }
+
+      // Ardışık hata bazlı bekleme (artan cooldown)
+      if (retry < MAX_RETRIES - 1) {
+        var waitMs = getQuizCooldownWait();
+        console.log("[QUIZ] ⏳ " + Math.round(waitMs / 1000) + "s bekleniyor (ardışık hata: " + quizConsecutiveErrors + ")...");
+        await supabaseInsertLog("Yeni oturum için " + Math.round(waitMs / 1000) + "s bekleniyor", "info");
+        await new Promise(function(r) { setTimeout(r, waitMs); });
+      }
     }
-
-  } catch (err) {
-    console.error("Quiz hatası:", err.message);
-    await supabaseInsertLog("Hata: " + err.message, "error");
   }
+
+  console.log("[QUIZ] ❌ Tüm denemeler başarısız: " + url);
+  await supabaseInsertLog("Tüm denemeler başarısız (" + MAX_RETRIES + "x): " + url, "error");
 }
 
 // ==================== DB POLLING ====================
