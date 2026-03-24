@@ -1054,6 +1054,62 @@ async function runGeminiEngine(url, account, settings) {
         }
       }
 
+      // === HATA/DEAD-END SAYFA TESPİTİ ===
+      try {
+        var errorPageCheck = await page.evaluate(function() {
+          var body = document.body ? document.body.innerText : "";
+          var lower = body.toLowerCase();
+          var url = window.location.href.toLowerCase();
+          // Anket hata sayfaları
+          var errorPatterns = [
+            "oops!", "http failure", "unknown error", "we're sorry if this has caused",
+            "survey is no longer available", "survey has ended", "survey is closed",
+            "survey expired", "this survey is full", "quota full", "screened out",
+            "you have been screened out", "disqualified", "does not qualify",
+            "thank you for your interest", "unfortunately you do not qualify",
+            "we are unable to", "not eligible", "no longer accepting",
+            "survey unavailable", "page not found", "404", "500 internal",
+            "bad gateway", "service unavailable", "access denied",
+            "something went wrong", "an error occurred", "try again later",
+            "this page isn't working", "err_connection", "couldn't reach"
+          ];
+          var urlErrorPatterns = ["/error", "/screened-out", "/disqualified", "/quota-full", "/terminated", "/thankyou", "/sorry"];
+          for (var i = 0; i < errorPatterns.length; i++) {
+            if (lower.includes(errorPatterns[i])) return { isError: true, reason: errorPatterns[i] };
+          }
+          for (var j = 0; j < urlErrorPatterns.length; j++) {
+            if (url.includes(urlErrorPatterns[j])) return { isError: true, reason: "URL: " + urlErrorPatterns[j] };
+          }
+          // Çok kısa içerik (boş sayfa)
+          if (body.trim().length < 30 && body.trim().length > 0) return { isError: true, reason: "Boş/kısa sayfa" };
+          return { isError: false };
+        }).catch(function() { return { isError: false }; });
+
+        if (errorPageCheck.isError) {
+          console.log("[ERROR-PAGE] Hata sayfası algılandı: " + errorPageCheck.reason);
+          await supabaseInsertLog("🚫 Hata/dead-end sayfası algılandı (" + errorPageCheck.reason + ") — sekme kapatılıp yeni ankete geçiliyor", "warning");
+          
+          // Mevcut sekmeyi kapat ve ana sayfaya dön
+          var allPages = await browser.pages();
+          if (allPages.length > 1) {
+            await page.close().catch(function() {});
+            page = allPages[allPages.length - 2] || allPages[0];
+            await page.bringToFront();
+          }
+          // Ana anket sayfasına git
+          try {
+            await page.goto("https://www.swagbucks.com/surveys", { waitUntil: "networkidle2", timeout: 20000 });
+            await humanIdle(1500, 3000);
+          } catch (e) {}
+          recentActions = [];
+          sameActionStreak = 0;
+          consecutiveFailures = 0;
+          continue;
+        }
+      } catch (epErr) {
+        // Ignore
+      }
+
       // Her adımda rastgele insan benzeri hareket
       if (Math.random() > 0.4) await humanMove(page);
 
