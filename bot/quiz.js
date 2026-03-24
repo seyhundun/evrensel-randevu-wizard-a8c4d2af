@@ -335,7 +335,7 @@ async function executeAction(page, action) {
       break;
 
     case "wait":
-      await page.waitForTimeout(2000);
+      await new Promise(function(resolve) { setTimeout(resolve, 2000); });
       break;
   }
 }
