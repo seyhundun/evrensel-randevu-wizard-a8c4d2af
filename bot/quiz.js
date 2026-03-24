@@ -938,9 +938,48 @@ async function runGeminiEngine(url, account, settings) {
       }
 
       try {
+        // Yeni sekme algılama: tıklamadan önceki sekme sayısını kaydet
+        var pagesBefore = browser.targets().filter(function(t) { return t.type() === "page"; });
+        var pagesBeforeCount = pagesBefore.length;
+
         await executeAction(page, action);
-        // İnsan benzeri bekleme — sabit değil rastgele
-        await humanIdle(2000, 4000);
+
+        // Tıklamadan sonra yeni sekme açılmış mı kontrol et
+        await quizDelay(1500, 3000);
+        var pagesAfter = browser.targets().filter(function(t) { return t.type() === "page"; });
+
+        if (pagesAfter.length > pagesBeforeCount) {
+          console.log("[TAB] 🆕 Yeni sekme algılandı (" + pagesBeforeCount + " → " + pagesAfter.length + ")");
+          await supabaseInsertLog("Yeni sekme açıldı, geçiş yapılıyor", "info");
+
+          // En son açılan sekmeyi bul
+          var allPages = await browser.pages();
+          var newPage = allPages[allPages.length - 1];
+
+          if (newPage && newPage !== page) {
+            // Yeni sekmeye geç
+            await newPage.bringToFront();
+            try { await newPage.setViewport({ width: 1920, height: 1080 }); } catch (e) {}
+
+            // Yeni sekmenin yüklenmesini bekle
+            try {
+              await newPage.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(function() {});
+            } catch (e) {}
+
+            // Eski page referansını güncelle
+            page = newPage;
+            console.log("[TAB] ✅ Yeni sekmeye geçildi: " + page.url());
+            await supabaseInsertLog("Yeni sekmeye geçildi: " + page.url().slice(0, 80), "success");
+
+            // Yeni sayfada insan benzeri davranış
+            await humanIdle(1500, 3000);
+            await humanMove(page);
+          }
+        } else {
+          // İnsan benzeri bekleme — sabit değil rastgele
+          await humanIdle(1000, 2500);
+        }
+
         // Bazen scroll yap
         if (Math.random() > 0.6) await humanScroll(page);
       } catch (actionErr) {
