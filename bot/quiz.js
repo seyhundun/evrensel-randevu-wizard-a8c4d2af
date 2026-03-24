@@ -1031,9 +1031,37 @@ async function runGeminiEngine(url, account, settings) {
       await supabaseInsertLog("Adım " + stepCount + ": " + action.description, "info");
 
       if (action.done) {
-        console.log("[GEMINI] Görev tamamlandı: " + action.description);
-        await supabaseInsertLog("Görev tamamlandı: " + action.description, "success");
-        break;
+        surveysCompleted++;
+        console.log("[QUIZ] ✅ Anket #" + surveysCompleted + " tamamlandı: " + action.description);
+        await supabaseInsertLog("✅ Anket #" + surveysCompleted + " tamamlandı! Bir sonrakine geçiliyor...", "success");
+        recentActions = [];
+        // Ana sayfaya dön ve bir sonraki anketi bul
+        try {
+          await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+          await supabaseInsertLog("Ana sayfaya dönüldü, yeni anket aranıyor", "info");
+          await humanIdle(2000, 4000);
+          await humanMove(page);
+        } catch (navErr) {
+          console.error("[NAV] Ana sayfaya dönüş hatası:", navErr.message);
+        }
+        continue;
+      }
+
+      // next_survey aksiyonu: anket bitti, bir sonrakine geç
+      if (action.action === "next_survey") {
+        surveysCompleted++;
+        console.log("[QUIZ] ✅ Anket #" + surveysCompleted + " tamamlandı, sonrakine geçiliyor");
+        await supabaseInsertLog("✅ Anket #" + surveysCompleted + " tamamlandı! Sonrakine geçiliyor...", "success");
+        recentActions = [];
+        try {
+          await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+          await supabaseInsertLog("Ana sayfaya dönüldü, yeni anket aranıyor", "info");
+          await humanIdle(2000, 4000);
+          await humanMove(page);
+        } catch (navErr) {
+          console.error("[NAV] Ana sayfaya dönüş hatası:", navErr.message);
+        }
+        continue;
       }
 
       try {
