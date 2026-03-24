@@ -109,6 +109,12 @@ export default function QuizBotPanel() {
     toast.success("Quiz başlatıldı: " + link.url.slice(0, 40));
   }
 
+  async function stopQuiz(link: QuizLink) {
+    setQuizLinks(prev => prev.map(l => l.id === link.id ? { ...l, status: "idle" } : l));
+    await supabase.from("link_analyses").update({ status: "idle" }).eq("id", link.id);
+    toast.success("Quiz durduruldu");
+  }
+
   async function startAllActive() {
     const activeLinks = quizLinks.filter(l => l.status === "active");
     if (activeLinks.length === 0) { toast.error("Aktif link yok"); return; }
