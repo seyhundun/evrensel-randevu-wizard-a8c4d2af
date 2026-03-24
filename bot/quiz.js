@@ -69,6 +69,9 @@ async function getLoginAccount() {
 
 async function runGeminiEngine(url, account, settings) {
   var puppeteer;
+  var browser = null;
+  var page = null;
+
   try { puppeteer = require("puppeteer"); } catch (e) {
     try { puppeteer = require("puppeteer-core"); } catch (e2) {
       throw new Error("Puppeteer yüklü değil! npm install puppeteer");
@@ -91,16 +94,15 @@ async function runGeminiEngine(url, account, settings) {
     proxyUser = settings.proxy_username || process.env.PROXY_USERNAME || "";
     proxyPass = settings.proxy_password || process.env.PROXY_PASSWORD || "";
 
-    // Evomi proxy: ülke/şehir/session bilgilerini password'a ekle
     if (proxyPass) {
       var country = (settings.quiz_proxy_country || settings.proxy_country || "US").toLowerCase();
       var region = settings.quiz_proxy_region || "";
       var sessionId = "quiz" + Math.random().toString(36).slice(2, 10);
-      
+
       var suffix = "_country-" + country;
       if (region) suffix += "_city-" + region;
       suffix += "_session-" + sessionId;
-      
+
       proxyPass = proxyPass.split("_country-")[0].split("_session-")[0].split("_city-")[0];
       proxyPass = proxyPass + suffix;
     }
@@ -109,7 +111,7 @@ async function runGeminiEngine(url, account, settings) {
     await supabaseInsertLog("Proxy aktif: " + proxyHost + " | Ülke: " + (settings.quiz_proxy_country || "US"), "info");
   }
 
-  var browser = await puppeteer.launch({
+  browser = await puppeteer.launch({
     headless: false,
     defaultViewport: { width: 1920, height: 1080 },
     args: [
@@ -121,9 +123,9 @@ async function runGeminiEngine(url, account, settings) {
     executablePath: process.env.CHROME_PATH || "/usr/bin/google-chrome-stable",
   });
 
-  var page = await browser.newPage();
+  page = await browser.newPage();
+  if (!page) throw new Error("Tarayıcı sekmesi oluşturulamadı");
 
-  // Proxy auth — page.goto'dan ÖNCE çağrılmalı
   if (useProxy && proxyUser && proxyPass) {
     await page.authenticate({ username: proxyUser, password: proxyPass });
     console.log("[GEMINI] Proxy auth ayarlandı: " + proxyUser);
