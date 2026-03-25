@@ -377,28 +377,66 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
       }
     }
 
-    // Sürüklenebilir elemanları bul
+    // Sürüklenebilir elemanları bul - genişletilmiş strateji
     var draggables = [];
-    var allEls = document.querySelectorAll("[draggable='true'], .draggable, [data-drag], img");
-    for (var j = 0; j < allEls.length; j++) {
-      var el = allEls[j];
+    
+    // Strateji 1: draggable attribute, class veya data-drag
+    var dragSelectors = "[draggable='true'], .draggable, [data-drag], [data-draggable], [class*='drag'], [class*='option'], [class*='choice']";
+    var allEls = document.querySelectorAll(dragSelectors);
+    var seenRects = [];
+    
+    function addDraggable(el) {
       var rect = el.getBoundingClientRect();
-      if (rect.width < 30 || rect.height < 20 || rect.width > 400 || rect.height > 300) continue;
+      if (rect.width < 30 || rect.height < 20 || rect.width > 400 || rect.height > 300) return;
       var style = window.getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden") continue;
-      // Navigasyon/logo görselleri hariç tut
-      var src = (el.src || "").toLowerCase();
-      if (/logo|icon|favicon|nav|header|footer|brand/i.test(src)) continue;
+      if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity) < 0.1) return;
+      // Logo/nav hariç tut
+      var src = (el.src || el.querySelector("img")?.src || "").toLowerCase();
+      if (/logo|icon|favicon|nav|header|footer|brand|progress/i.test(src)) return;
+      // Duplikat koordinat kontrolü
+      var key = Math.round(rect.x) + "," + Math.round(rect.y);
+      if (seenRects.indexOf(key) > -1) return;
+      seenRects.push(key);
       var alt = el.alt || el.getAttribute("aria-label") || (el.textContent || "").trim();
       draggables.push({
-        index: j,
+        index: draggables.length,
         x: Math.round(rect.x + rect.width / 2),
         y: Math.round(rect.y + rect.height / 2),
         w: Math.round(rect.width),
         h: Math.round(rect.height),
         text: alt.slice(0, 50),
-        src: (el.src || "").slice(0, 100)
+        src: (el.src || el.querySelector("img")?.src || "").slice(0, 100),
+        selector: el.id ? "#" + el.id : ""
       });
+    }
+    
+    for (var j = 0; j < allEls.length; j++) addDraggable(allEls[j]);
+    
+    // Strateji 2: Kenarlıklı (bordered) kutular içinde img olan elemanlar (sayı resimleri)
+    if (draggables.length < 2) {
+      var borderedBoxes = document.querySelectorAll("div, span, td, li, a");
+      for (var bb = 0; bb < borderedBoxes.length; bb++) {
+        var bel = borderedBoxes[bb];
+        var bcs2 = window.getComputedStyle(bel);
+        var hasSolidBorder = bcs2.borderStyle === "solid" && parseInt(bcs2.borderWidth) >= 1;
+        if (!hasSolidBorder) continue;
+        var bRect2 = bel.getBoundingClientRect();
+        if (bRect2.width < 40 || bRect2.height < 40 || bRect2.width > 300 || bRect2.height > 300) continue;
+        // Drop zone (dashed) hariç tut
+        if (bcs2.borderStyle === "dashed" || bcs2.borderTopStyle === "dashed") continue;
+        // İçinde img varsa veya metin kısa ise (sayı kartı)
+        var hasImg = bel.querySelector("img");
+        var innerTxt = (bel.textContent || "").trim();
+        if (hasImg || (innerTxt.length > 0 && innerTxt.length <= 10)) {
+          addDraggable(bel);
+        }
+      }
+    }
+    
+    // Strateji 3: Görüntüdeki img'ler (fallback)
+    if (draggables.length < 2) {
+      var imgs = document.querySelectorAll("img");
+      for (var im = 0; im < imgs.length; im++) addDraggable(imgs[im]);
     }
 
     // Drop zone bul - çoklu strateji
