@@ -439,91 +439,123 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
       for (var im = 0; im < imgs.length; im++) addDraggable(imgs[im]);
     }
 
-    // Drop zone bul - çoklu strateji
+    // Drop zone bul - çoklu strateji, boş dış kutuyu önceliklendir
     var dropZone = null;
+    var dropCandidatesFound = [];
+
+    function isLikelyGray(bg) {
+      var grayMatch = bg && bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      if (!grayMatch) return false;
+      var rr = parseInt(grayMatch[1]), gg2 = parseInt(grayMatch[2]), bb = parseInt(grayMatch[3]);
+      return rr > 190 && rr < 250 && gg2 > 190 && gg2 < 250 && bb > 190 && bb < 250 && Math.abs(rr - gg2) < 15 && Math.abs(gg2 - bb) < 15;
+    }
+
+    function pushDropCandidate(el, baseScore, reason) {
+      if (!el) return;
+      var rect = el.getBoundingClientRect();
+      if (rect.width < 60 || rect.height < 60 || rect.width > 500 || rect.height > 500) return;
+      var cs = window.getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) < 0.1) return;
+      if (el.getAttribute("draggable") === "true" || el.closest("[draggable='true']")) return;
+
+      var className = ((el.className && String(el.className)) || "").toLowerCase();
+      var text = (el.textContent || "").trim();
+      var hasDashed = cs.borderStyle === "dashed" || cs.outlineStyle === "dashed" ||
+        cs.borderTopStyle === "dashed" || cs.borderBottomStyle === "dashed" ||
+        cs.borderLeftStyle === "dashed" || cs.borderRightStyle === "dashed" ||
+        cs.borderStyle === "dotted" || cs.outlineStyle === "dotted";
+      var hasDropClass = /drop|target|placeholder|answer-box|droparea|drop-area/.test(className);
+      var hasImg = !!el.querySelector("img");
+      var childCount = el.children ? el.children.length : 0;
+      var area = rect.width * rect.height;
+      var score = baseScore;
+
+      if (hasDashed) score += 140;
+      if (hasDropClass) score += 100;
+      if (isLikelyGray(cs.backgroundColor)) score += 35;
+      if (area > 12000) score += 20;
+      if (area > 20000) score += 15;
+      if (childCount >= 1) score += 10;
+      if (hasImg) score += 8;
+      if (text.length === 0) score += 20;
+      if (text.length > 0 && text.length <= 6) score += 8;
+      if (el.querySelector("[draggable='true']")) score -= 60;
+      if (/next|continue|submit|back/i.test(text)) score -= 100;
+
+      var paddingX = Math.max(10, Math.min(22, rect.width * 0.18));
+      var paddingY = Math.max(10, Math.min(22, rect.height * 0.18));
+
+      dropCandidatesFound.push({
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+        safeX: Math.round(rect.left + paddingX + (rect.width - paddingX * 2) / 2),
+        safeY: Math.round(rect.top + paddingY + (rect.height - paddingY * 2) / 2),
+        left: Math.round(rect.left),
+        top: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        score: score,
+        reason: reason || "unknown"
+      });
+    }
     
     // 1. Sınıf adına göre drop zone ara
     var dropCandidates = document.querySelectorAll("[class*='drop'], [class*='target'], [class*='placeholder'], [data-drop], [data-droppable], [class*='answer-box'], [class*='droparea'], [class*='drop-area']");
-    for (var k = 0; k < dropCandidates.length; k++) {
-      var dr = dropCandidates[k].getBoundingClientRect();
-      if (dr.width > 30 && dr.height > 30 && dr.width < 500 && dr.height < 500) {
-        dropZone = { x: Math.round(dr.x + dr.width / 2), y: Math.round(dr.y + dr.height / 2) };
-        break;
-      }
-    }
+    for (var k = 0; k < dropCandidates.length; k++) pushDropCandidate(dropCandidates[k], 80, "class");
     
     // 2. Dashed border olan elemanları ara
-    if (!dropZone) {
-      var allVisible = document.querySelectorAll("div, section, span, td, li, article");
-      for (var m = 0; m < allVisible.length; m++) {
-        var cs = window.getComputedStyle(allVisible[m]);
-        var hasDashed = cs.borderStyle === "dashed" || cs.outlineStyle === "dashed" ||
-          cs.borderTopStyle === "dashed" || cs.borderBottomStyle === "dashed" ||
-          cs.borderLeftStyle === "dashed" || cs.borderRightStyle === "dashed";
-        if (hasDashed) {
-          var dRect = allVisible[m].getBoundingClientRect();
-          if (dRect.width > 40 && dRect.height > 40 && dRect.width < 500) {
-            dropZone = { x: Math.round(dRect.x + dRect.width / 2), y: Math.round(dRect.y + dRect.height / 2) };
-            break;
-          }
-        }
+    var allVisible = document.querySelectorAll("div, section, span, td, li, article");
+    for (var m = 0; m < allVisible.length; m++) {
+      var cs = window.getComputedStyle(allVisible[m]);
+      var hasDashed = cs.borderStyle === "dashed" || cs.outlineStyle === "dashed" ||
+        cs.borderTopStyle === "dashed" || cs.borderBottomStyle === "dashed" ||
+        cs.borderLeftStyle === "dashed" || cs.borderRightStyle === "dashed" ||
+        cs.borderStyle === "dotted" || cs.outlineStyle === "dotted";
+      if (hasDashed) pushDropCandidate(allVisible[m], 120, "dashed");
+    }
+    
+    // 3. Placeholder/boş kutu benzeri alanları ara
+    var boxes = document.querySelectorAll("div, td, li, section");
+    for (var b = 0; b < boxes.length; b++) {
+      var box = boxes[b];
+      var bRect = box.getBoundingClientRect();
+      if (bRect.width < 60 || bRect.height < 60 || bRect.width > 400) continue;
+      var bcs = window.getComputedStyle(box);
+      var hasBorder = bcs.borderWidth && parseInt(bcs.borderWidth) > 0;
+      var isGrayBg = bcs.backgroundColor && (bcs.backgroundColor.indexOf("rgb(2") > -1 || bcs.backgroundColor.indexOf("rgb(22") > -1 || bcs.backgroundColor.indexOf("rgb(23") > -1 || bcs.backgroundColor.indexOf("rgb(24") > -1 || bcs.backgroundColor.indexOf("#e") > -1 || bcs.backgroundColor.indexOf("#d") > -1 || bcs.backgroundColor.indexOf("#c") > -1 || isLikelyGray(bcs.backgroundColor));
+      var innerImgs = box.querySelectorAll("img");
+      var innerText = (box.textContent || "").trim();
+      if ((hasBorder || isGrayBg) && (innerImgs.length >= 1 || innerText.length <= 6)) {
+        pushDropCandidate(box, 55, "placeholder");
       }
     }
     
-    // 3. İçinde sadece resim placeholder (broken img icon) olan boş kutuları ara
-    if (!dropZone) {
-      var boxes = document.querySelectorAll("div, td, li, section");
-      for (var b = 0; b < boxes.length; b++) {
-        var box = boxes[b];
-        var bRect = box.getBoundingClientRect();
-        if (bRect.width < 50 || bRect.height < 50 || bRect.width > 400) continue;
-        var bcs = window.getComputedStyle(box);
-        var hasBorder = bcs.borderWidth && parseInt(bcs.borderWidth) > 0;
-        var bgColor = bcs.backgroundColor;
-        var isGrayBg = bgColor && (bgColor.indexOf("rgb(2") > -1 || bgColor.indexOf("rgb(22") > -1 || bgColor.indexOf("rgb(23") > -1 || bgColor.indexOf("rgb(24") > -1 || bgColor.indexOf("#e") > -1 || bgColor.indexOf("#d") > -1 || bgColor.indexOf("#c") > -1);
-        // İçinde sadece bir img (broken/placeholder) varsa ve metin yoksa
-        var innerImgs = box.querySelectorAll("img");
-        var innerText = (box.textContent || "").trim();
-        if ((hasBorder || isGrayBg) && innerImgs.length >= 1 && innerText.length < 5) {
-          // Bu draggable değilse drop zone olabilir
-          var isDraggable = box.getAttribute("draggable") === "true" || box.closest("[draggable='true']");
-          if (!isDraggable) {
-            dropZone = { x: Math.round(bRect.x + bRect.width / 2), y: Math.round(bRect.y + bRect.height / 2) };
-            break;
-          }
-        }
+    // 4. Gri arka planlı büyükçe kutuları ara (son çare)
+    var allDivs = document.querySelectorAll("div");
+    for (var g = 0; g < allDivs.length; g++) {
+      var gRect = allDivs[g].getBoundingClientRect();
+      if (gRect.width < 80 || gRect.height < 80 || gRect.width > 400) continue;
+      var gcs = window.getComputedStyle(allDivs[g]);
+      if (isLikelyGray(gcs.backgroundColor)) {
+        var gText = (allDivs[g].textContent || "").trim();
+        if (gText.length < 10) pushDropCandidate(allDivs[g], 30, "gray-box");
       }
     }
-    
-    // 4. Gri arka planlı ve boş olan büyükçe kutuları ara (son çare)
-    if (!dropZone) {
-      var allDivs = document.querySelectorAll("div");
-      for (var g = 0; g < allDivs.length; g++) {
-        var gRect = allDivs[g].getBoundingClientRect();
-        if (gRect.width < 80 || gRect.height < 80 || gRect.width > 400) continue;
-        var gcs = window.getComputedStyle(allDivs[g]);
-        var gbg = gcs.backgroundColor;
-        // Gri tonları: rgb(200-245, 200-245, 200-245)
-        var grayMatch = gbg && gbg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-        if (grayMatch) {
-          var rr = parseInt(grayMatch[1]), gg2 = parseInt(grayMatch[2]), bb = parseInt(grayMatch[3]);
-          if (rr > 190 && rr < 250 && gg2 > 190 && gg2 < 250 && bb > 190 && bb < 250 && Math.abs(rr - gg2) < 15 && Math.abs(gg2 - bb) < 15) {
-            var gText = (allDivs[g].textContent || "").trim();
-            if (gText.length < 10) {
-              dropZone = { x: Math.round(gRect.x + gRect.width / 2), y: Math.round(gRect.y + gRect.height / 2) };
-              break;
-            }
-          }
-        }
-      }
+
+    if (dropCandidatesFound.length > 0) {
+      dropCandidatesFound.sort(function(a, b) {
+        if (b.score !== a.score) return b.score - a.score;
+        return (b.width * b.height) - (a.width * a.height);
+      });
+      dropZone = dropCandidatesFound[0];
     }
 
     if (draggables.length === 0 || !dropZone) return null;
 
     return {
-      instruction: instruction,
-      draggables: draggables,
-      dropZone: dropZone
+        instruction: instruction,
+        draggables: draggables,
+        dropZone: dropZone
     };
   }).catch(function() { return null; });
 
@@ -638,15 +670,77 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
   try {
     var sx = sourceCoords.x;
     var sy = sourceCoords.y;
-    var tx = dragInfo.dropZone.x;
-    var ty = dragInfo.dropZone.y;
+    var tx = dragInfo.dropZone.safeX || dragInfo.dropZone.x;
+    var ty = dragInfo.dropZone.safeY || dragInfo.dropZone.y;
 
-    console.log("[DRAG-CAPTCHA] Sürükleniyor: (" + sx + "," + sy + ") → (" + tx + "," + ty + ")");
+    console.log("[DRAG-CAPTCHA] Sürükleniyor: (" + sx + "," + sy + ") → (" + tx + "," + ty + ") | zone=" + (dragInfo.dropZone.reason || "unknown") + " score=" + (dragInfo.dropZone.score || 0));
 
     // Yöntem 1: DOM DragEvent simülasyonu
     var domDragSuccess = await page.evaluate(function(sx, sy, tx, ty) {
-      var sourceEl = document.elementFromPoint(sx, sy);
-      var targetEl = document.elementFromPoint(tx, ty);
+      function getStyle(el) {
+        try { return window.getComputedStyle(el); } catch (e) { return null; }
+      }
+
+      function isDraggableLike(el) {
+        if (!el) return false;
+        var style = getStyle(el);
+        if (!style) return false;
+        var txt = (el.textContent || "").trim();
+        var rect = el.getBoundingClientRect();
+        if (rect.width < 20 || rect.height < 20) return false;
+        if (el.getAttribute("draggable") === "true") return true;
+        if (/drag|option|choice/.test(((el.className && String(el.className)) || "").toLowerCase())) return true;
+        if (style.borderStyle === "solid" && rect.width <= 300 && rect.height <= 300 && (!!el.querySelector("img") || (txt.length > 0 && txt.length <= 10))) return true;
+        return false;
+      }
+
+      function isDropLike(el) {
+        if (!el) return false;
+        var style = getStyle(el);
+        if (!style) return false;
+        var rect = el.getBoundingClientRect();
+        if (rect.width < 50 || rect.height < 50 || rect.width > 500 || rect.height > 500) return false;
+        var cls = ((el.className && String(el.className)) || "").toLowerCase();
+        var txt = (el.textContent || "").trim();
+        var hasDashed = style.borderStyle === "dashed" || style.outlineStyle === "dashed" ||
+          style.borderTopStyle === "dashed" || style.borderBottomStyle === "dashed" ||
+          style.borderLeftStyle === "dashed" || style.borderRightStyle === "dashed" ||
+          style.borderStyle === "dotted" || style.outlineStyle === "dotted";
+        if (hasDashed) return true;
+        if (/drop|target|placeholder|answer-box|droparea|drop-area/.test(cls)) return true;
+        if (el.getAttribute("draggable") === "true" || el.closest("[draggable='true']")) return false;
+        if (txt.length <= 8 && (!!el.querySelector("img") || style.backgroundColor !== "rgba(0, 0, 0, 0)")) return true;
+        return false;
+      }
+
+      function resolveSource(x, y) {
+        var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)];
+        for (var i = 0; i < stack.length; i++) {
+          var el = stack[i];
+          var node = el;
+          while (node) {
+            if (isDraggableLike(node)) return node;
+            node = node.parentElement;
+          }
+        }
+        return stack[0] || null;
+      }
+
+      function resolveTarget(x, y) {
+        var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)];
+        for (var i = 0; i < stack.length; i++) {
+          var el = stack[i];
+          var node = el;
+          while (node) {
+            if (isDropLike(node)) return node;
+            node = node.parentElement;
+          }
+        }
+        return stack[0] || null;
+      }
+
+      var sourceEl = resolveSource(sx, sy);
+      var targetEl = resolveTarget(tx, ty);
       if (!sourceEl || !targetEl) return false;
 
       // DataTransfer mock
@@ -666,11 +760,13 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
       var dt = new MockDataTransfer();
 
       function fire(el, type, x, y) {
-        var evt = new DragEvent(type, {
-          bubbles: true, cancelable: true, dataTransfer: dt,
-          clientX: x, clientY: y, screenX: x, screenY: y
-        });
-        el.dispatchEvent(evt);
+        try {
+          var evt = new DragEvent(type, {
+            bubbles: true, cancelable: true, dataTransfer: dt,
+            clientX: x, clientY: y, screenX: x, screenY: y
+          });
+          el.dispatchEvent(evt);
+        } catch (e) {}
       }
 
       // Tam drag sekansı
@@ -694,13 +790,32 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
     await new Promise(function(r) { setTimeout(r, 500); });
 
     var dropVerified = await page.evaluate(function(tx, ty) {
-      var dropEl = document.elementFromPoint(tx, ty);
+      function getStyle(el) {
+        try { return window.getComputedStyle(el); } catch (e) { return null; }
+      }
+      function isDropLike(el) {
+        if (!el) return false;
+        var style = getStyle(el);
+        if (!style) return false;
+        var rect = el.getBoundingClientRect();
+        if (rect.width < 50 || rect.height < 50) return false;
+        var cls = ((el.className && String(el.className)) || "").toLowerCase();
+        return style.borderStyle === "dashed" || style.outlineStyle === "dashed" || /drop|target|placeholder|answer-box|droparea|drop-area/.test(cls);
+      }
+      var stack = document.elementsFromPoint ? document.elementsFromPoint(tx, ty) : [document.elementFromPoint(tx, ty)];
+      var dropEl = null;
+      for (var i = 0; i < stack.length && !dropEl; i++) {
+        var node = stack[i];
+        while (node) {
+          if (isDropLike(node)) { dropEl = node; break; }
+          node = node.parentElement;
+        }
+      }
       if (!dropEl) return false;
-      // Drop zone artık dolu mu (içinde yeni bir child img veya değişmiş stil)?
-      var cs = window.getComputedStyle(dropEl);
       var imgs = dropEl.querySelectorAll("img");
-      // Eğer drop zone'daki img sayısı artmışsa veya arka plan değiştiyse başarılı
-      return imgs.length > 1 || cs.backgroundColor !== "rgba(0, 0, 0, 0)";
+      var text = (dropEl.textContent || "").trim();
+      var cs = getStyle(dropEl);
+      return imgs.length >= 1 || text.length > 0 || (cs && cs.backgroundColor !== "rgba(0, 0, 0, 0)");
     }, tx, ty).catch(function() { return false; });
 
     if (!dropVerified) {
@@ -730,8 +845,26 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
       
       // Fiziksel fare sonrası da DOM DragEvent tetikle (bazı siteler ikisini birden bekler)
       await page.evaluate(function(sx, sy, tx, ty) {
+        function getStyle(el) {
+          try { return window.getComputedStyle(el); } catch (e) { return null; }
+        }
+        function resolveDrop(x, y) {
+          var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)];
+          for (var i = 0; i < stack.length; i++) {
+            var node = stack[i];
+            while (node) {
+              var cs = getStyle(node);
+              var cls = ((node.className && String(node.className)) || "").toLowerCase();
+              if (cs && (cs.borderStyle === "dashed" || cs.outlineStyle === "dashed" || /drop|target|placeholder|answer-box|droparea|drop-area/.test(cls))) {
+                return node;
+              }
+              node = node.parentElement;
+            }
+          }
+          return stack[0] || null;
+        }
         var sourceEl = document.elementFromPoint(sx, sy) || document.elementFromPoint(sx - 5, sy - 5);
-        var targetEl = document.elementFromPoint(tx, ty);
+        var targetEl = resolveDrop(tx, ty);
         if (sourceEl && targetEl) {
           function fire2(el, type, x, y) {
             try {
