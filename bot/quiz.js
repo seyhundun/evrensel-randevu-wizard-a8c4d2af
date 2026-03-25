@@ -2544,7 +2544,7 @@ async function askDOMAgent(page, currentUrl, account, step, recentActions, apiKe
       var allEls = Array.from(els).concat(extraEls);
       var idx = 0;
       for (var i = 0; i < allEls.length && idx < 300; i++) {
-        var el = els[i];
+        var el = allEls[i];
         var rect = el.getBoundingClientRect();
         if (rect.width < 5 || rect.height < 5) continue;
         if (rect.top > window.innerHeight + 300 || rect.bottom < -200) continue;
