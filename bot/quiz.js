@@ -377,28 +377,66 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
       }
     }
 
-    // Sürüklenebilir elemanları bul
+    // Sürüklenebilir elemanları bul - genişletilmiş strateji
     var draggables = [];
-    var allEls = document.querySelectorAll("[draggable='true'], .draggable, [data-drag], img");
-    for (var j = 0; j < allEls.length; j++) {
-      var el = allEls[j];
+    
+    // Strateji 1: draggable attribute, class veya data-drag
+    var dragSelectors = "[draggable='true'], .draggable, [data-drag], [data-draggable], [class*='drag'], [class*='option'], [class*='choice']";
+    var allEls = document.querySelectorAll(dragSelectors);
+    var seenRects = [];
+    
+    function addDraggable(el) {
       var rect = el.getBoundingClientRect();
-      if (rect.width < 30 || rect.height < 20 || rect.width > 400 || rect.height > 300) continue;
+      if (rect.width < 30 || rect.height < 20 || rect.width > 400 || rect.height > 300) return;
       var style = window.getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden") continue;
-      // Navigasyon/logo görselleri hariç tut
-      var src = (el.src || "").toLowerCase();
-      if (/logo|icon|favicon|nav|header|footer|brand/i.test(src)) continue;
+      if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity) < 0.1) return;
+      // Logo/nav hariç tut
+      var src = (el.src || el.querySelector("img")?.src || "").toLowerCase();
+      if (/logo|icon|favicon|nav|header|footer|brand|progress/i.test(src)) return;
+      // Duplikat koordinat kontrolü
+      var key = Math.round(rect.x) + "," + Math.round(rect.y);
+      if (seenRects.indexOf(key) > -1) return;
+      seenRects.push(key);
       var alt = el.alt || el.getAttribute("aria-label") || (el.textContent || "").trim();
       draggables.push({
-        index: j,
+        index: draggables.length,
         x: Math.round(rect.x + rect.width / 2),
         y: Math.round(rect.y + rect.height / 2),
         w: Math.round(rect.width),
         h: Math.round(rect.height),
         text: alt.slice(0, 50),
-        src: (el.src || "").slice(0, 100)
+        src: (el.src || el.querySelector("img")?.src || "").slice(0, 100),
+        selector: el.id ? "#" + el.id : ""
       });
+    }
+    
+    for (var j = 0; j < allEls.length; j++) addDraggable(allEls[j]);
+    
+    // Strateji 2: Kenarlıklı (bordered) kutular içinde img olan elemanlar (sayı resimleri)
+    if (draggables.length < 2) {
+      var borderedBoxes = document.querySelectorAll("div, span, td, li, a");
+      for (var bb = 0; bb < borderedBoxes.length; bb++) {
+        var bel = borderedBoxes[bb];
+        var bcs2 = window.getComputedStyle(bel);
+        var hasSolidBorder = bcs2.borderStyle === "solid" && parseInt(bcs2.borderWidth) >= 1;
+        if (!hasSolidBorder) continue;
+        var bRect2 = bel.getBoundingClientRect();
+        if (bRect2.width < 40 || bRect2.height < 40 || bRect2.width > 300 || bRect2.height > 300) continue;
+        // Drop zone (dashed) hariç tut
+        if (bcs2.borderStyle === "dashed" || bcs2.borderTopStyle === "dashed") continue;
+        // İçinde img varsa veya metin kısa ise (sayı kartı)
+        var hasImg = bel.querySelector("img");
+        var innerTxt = (bel.textContent || "").trim();
+        if (hasImg || (innerTxt.length > 0 && innerTxt.length <= 10)) {
+          addDraggable(bel);
+        }
+      }
+    }
+    
+    // Strateji 3: Görüntüdeki img'ler (fallback)
+    if (draggables.length < 2) {
+      var imgs = document.querySelectorAll("img");
+      for (var im = 0; im < imgs.length; im++) addDraggable(imgs[im]);
     }
 
     // Drop zone bul - çoklu strateji
@@ -596,7 +634,7 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
     return false;
   }
 
-  // Sürükle-bırak yap (fiziksel fare ile)
+  // Sürükle-bırak yap - önce DOM DragEvent, sonra fiziksel fare
   try {
     var sx = sourceCoords.x;
     var sy = sourceCoords.y;
@@ -605,25 +643,108 @@ async function tryAutoSolveDragDropCaptcha(page, settings) {
 
     console.log("[DRAG-CAPTCHA] Sürükleniyor: (" + sx + "," + sy + ") → (" + tx + "," + ty + ")");
 
-    // İnsan benzeri fare hareketi
-    await page.mouse.move(sx, sy, { steps: 5 + Math.floor(Math.random() * 5) });
-    await new Promise(function(r) { setTimeout(r, 200 + Math.floor(Math.random() * 300)); });
-    await page.mouse.down();
-    await new Promise(function(r) { setTimeout(r, 150 + Math.floor(Math.random() * 200)); });
+    // Yöntem 1: DOM DragEvent simülasyonu
+    var domDragSuccess = await page.evaluate(function(sx, sy, tx, ty) {
+      var sourceEl = document.elementFromPoint(sx, sy);
+      var targetEl = document.elementFromPoint(tx, ty);
+      if (!sourceEl || !targetEl) return false;
 
-    // Kademeli hareket (daha gerçekçi)
-    var steps = 15 + Math.floor(Math.random() * 10);
-    for (var si = 1; si <= steps; si++) {
-      var progress = si / steps;
-      var cx = sx + (tx - sx) * progress + (Math.random() - 0.5) * 3;
-      var cy = sy + (ty - sy) * progress + (Math.random() - 0.5) * 3;
-      await page.mouse.move(cx, cy);
-      await new Promise(function(r) { setTimeout(r, 10 + Math.floor(Math.random() * 20)); });
+      // DataTransfer mock
+      function MockDataTransfer() {
+        this.data = {};
+        this.dropEffect = "move";
+        this.effectAllowed = "all";
+        this.files = [];
+        this.items = [];
+        this.types = [];
+      }
+      MockDataTransfer.prototype.setData = function(k, v) { this.data[k] = v; this.types.push(k); };
+      MockDataTransfer.prototype.getData = function(k) { return this.data[k] || ""; };
+      MockDataTransfer.prototype.setDragImage = function() {};
+      MockDataTransfer.prototype.clearData = function() { this.data = {}; };
+
+      var dt = new MockDataTransfer();
+
+      function fire(el, type, x, y) {
+        var evt = new DragEvent(type, {
+          bubbles: true, cancelable: true, dataTransfer: dt,
+          clientX: x, clientY: y, screenX: x, screenY: y
+        });
+        el.dispatchEvent(evt);
+      }
+
+      // Tam drag sekansı
+      fire(sourceEl, "pointerdown", sx, sy);
+      fire(sourceEl, "mousedown", sx, sy);
+      fire(sourceEl, "dragstart", sx, sy);
+      fire(sourceEl, "drag", sx, sy);
+      fire(targetEl, "dragenter", tx, ty);
+      fire(targetEl, "dragover", tx, ty);
+      fire(targetEl, "drop", tx, ty);
+      fire(sourceEl, "dragend", tx, ty);
+      fire(targetEl, "pointerup", tx, ty);
+      fire(targetEl, "mouseup", tx, ty);
+      
+      return true;
+    }, sx, sy, tx, ty).catch(function() { return false; });
+
+    console.log("[DRAG-CAPTCHA] DOM DragEvent sonucu: " + domDragSuccess);
+
+    // 500ms bekle, drop zone'a düşüp düşmediğini kontrol et
+    await new Promise(function(r) { setTimeout(r, 500); });
+
+    var dropVerified = await page.evaluate(function(tx, ty) {
+      var dropEl = document.elementFromPoint(tx, ty);
+      if (!dropEl) return false;
+      // Drop zone artık dolu mu (içinde yeni bir child img veya değişmiş stil)?
+      var cs = window.getComputedStyle(dropEl);
+      var imgs = dropEl.querySelectorAll("img");
+      // Eğer drop zone'daki img sayısı artmışsa veya arka plan değiştiyse başarılı
+      return imgs.length > 1 || cs.backgroundColor !== "rgba(0, 0, 0, 0)";
+    }, tx, ty).catch(function() { return false; });
+
+    if (!dropVerified) {
+      console.log("[DRAG-CAPTCHA] DOM drop doğrulanamadı, fiziksel fare ile deneniyor...");
+
+      // Yöntem 2: Fiziksel fare hareketi
+      await page.mouse.move(sx, sy, { steps: 5 + Math.floor(Math.random() * 5) });
+      await new Promise(function(r) { setTimeout(r, 200 + Math.floor(Math.random() * 300)); });
+      await page.mouse.down();
+      await new Promise(function(r) { setTimeout(r, 150 + Math.floor(Math.random() * 200)); });
+
+      // Kademeli hareket (daha gerçekçi)
+      var steps = 15 + Math.floor(Math.random() * 10);
+      for (var si = 1; si <= steps; si++) {
+        var progress = si / steps;
+        // Bezier eğrisi ile doğal yol
+        var ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        var cx = sx + (tx - sx) * ease + (Math.random() - 0.5) * 3;
+        var cy = sy + (ty - sy) * ease + (Math.random() - 0.5) * 3;
+        await page.mouse.move(cx, cy);
+        await new Promise(function(r) { setTimeout(r, 10 + Math.floor(Math.random() * 20)); });
+      }
+
+      await page.mouse.move(tx, ty);
+      await new Promise(function(r) { setTimeout(r, 100 + Math.floor(Math.random() * 150)); });
+      await page.mouse.up();
+      
+      // Fiziksel fare sonrası da DOM DragEvent tetikle (bazı siteler ikisini birden bekler)
+      await page.evaluate(function(sx, sy, tx, ty) {
+        var sourceEl = document.elementFromPoint(sx, sy) || document.elementFromPoint(sx - 5, sy - 5);
+        var targetEl = document.elementFromPoint(tx, ty);
+        if (sourceEl && targetEl) {
+          function fire2(el, type, x, y) {
+            try {
+              var evt = new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+              el.dispatchEvent(evt);
+            } catch(e) {}
+          }
+          fire2(targetEl, "dragover", tx, ty);
+          fire2(targetEl, "drop", tx, ty);
+          fire2(sourceEl, "dragend", tx, ty);
+        }
+      }, sx, sy, tx, ty).catch(function() {});
     }
-
-    await page.mouse.move(tx, ty);
-    await new Promise(function(r) { setTimeout(r, 100 + Math.floor(Math.random() * 150)); });
-    await page.mouse.up();
 
     console.log("[DRAG-CAPTCHA] ✅ Sürükle-bırak tamamlandı!");
     await supabaseInsertLog("✅ Drag-drop CAPTCHA çözüldü: " + targetValue, "success");
