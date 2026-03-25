@@ -2526,11 +2526,25 @@ async function askDOMAgent(page, currentUrl, account, step, recentActions, apiKe
   try {
     elements = await page.evaluate(function() {
       var results = [];
-      var selectors = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="option"], [role="tab"], [role="menuitem"], [role="switch"], [tabindex], label, [onclick]';
+      var selectors = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="option"], [role="tab"], [role="menuitem"], [role="switch"], [tabindex], label, [onclick], li, [data-value], [data-id]';
       var els = document.querySelectorAll(selectors);
+      
+      // Also find clickable-looking divs/spans (cursor:pointer) not already matched
+      var allDivSpan = document.querySelectorAll('div, span, td, p');
+      var extraEls = [];
+      for (var d = 0; d < allDivSpan.length; d++) {
+        var ds = allDivSpan[d];
+        var dStyle = window.getComputedStyle(ds);
+        if (dStyle.cursor === 'pointer' && !ds.matches(selectors)) {
+          extraEls.push(ds);
+        }
+      }
+      
+      // Merge: standard selectors first, then cursor:pointer extras
+      var allEls = Array.from(els).concat(extraEls);
       var idx = 0;
-      for (var i = 0; i < els.length && idx < 150; i++) {
-        var el = els[i];
+      for (var i = 0; i < allEls.length && idx < 300; i++) {
+        var el = allEls[i];
         var rect = el.getBoundingClientRect();
         if (rect.width < 5 || rect.height < 5) continue;
         if (rect.top > window.innerHeight + 300 || rect.bottom < -200) continue;
