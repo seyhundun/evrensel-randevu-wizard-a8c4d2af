@@ -1709,36 +1709,18 @@ async function runGeminiEngine(url, account, settings) {
     await humanScroll(page);
 
     // === OTOMATİK GİRİŞ KONTROLÜ ===
-    // Kalıcı profil sayesinde zaten login olmuş olabilir — login sayfasında değilsek direkt anketlere başla
+    // Login atlanmamalı — AI agent'a bırak, o karar versin. 
+    // Sadece login sayfası olup olmadığını logla, yönlendirme YAPMA.
     var currentUrl = page.url();
     var isLoginPage = /\/login|\/p\/login|signin|sign-in/i.test(currentUrl);
-    var isAlreadyLoggedIn = await page.evaluate(function() {
-      var body = document.body ? document.body.innerText : '';
-      // Genel dashboard göstergeleri (platform bağımsız)
-      var dashboardIndicators = ['My SB', 'Earn SB', 'Daily Goal', 'Survey', 'Discover', 'Your Surveys', 'Answer', 'Gold Surveys', 'Dashboard', 'My Account', 'Welcome back', 'Profile', 'Earnings', 'Available Surveys'];
-      for (var i = 0; i < dashboardIndicators.length; i++) {
-        if (body.includes(dashboardIndicators[i])) return true;
-      }
-      // Login formu yoksa muhtemelen giriş yapılmış
-      var hasLoginForm = document.querySelector('input[type="password"]') || document.querySelector('form[action*="login"]');
-      return !hasLoginForm && !body.includes('Log In') && !body.includes('Sign In') && body.length > 200;
-    }).catch(function() { return false; });
-
-    if (!isLoginPage && isAlreadyLoggedIn) {
-      console.log('[QUIZ] ✅ Zaten giriş yapılmış! Login atlanıyor, direkt anketlere geçiliyor.');
-      await supabaseInsertLog('✅ Otomatik giriş algılandı — login atlanıyor, direkt anketlere başlanıyor', 'success');
-      // Anket sayfasına yönlendir (orijinal görev URL'si)
-      var surveyUrl = url;
-      try {
-        await page.goto(surveyUrl, { waitUntil: 'networkidle2', timeout: 20000 });
-        await supabaseInsertLog('Anket sayfasına yönlendirildi: ' + surveyUrl, 'info');
-        await humanIdle(1000, 2000);
-      } catch (navErr) {
-        console.log('[QUIZ] Anket sayfasına yönlendirme başarısız, mevcut sayfada devam ediliyor');
-      }
-    } else if (isLoginPage || !isAlreadyLoggedIn) {
-      console.log('[QUIZ] Login sayfası tespit edildi, giriş yapılacak');
+    if (isLoginPage) {
+      console.log('[QUIZ] Login sayfası tespit edildi, AI agent giriş yapacak');
+      await supabaseInsertLog('Login sayfası tespit edildi — AI agent ile giriş yapılacak', 'info');
+    } else {
+      console.log('[QUIZ] Görev URL\'sinde devam ediliyor: ' + currentUrl);
+      await supabaseInsertLog('Sayfa hazır, AI agent ile devam ediliyor: ' + currentUrl, 'info');
     }
+    // ASLA başka URL'ye yönlendirme — görev URL'sinden şaşma!
 
     var maxSteps = 500; // Sürekli anket çözme — kapanmayacak
     var surveysCompleted = 0;
