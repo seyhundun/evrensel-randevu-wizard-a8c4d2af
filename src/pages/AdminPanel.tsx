@@ -138,6 +138,20 @@ const AdminPanel = () => {
     }
   };
 
+  // Toggle tab permission
+  const handleToggleTab = async (userId: string, tab: string, currentTabs: string[]) => {
+    const newTabs = currentTabs.includes(tab)
+      ? currentTabs.filter(t => t !== tab)
+      : [...currentTabs, tab];
+    try {
+      await supabase.from("user_roles").update({ allowed_tabs: newTabs } as any).eq("user_id", userId);
+      toast.success("Sekme yetkileri güncellendi");
+      fetchUsers();
+    } catch {
+      toast.error("Güncellenemedi");
+    }
+  };
+
   if (loading || isAdmin === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
