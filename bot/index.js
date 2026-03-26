@@ -1939,7 +1939,7 @@ async function askVFSDomAgent(page, config, account, step, recentActions) {
   var currentUrl = await page.url();
 
   var context = {
-    account: { email: account.email, password: account.password },
+    account: { email: account.email },
     country: config.country,
     city: config.city,
     visa_category: config.visa_category || "",
