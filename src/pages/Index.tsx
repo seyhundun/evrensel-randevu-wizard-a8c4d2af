@@ -85,9 +85,6 @@ function VfsSidebarContent({ t }: { t: ReturnType<typeof useTracking> }) {
           onStop={t.stopTracking}
         />
       </SidebarSection>
-      <SidebarSection icon={<Cpu className="w-3.5 h-3.5" />} title="DOM Agent Ayarları">
-        <VfsDomAgentSettings />
-      </SidebarSection>
       <SidebarSection icon={<Settings className="w-3.5 h-3.5" />} title="Bot & Ülke Ayarları">
         <BotSettingsPanel />
       </SidebarSection>
