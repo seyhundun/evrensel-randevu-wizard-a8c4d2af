@@ -1823,6 +1823,29 @@ async function launchBrowser(proxyIp = null) {
   return { browser, page };
 }
 
+// Her sayfa navigasyonunda farklı IP almak için yeni session ile authenticate
+async function rotateProxyAndGoto(page, url, options = {}) {
+  if (PROXY_ENABLED && PROXY_MODE === "residential" && EVOMI_PROXY_USER) {
+    // Yeni session ID = yeni IP
+    const newSessionId = Math.random().toString(36).slice(2, 10);
+    const city = String(getNextProxyRegion() || "")
+      .toLowerCase()
+      .replace(/\s+/g, ".")
+      .replace(/\.(province|city|region|state)$/i, "")
+      .trim();
+    EVOMI_PROXY_REGION = city;
+
+    let pass = `${EVOMI_PROXY_PASS}_country-${EVOMI_PROXY_COUNTRY}`;
+    pass += `_session-${newSessionId}`;
+    if (city) pass += `_city-${city}`;
+
+    await page.authenticate({ username: EVOMI_PROXY_USER, password: pass });
+    console.log(`  [PROXY-ROTATE] 🔄 Yeni IP: session=${newSessionId}, şehir=${city || 'rastgele'}`);
+  }
+  const gotoOptions = { waitUntil: "domcontentloaded", timeout: 90000, ...options };
+  return await page.goto(url, gotoOptions);
+}
+
 // ==================== VFS DOM AGENT HELPERS ====================
 
 async function extractPageElements(page) {
