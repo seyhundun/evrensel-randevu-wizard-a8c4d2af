@@ -55,12 +55,15 @@ ${applicants.length > 0 ? `
 ## BAŞVURU SAHİPLERİ BİLGİLERİ (FORM DOLDURMA İÇİN)
 Toplam ${applicants.length} kişi — sırayla doldur, her biri için ayrı form doldur.
 ${applicants.map((a: any, i: number) => `### ${i + 1}. Başvuru Sahibi
-- Ad: ${a.first_name || ""}
-- Soyad: ${a.last_name || ""}
-- Pasaport No: ${a.passport || ""}
-- Doğum Tarihi: ${a.birth_date || ""}
+- İsim: ${a.first_name || ""}
+- Soyisim: ${a.last_name || ""}
+- Cinsiyet: ${a.gender || ""}
+- Doğum Tarihi: ${a.birth_date || ""} (GG/AA/YYYY formatında gir)
 - Uyruk: ${a.nationality || "Turkey"}
-- Pasaport Son Kullanma: ${a.passport_expiry || ""}`).join("\n")}
+- Pasaport Numarası: ${a.passport || ""}
+- Pasaport Son Kullanma Tarihi: ${a.passport_expiry || ""} (GG/AA/YYYY formatında gir)
+- İletişim Numarası: 90 ${a.phone_number || ""}
+- E-Posta: ${a.applicant_email || ""}`).join("\n")}
 ` : ""}
 
 ## ELEMENTLER
