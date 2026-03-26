@@ -1486,14 +1486,15 @@ async function tryImapOtp(accountId) {
             continue;
           }
 
+          let senderMatched = true;
           if (allowedFrom.length > 0) {
-            const senderMatched = fromList.some((addr) =>
-              allowedFrom.some((allowed) => addr.includes(allowed))
+            senderMatched = fromList.some((addr) =>
+              allowedFrom.some((allowed) => addr.includes(allowed) || allowed.includes(addr))
             );
-            if (!senderMatched) {
-              console.log(`  [IMAP] ${folder} UID ${uid} atlandı (from: ${fromText || "?"})`);
-              continue;
-            }
+          }
+
+          if (!senderMatched) {
+            console.log(`  [IMAP] ${folder} UID ${uid} gönderen eşleşmedi | from: ${fromText || "?"} | subject: ${subject}`);
           }
 
           const rawText = (msg?.source ? msg.source.toString("utf8") : "").replace(/\r/g, "");
