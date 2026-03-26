@@ -29,6 +29,7 @@ VFS Global web sitesinde:
 2. Randevu sayfasına git
 3. Müsait randevu olup olmadığını kontrol et
 4. Randevu varsa otomatik al
+5. Başvuru formu geldiğinde başvuru sahiplerinin bilgilerini otomatik doldur
 
 ## HESAP BİLGİLERİ
 - E-posta: ${account.email || ""}
