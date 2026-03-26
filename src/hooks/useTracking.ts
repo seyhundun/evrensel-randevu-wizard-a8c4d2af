@@ -298,6 +298,7 @@ export function useTracking() {
     setIntervalValue,
     applicants,
     updateApplicant,
+    batchUpdateApplicants,
     keepAlive,
     setKeepAlive,
     startTracking,
