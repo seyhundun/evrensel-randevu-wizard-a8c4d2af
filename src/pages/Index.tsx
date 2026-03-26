@@ -26,6 +26,7 @@ import QuizSidebarContent from "@/components/QuizSidebarContent";
 import VncViewer from "@/components/VncViewer";
 import { useTracking } from "@/hooks/useTracking";
 import VfsManualTakeover from "@/components/VfsManualTakeover";
+import ServerCommandPanel from "@/components/ServerCommandPanel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 function LiveClock() {
@@ -285,6 +286,7 @@ const Index = () => {
                     onSimulateFound={t.simulateFound}
                     configId={t.configId}
                   />
+                  <ServerCommandPanel />
                   <TrackingLogs configId={t.configId} />
                 </div>
               </ScrollArea>

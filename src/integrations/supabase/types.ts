@@ -385,6 +385,36 @@ export type Database = {
         }
         Relationships: []
       }
+      server_commands: {
+        Row: {
+          command: string
+          created_at: string
+          executed_at: string | null
+          id: string
+          output: string | null
+          status: string
+          target: string
+        }
+        Insert: {
+          command: string
+          created_at?: string
+          executed_at?: string | null
+          id?: string
+          output?: string | null
+          status?: string
+          target?: string
+        }
+        Update: {
+          command?: string
+          created_at?: string
+          executed_at?: string | null
+          id?: string
+          output?: string | null
+          status?: string
+          target?: string
+        }
+        Relationships: []
+      }
       tracking_configs: {
         Row: {
           cf_blocked_ip: string | null
