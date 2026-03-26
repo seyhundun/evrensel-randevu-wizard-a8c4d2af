@@ -53,8 +53,8 @@ export interface Applicant {
   lastName: string;
   passport: string;
   birthDate: string;
-  phone: string;
-  email: string;
+  nationality: string;
+  passportExpiry: string;
 }
 
 export const createEmptyApplicant = (id: string): Applicant => ({
@@ -63,6 +63,6 @@ export const createEmptyApplicant = (id: string): Applicant => ({
   lastName: "",
   passport: "",
   birthDate: "",
-  phone: "",
-  email: "",
+  nationality: "Turkey",
+  passportExpiry: "",
 });

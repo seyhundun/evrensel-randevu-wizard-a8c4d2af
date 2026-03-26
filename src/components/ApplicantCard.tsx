@@ -17,8 +17,8 @@ const fields: { key: keyof Applicant; label: string; placeholder: string; type?:
   { key: "lastName", label: "Soyad", placeholder: "Yılmaz" },
   { key: "passport", label: "Pasaport No", placeholder: "U12345678" },
   { key: "birthDate", label: "Doğum Tarihi", placeholder: "15.08.1992", type: "text" },
-  { key: "phone", label: "Telefon", placeholder: "+90 555 123 4567" },
-  { key: "email", label: "E-posta", placeholder: "can@ornek.com", type: "email" },
+  { key: "nationality", label: "Uyruk", placeholder: "Turkey" },
+  { key: "passportExpiry", label: "Pasaport Son Kullanma", placeholder: "15.08.2030" },
 ];
 
 export default function ApplicantCard({
