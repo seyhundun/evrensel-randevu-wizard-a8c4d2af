@@ -926,10 +926,18 @@ async function tryImapOtp(accountId) {
         if (otpRequestedTs && msgTs && msgTs < otpRequestedTs - 15000) continue;
 
         const fromText = (msg?.envelope?.from || []).map((x) => (x?.address || "").toLowerCase()).join(", ");
-        if (allowedFrom.length && fromText) {
-          const senderMatched = allowedFrom.some((sender) => fromText.includes(sender));
+        const headerFrom = (rawText.match(/^from:\s*(.+)$/im)?.[1] || "").toLowerCase();
+        const headerSender = (rawText.match(/^sender:\s*(.+)$/im)?.[1] || "").toLowerCase();
+        const headerReplyTo = (rawText.match(/^reply-to:\s*(.+)$/im)?.[1] || "").toLowerCase();
+        const headerReturnPath = (rawText.match(/^return-path:\s*(.+)$/im)?.[1] || "").toLowerCase();
+        const senderHaystack = [fromText, headerFrom, headerSender, headerReplyTo, headerReturnPath]
+          .filter(Boolean)
+          .join(" | ");
+
+        if (allowedFrom.length && senderHaystack) {
+          const senderMatched = allowedFrom.some((sender) => senderHaystack.includes(sender));
           if (!senderMatched) {
-            console.log(`  [IMAP] UID ${uid} atlandı (from: ${fromText || "?"})`);
+            console.log(`  [IMAP] UID ${uid} atlandı (from: ${senderHaystack || "?"})`);
             continue;
           }
         }
@@ -962,7 +970,7 @@ async function tryImapOtp(accountId) {
         }
 
         if (otp) {
-          console.log(`  [IMAP] ✅ VFS OTP bulundu: ${otp} | from: ${fromText || "?"} | subject: ${subject}`);
+          console.log(`  [IMAP] ✅ VFS OTP bulundu: ${otp} | from: ${senderHaystack || fromText || "?"} | subject: ${subject}`);
           await lock.release();
           await client.logout();
           return otp;
@@ -1016,18 +1024,20 @@ async function handleOtpVerification(page, account) {
     const hasEmailInput = !!document.querySelector('input[type="email"], input[name="email"]');
     const hasPasswordInput = !!document.querySelector('input[type="password"]');
     if (hasEmailInput && hasPasswordInput) return false;
-    const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"], input[type="password"]');
+    const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"], input:not([type]), input[autocomplete="one-time-code"]');
     const hasOtpInput = [...inputs].some(inp => {
       const name = (inp.name || "").toLowerCase();
       const placeholder = (inp.placeholder || "").toLowerCase();
       const id = (inp.id || "").toLowerCase();
-      const type = (inp.getAttribute("type") || "").toLowerCase();
+      const autocomplete = (inp.getAttribute("autocomplete") || "").toLowerCase();
+      const inputMode = (inp.getAttribute("inputmode") || "").toLowerCase();
+      const maxLength = Number(inp.getAttribute("maxlength") || inp.maxLength || 0);
       const label = (inp.closest('mat-form-field, .mat-mdc-form-field, .form-group, .ng-star-inserted, div')?.textContent || "").toLowerCase();
       return name.includes("otp") || name.includes("code") || name.includes("verification") ||
              placeholder.includes("kod") || placeholder.includes("code") || placeholder.includes("doğrulama") ||
              id.includes("otp") || id.includes("code") ||
              label.includes("otp") || label.includes("tek seferlik") || label.includes("doğrulama") ||
-             type === "password";
+             autocomplete === "one-time-code" || inputMode === "numeric" || [1, 4, 5, 6, 8].includes(maxLength);
     });
     const hasOtpText = body.includes("doğrulama kodu") || body.includes("verification code") ||
                        body.includes("one-time") || body.includes("otp") ||
@@ -1053,7 +1063,18 @@ async function handleOtpVerification(page, account) {
     otp = imapOtp || manualOtp;
     if (otp) {
       const filled = await page.evaluate((code) => {
-        const singleInput = document.querySelector('input[type="text"][name*="otp"], input[type="text"][name*="code"], input[type="number"], input[type="tel"], input[type="password"]');
+        const getFieldText = (el) => {
+          if (!el) return "";
+          return [
+            el.name || "",
+            el.id || "",
+            el.placeholder || "",
+            el.getAttribute("aria-label") || "",
+            el.getAttribute("autocomplete") || "",
+            el.getAttribute("inputmode") || "",
+            el.closest('label, mat-form-field, .mat-mdc-form-field, .form-group, .otp-container, div')?.textContent || "",
+          ].join(" ").toLowerCase();
+        };
         const setValue = (el, value) => {
           if (!el) return;
           const proto = Object.getPrototypeOf(el);
@@ -1064,16 +1085,28 @@ async function handleOtpVerification(page, account) {
           el.dispatchEvent(new Event("change", { bubbles: true }));
           el.dispatchEvent(new Event("blur", { bubbles: true }));
         };
-        if (singleInput) {
-          setValue(singleInput, code);
-          return true;
-        }
-        const inputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[type="password"]');
-        const otpInputs = [...inputs].filter(inp => inp.maxLength === 1 || inp.maxLength === -1);
+        const inputs = [...document.querySelectorAll('input, textarea')].filter((inp) => {
+          const type = (inp.getAttribute("type") || "text").toLowerCase();
+          if (["password", "email", "hidden"].includes(type)) return false;
+          const text = getFieldText(inp);
+          const maxLength = Number(inp.getAttribute("maxlength") || inp.maxLength || 0);
+          return text.includes("otp") || text.includes("code") || text.includes("doğrulama") || text.includes("verification") ||
+            inp.getAttribute("autocomplete") === "one-time-code" || inp.getAttribute("inputmode") === "numeric" ||
+            [1, 4, 5, 6, 8].includes(maxLength);
+        });
+        const otpInputs = inputs.filter(inp => Number(inp.getAttribute("maxlength") || inp.maxLength || 0) === 1);
         if (otpInputs.length >= 4 && otpInputs.length <= 8) {
           for (let i = 0; i < Math.min(code.length, otpInputs.length); i++) {
             setValue(otpInputs[i], code[i]);
           }
+          return true;
+        }
+        const singleInput = inputs.find((inp) => {
+          const maxLength = Number(inp.getAttribute("maxlength") || inp.maxLength || 0);
+          return inp.getAttribute("autocomplete") === "one-time-code" || maxLength === 0 || maxLength >= code.length;
+        });
+        if (singleInput) {
+          setValue(singleInput, code);
           return true;
         }
         return false;
@@ -2524,12 +2557,21 @@ async function checkAppointments(config, account) {
             var candidates = inputs.filter(function(inp) {
               if (!isVisible(inp)) return false;
               var type = (inp.getAttribute("type") || "text").toLowerCase();
-              if (!["text", "number", "password", "tel"].includes(type)) return false;
+              if (!["text", "number", "tel"].includes(type) && type !== "") return false;
+              if (["password", "email", "hidden"].includes(type)) return false;
               var parentText = (inp.closest("mat-form-field, .form-group, .otp-container, label, div")?.textContent || "").toLowerCase();
               var haystack = [inp.name || "", inp.id || "", inp.placeholder || "", inp.autocomplete || "", inp.inputMode || "", parentText]
                 .join(" ")
                 .toLowerCase();
-              return otpHints.some(function(k) { return haystack.includes(k); }) || inp.maxLength === 1 || inp.maxLength === 6 || inp.maxLength === code.length;
+              return otpHints.some(function(k) { return haystack.includes(k); })
+                || inp.autocomplete === "one-time-code"
+                || inp.inputMode === "numeric"
+                || inp.maxLength === 1
+                || inp.maxLength === 4
+                || inp.maxLength === 5
+                || inp.maxLength === 6
+                || inp.maxLength === 8
+                || inp.maxLength === code.length;
             });
 
             var segmented = candidates.filter(function(inp) { return inp.maxLength === 1; });
@@ -2543,10 +2585,6 @@ async function checkAppointments(config, account) {
 
             var singleInput = candidates.find(function(inp) {
               return inp.maxLength <= 0 || inp.maxLength >= code.length || inp.autocomplete === "one-time-code";
-            }) || inputs.find(function(inp) {
-              if (!isVisible(inp)) return false;
-              var type = (inp.getAttribute("type") || "text").toLowerCase();
-              return ["text", "number", "password", "tel"].includes(type);
             });
 
             if (!singleInput) return false;
