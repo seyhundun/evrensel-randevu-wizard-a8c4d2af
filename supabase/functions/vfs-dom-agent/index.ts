@@ -53,7 +53,7 @@ serve(async (req) => {
 - Vize alt kategorisi: ${visaSubcategory || "belirtilmemiş"}
 ${applicants.length > 0 ? `
 ## BAŞVURU SAHİPLERİ BİLGİLERİ (FORM DOLDURMA İÇİN)
-Toplam ${applicants.length} kişi — sırayla doldur, her biri için ayrı form doldur.
+Toplam ${applicants.length} kişi — TEK TEK doldur. Önce 1. kişiyi doldur ve "Kaydet" tıkla. Sonra "Başvuru Sahibi Ekle" tıkla ve 2. kişiyi doldur.
 ${applicants.map((a: any, i: number) => `### ${i + 1}. Başvuru Sahibi
 - İsim: ${a.first_name || ""}
 - Soyisim: ${a.last_name || ""}
@@ -61,9 +61,7 @@ ${applicants.map((a: any, i: number) => `### ${i + 1}. Başvuru Sahibi
 - Doğum Tarihi: ${a.birth_date || ""} (GG/AA/YYYY formatında gir)
 - Uyruk: ${a.nationality || "Turkey"}
 - Pasaport Numarası: ${a.passport || ""}
-- Pasaport Son Kullanma Tarihi: ${a.passport_expiry || ""} (GG/AA/YYYY formatında gir)
-- İletişim Numarası: 90 ${a.phone_number || ""}
-- E-Posta: ${a.applicant_email || ""}`).join("\n")}
+- Pasaport Son Kullanma Tarihi: ${a.passport_expiry || ""} (GG/AA/YYYY formatında gir)`).join("\n")}
 ` : ""}
 
 ## ELEMENTLER
