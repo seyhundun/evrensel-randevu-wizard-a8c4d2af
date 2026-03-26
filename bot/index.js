@@ -2197,7 +2197,7 @@ async function checkAppointments(config, account) {
     console.log("  [2] 🤖 VFS DOM Agent başlıyor...");
     await logStep(id, "search_start", "🤖 VFS DOM Agent tam otonom mod başladı");
 
-    const MAX_STEPS = 50;
+    const MAX_STEPS = 80;
     const STEP_TIMEOUT_MS = 30000; // 30s per step max
     var recentActions = [];
     var appointmentResult = null;
@@ -2457,6 +2457,33 @@ async function checkAppointments(config, account) {
         await delay(3000, 5000);
         recentActions.push("Turnstile CAPTCHA çözüldü");
         continue;
+      }
+
+      if (status === "wait_manual") {
+        console.log("  ⏸ Manuel kontrol gerekiyor — sayfa açık kalacak, bekleniyor...");
+        const ss = await takeScreenshotBase64(page);
+        await logStep(id, "wait_manual", `⏸ Manuel kontrol bekleniyor | ${account.email} | ${agentResult.message || "Form tamamlandı"}`);
+        await reportResult(id, "otp_waiting", `Manuel kontrol bekleniyor — ${agentResult.message || "Form dolduruldu, onay bekleniyor"} | ${account.email}`, 0, ss);
+        
+        // 10 dakika boyunca bekle, sayfa AÇIK KALSIN
+        var manualWaitStart = Date.now();
+        var MANUAL_WAIT_TIMEOUT = 10 * 60 * 1000;
+        
+        while (Date.now() - manualWaitStart < MANUAL_WAIT_TIMEOUT) {
+          await delay(10000, 12000);
+          var elapsed2 = Math.round((Date.now() - manualWaitStart) / 1000);
+          if (elapsed2 % 60 === 0) {
+            var wss = await takeScreenshotBase64(page);
+            await logStep(id, "wait_manual", `⏸ Manuel bekleniyor... (${elapsed2}s) | ${account.email}`);
+            if (wss) await reportResult(id, "otp_waiting", `Manuel bekleniyor (${Math.round(elapsed2/60)}dk) | ${account.email}`, 0, wss);
+          }
+          
+          // Sayfa kapanmış mı kontrol et
+          try { await page.evaluate(() => true); } catch { break; }
+        }
+        
+        console.log("  ⏸ Manuel bekleme sona erdi");
+        return { found: false, accountBanned: false, hadError: false, manualWait: true };
       }
 
       // Devam eden durum — aksiyonları yürüt
