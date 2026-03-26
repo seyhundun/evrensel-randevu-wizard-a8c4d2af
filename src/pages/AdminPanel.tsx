@@ -315,7 +315,7 @@ const AdminPanel = () => {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-xs font-mono">
-                          {new Date(user.created_at).toLocaleString("tr-TR")}
+                          {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString("tr-TR") : "Henüz giriş yok"}
                         </TableCell>
                         <TableCell className="text-right">
                           {user.email !== session.user.email && user.id && (
