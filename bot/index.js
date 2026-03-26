@@ -2194,7 +2194,7 @@ async function checkAppointments(config, account) {
         }
       } catch {}
 
-      // ====== FORM DOLDURMA İSTEĞİ KONTROLÜ ======
+      // ====== FORM DOLDURMA İSTEĞİ KONTROLÜ (CDP tabanlı) ======
       try {
         const fillRes = await fetch(
           `${SUPABASE_REST_URL}/bot_settings?key=eq.fill_applicants_request&select=value`,
@@ -2204,175 +2204,269 @@ async function checkAppointments(config, account) {
         if (fillRes && fillRes.length > 0 && fillRes[0].value) {
           const fillData = JSON.parse(fillRes[0].value);
           if (fillData && fillData.timestamp && (Date.now() - fillData.timestamp) < 120000) {
-            console.log(`\n  📝 [FILL] Dashboard'dan form doldurma isteği alındı!`);
-            await logStep(id, "info", `📝 Dashboard'dan form doldurma isteği alındı — ${fillData.action}`);
+            console.log(`\n  📝 [FILL-CDP] Dashboard'dan form doldurma isteği alındı!`);
+            await logStep(id, "info", `📝 CDP ile form doldurma başlıyor — ${fillData.action}`);
             
             const applicantsToFill = fillData.action === "fill_all" 
               ? fillData.applicants 
               : [fillData.applicant];
             const startIndex = fillData.action === "fill_single" ? fillData.index : 0;
             
-            const fillResult = await page.evaluate((applicants, startIdx) => {
-              const results = [];
-              
-              // VFS form alanlarını bul
+            // CDP session al
+            const cdpSession = await page.target().createCDPSession();
+            
+            // CDP ile gerçek tuş vuruşları gönderen helper
+            async function cdpTypeText(cdpSession, page, selector, text) {
+              try {
+                // Önce alana tıkla
+                const el = await page.$(selector);
+                if (!el) return false;
+                await el.click({ delay: 50 });
+                await delay(200, 400);
+                
+                // Mevcut değeri temizle (Ctrl+A + Delete)
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 2 }); // Ctrl+A
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2 });
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Delete", code: "Delete" });
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Delete", code: "Delete" });
+                await delay(100, 200);
+                
+                // Her karakteri tek tek yaz
+                for (const ch of text) {
+                  await cdpSession.send("Input.dispatchKeyEvent", { type: "keyDown", key: ch, text: ch });
+                  await cdpSession.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+                  await cdpSession.send("Input.dispatchKeyEvent", { type: "keyUp", key: ch });
+                  await delay(30, 80);
+                }
+                
+                // Tab ile blur tetikle
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab" });
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab" });
+                
+                return true;
+              } catch (e) {
+                console.warn(`  [FILL-CDP] Yazma hatası (${selector}): ${e.message}`);
+                return false;
+              }
+            }
+            
+            // CDP ile alana tıklayıp text yaz (selector yerine koordinat tabanlı)
+            async function cdpFillByCoords(cdpSession, page, fieldInfo, text) {
+              try {
+                const el = await page.$(fieldInfo.selector);
+                if (!el) return false;
+                const box = await el.boundingBox();
+                if (!box) return false;
+                
+                // Alana tıkla
+                const x = box.x + box.width / 2;
+                const y = box.y + box.height / 2;
+                await cdpSession.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+                await cdpSession.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+                await delay(200, 400);
+                
+                // Ctrl+A + Delete
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 2 });
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2 });
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace" });
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace" });
+                await delay(100, 200);
+                
+                // Karakter karakter yaz
+                for (const ch of text) {
+                  await cdpSession.send("Input.dispatchKeyEvent", { type: "keyDown", key: ch, text: ch });
+                  await cdpSession.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+                  await cdpSession.send("Input.dispatchKeyEvent", { type: "keyUp", key: ch });
+                  await delay(30, 70);
+                }
+                
+                // Blur tetikle
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab" });
+                await cdpSession.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab" });
+                await delay(100, 200);
+                
+                return true;
+              } catch (e) {
+                console.warn(`  [FILL-CDP] Koordinat yazma hatası: ${e.message}`);
+                return false;
+              }
+            }
+
+            // Sayfadaki form alanlarını bul
+            const fieldMap = await page.evaluate(() => {
               const allInputs = Array.from(document.querySelectorAll("input, select, textarea"));
-              const visibleInputs = allInputs.filter(el => {
+              const visible = allInputs.filter(el => {
                 const rect = el.getBoundingClientRect();
                 const style = window.getComputedStyle(el);
                 return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
               });
               
-              // Angular uyumlu değer yazma
-              function setInputValue(input, value) {
-                const nativeSetter = Object.getOwnPropertyDescriptor(
-                  window.HTMLInputElement.prototype, "value"
-                )?.set || Object.getOwnPropertyDescriptor(
-                  window.HTMLTextAreaElement.prototype, "value"
-                )?.set;
-                
-                if (nativeSetter) {
-                  nativeSetter.call(input, value);
-                } else {
-                  input.value = value;
+              return visible.map((el, i) => {
+                const label = el.getAttribute("aria-label") || "";
+                const placeholder = el.getAttribute("placeholder") || "";
+                const name = el.getAttribute("name") || "";
+                const elId = el.getAttribute("id") || "";
+                const formControl = el.getAttribute("formcontrolname") || "";
+                let labelText = "";
+                if (el.id) {
+                  const labelEl = document.querySelector("label[for='" + el.id + "']");
+                  if (labelEl) labelText = labelEl.textContent || "";
                 }
-                input.dispatchEvent(new Event("input", { bubbles: true }));
-                input.dispatchEvent(new Event("change", { bubbles: true }));
-                input.dispatchEvent(new Event("blur", { bubbles: true }));
-              }
-              
-              // Select alanı için değer seçme
-              function setSelectValue(select, value) {
-                const options = Array.from(select.querySelectorAll("option"));
-                const match = options.find(o => 
-                  o.value.toLowerCase().includes(value.toLowerCase()) || 
-                  o.textContent.toLowerCase().includes(value.toLowerCase())
-                );
-                if (match) {
-                  select.value = match.value;
-                  select.dispatchEvent(new Event("change", { bubbles: true }));
-                  return true;
-                }
-                return false;
-              }
-              
-              // Alan eşleştirme — label veya placeholder'a göre
-              function findField(keyword, type) {
-                for (const input of visibleInputs) {
-                  const label = input.getAttribute("aria-label") || "";
-                  const placeholder = input.getAttribute("placeholder") || "";
-                  const name = input.getAttribute("name") || "";
-                  const id = input.getAttribute("id") || "";
-                  const formControl = input.getAttribute("formcontrolname") || "";
-                  const combined = `${label} ${placeholder} ${name} ${id} ${formControl}`.toLowerCase();
-                  
-                  // Label elementi kontrolü
-                  let labelText = "";
-                  if (input.id) {
-                    const labelEl = document.querySelector(`label[for="${input.id}"]`);
-                    if (labelEl) labelText = labelEl.textContent.toLowerCase();
-                  }
-                  
-                  if (combined.includes(keyword) || labelText.includes(keyword)) {
-                    if (!type || input.tagName.toLowerCase() === type) {
-                      return input;
-                    }
-                  }
-                }
-                return null;
-              }
-              
-              for (let i = 0; i < applicants.length; i++) {
-                const app = applicants[i];
-                const idx = startIdx + i;
-                const filled = {};
-                
-                // İsim alanları
-                const nameKeywords = ["first", "ad", "name", "isim", "given"];
-                const lastNameKeywords = ["last", "soyad", "surname", "family"];
-                const passportKeywords = ["passport", "pasaport"];
-                const birthKeywords = ["birth", "doğum", "dob"];
-                const nationalityKeywords = ["national", "uyruk", "vatandaş"];
-                
-                // İsim
-                for (const kw of nameKeywords) {
-                  const field = findField(kw);
-                  if (field && !lastNameKeywords.some(lk => (field.getAttribute("formcontrolname") || field.getAttribute("name") || "").toLowerCase().includes(lk))) {
-                    setInputValue(field, app.firstName);
-                    filled.firstName = true;
-                    break;
-                  }
+                // Üst container'daki label
+                const parent = el.closest(".form-group, .mat-form-field, .form-field, [class*='field']");
+                let parentLabel = "";
+                if (parent) {
+                  const pLabel = parent.querySelector("label, .mat-form-field-label, legend");
+                  if (pLabel) parentLabel = pLabel.textContent || "";
                 }
                 
-                // Soyisim
-                for (const kw of lastNameKeywords) {
-                  const field = findField(kw);
-                  if (field) {
-                    setInputValue(field, app.lastName);
-                    filled.lastName = true;
-                    break;
-                  }
-                }
+                const tag = el.tagName.toLowerCase();
+                const type = el.getAttribute("type") || "";
                 
-                // Pasaport
-                for (const kw of passportKeywords) {
-                  const field = findField(kw);
-                  if (field) {
-                    setInputValue(field, app.passport);
-                    filled.passport = true;
-                    break;
-                  }
-                }
+                // Benzersiz CSS seçici oluştur
+                let selector = "";
+                if (elId) selector = "#" + CSS.escape(elId);
+                else if (formControl) selector = "[formcontrolname='" + formControl + "']";
+                else if (name) selector = tag + "[name='" + name + "']";
+                else selector = tag + ":nth-of-type(" + (i + 1) + ")";
                 
-                // Doğum tarihi
-                for (const kw of birthKeywords) {
-                  const field = findField(kw);
-                  if (field) {
-                    setInputValue(field, app.birthDate);
-                    filled.birthDate = true;
-                    break;
-                  }
-                }
-                
-                // Uyruk
-                for (const kw of nationalityKeywords) {
-                  const field = findField(kw);
-                  if (field) {
-                    if (field.tagName.toLowerCase() === "select") {
-                      setSelectValue(field, app.nationality);
-                    } else {
-                      setInputValue(field, app.nationality);
-                    }
-                    filled.nationality = true;
-                    break;
-                  }
-                }
-                
-                // Cinsiyet
-                const genderField = findField("gender") || findField("cinsiyet");
-                if (genderField) {
-                  if (genderField.tagName.toLowerCase() === "select") {
-                    setSelectValue(genderField, app.gender);
-                  } else {
-                    setInputValue(genderField, app.gender);
-                  }
-                  filled.gender = true;
-                }
-                
-                results.push({
-                  index: idx,
-                  name: `${app.firstName} ${app.lastName}`,
-                  filledFields: Object.keys(filled),
-                  totalInputs: visibleInputs.length,
-                });
-              }
-              
-              return results;
-            }, applicantsToFill, startIndex);
+                return {
+                  index: i,
+                  tag,
+                  type,
+                  selector,
+                  combined: (label + " " + placeholder + " " + name + " " + elId + " " + formControl + " " + labelText + " " + parentLabel).toLowerCase().trim(),
+                };
+              });
+            });
             
-            console.log(`  📝 [FILL] Sonuç:`, JSON.stringify(fillResult));
-            const filledNames = (fillResult || []).map(r => `${r.name} (${r.filledFields.length} alan)`).join(", ");
-            await logStep(id, "info", `📝 Form doldurma tamamlandı: ${filledNames || "sonuç yok"}`);
+            console.log(`  [FILL-CDP] Sayfada ${fieldMap.length} görünür alan bulundu`);
+            
+            // Alan eşleştirme fonksiyonu
+            function matchField(keywords, excludeKeywords) {
+              for (const kw of keywords) {
+                const match = fieldMap.find(f => {
+                  if (f.combined.includes(kw)) {
+                    if (excludeKeywords && excludeKeywords.some(ek => f.combined.includes(ek))) return false;
+                    return true;
+                  }
+                  return false;
+                });
+                if (match) return match;
+              }
+              return null;
+            }
+            
+            const fillResults = [];
+            for (let i = 0; i < applicantsToFill.length; i++) {
+              const app = applicantsToFill[i];
+              const filled = [];
+              
+              // İsim
+              const firstNameField = matchField(["first", "ad", "given", "isim"], ["last", "soyad", "surname", "family"]);
+              if (firstNameField && app.firstName) {
+                const ok = await cdpFillByCoords(cdpSession, page, firstNameField, app.firstName);
+                if (ok) filled.push("firstName");
+                console.log(`  [FILL-CDP] İsim: ${app.firstName} → ${ok ? "✅" : "❌"} (${firstNameField.selector})`);
+              }
+              
+              // Soyisim
+              const lastNameField = matchField(["last", "soyad", "surname", "family"]);
+              if (lastNameField && app.lastName) {
+                const ok = await cdpFillByCoords(cdpSession, page, lastNameField, app.lastName);
+                if (ok) filled.push("lastName");
+                console.log(`  [FILL-CDP] Soyisim: ${app.lastName} → ${ok ? "✅" : "❌"} (${lastNameField.selector})`);
+              }
+              
+              // Pasaport
+              const passportField = matchField(["passport", "pasaport"]);
+              if (passportField && app.passport) {
+                const ok = await cdpFillByCoords(cdpSession, page, passportField, app.passport);
+                if (ok) filled.push("passport");
+                console.log(`  [FILL-CDP] Pasaport: ${app.passport} → ${ok ? "✅" : "❌"}`);
+              }
+              
+              // Doğum tarihi
+              const birthField = matchField(["birth", "doğum", "dob", "date"]);
+              if (birthField && app.birthDate) {
+                const ok = await cdpFillByCoords(cdpSession, page, birthField, app.birthDate);
+                if (ok) filled.push("birthDate");
+                console.log(`  [FILL-CDP] Doğum tarihi: ${app.birthDate} → ${ok ? "✅" : "❌"}`);
+              }
+              
+              // Uyruk (select veya input)
+              const natField = matchField(["national", "uyruk", "vatandaş", "citizen"]);
+              if (natField && app.nationality) {
+                if (natField.tag === "select") {
+                  // Select için page.select kullan
+                  try {
+                    await page.select(natField.selector, app.nationality);
+                    filled.push("nationality");
+                  } catch {
+                    await cdpFillByCoords(cdpSession, page, natField, app.nationality);
+                    filled.push("nationality");
+                  }
+                } else {
+                  const ok = await cdpFillByCoords(cdpSession, page, natField, app.nationality);
+                  if (ok) filled.push("nationality");
+                }
+                console.log(`  [FILL-CDP] Uyruk: ${app.nationality} → ✅`);
+              }
+              
+              // Cinsiyet
+              const genderField = matchField(["gender", "cinsiyet", "sex"]);
+              if (genderField && app.gender) {
+                if (genderField.tag === "select") {
+                  try {
+                    await page.select(genderField.selector, app.gender);
+                    filled.push("gender");
+                  } catch {
+                    await cdpFillByCoords(cdpSession, page, genderField, app.gender);
+                    filled.push("gender");
+                  }
+                } else {
+                  const ok = await cdpFillByCoords(cdpSession, page, genderField, app.gender);
+                  if (ok) filled.push("gender");
+                }
+                console.log(`  [FILL-CDP] Cinsiyet: ${app.gender} → ✅`);
+              }
+
+              // Telefon
+              const phoneField = matchField(["phone", "telefon", "tel", "mobile", "cep"]);
+              if (phoneField && app.phone) {
+                const ok = await cdpFillByCoords(cdpSession, page, phoneField, app.phone);
+                if (ok) filled.push("phone");
+                console.log(`  [FILL-CDP] Telefon: ${app.phone} → ${ok ? "✅" : "❌"}`);
+              }
+              
+              // Email
+              const emailField = matchField(["email", "e-posta", "mail"]);
+              if (emailField && app.email) {
+                const ok = await cdpFillByCoords(cdpSession, page, emailField, app.email);
+                if (ok) filled.push("email");
+                console.log(`  [FILL-CDP] Email: ${app.email} → ${ok ? "✅" : "❌"}`);
+              }
+
+              // Pasaport SKT
+              const expiryField = matchField(["expiry", "skt", "geçerlilik", "valid", "expire"]);
+              if (expiryField && app.passportExpiry) {
+                const ok = await cdpFillByCoords(cdpSession, page, expiryField, app.passportExpiry);
+                if (ok) filled.push("passportExpiry");
+                console.log(`  [FILL-CDP] Pasaport SKT: ${app.passportExpiry} → ${ok ? "✅" : "❌"}`);
+              }
+              
+              fillResults.push({
+                name: `${app.firstName} ${app.lastName}`,
+                filledFields: filled,
+              });
+            }
+            
+            // CDP session kapat
+            try { await cdpSession.detach(); } catch {}
+            
+            const filledNames = fillResults.map(r => `${r.name} (${r.filledFields.length} alan)`).join(", ");
+            console.log(`  📝 [FILL-CDP] Tamamlandı: ${filledNames}`);
+            await logStep(id, "info", `📝 CDP form doldurma tamamlandı: ${filledNames || "sonuç yok"}`);
             
             // İsteği temizle
             await fetch(`${SUPABASE_REST_URL}/bot_settings?key=eq.fill_applicants_request`, {
@@ -2383,11 +2477,11 @@ async function checkAppointments(config, account) {
             
             // Screenshot al
             const fillSs = await takeScreenshotBase64(page);
-            await reportResult(id, "info", `📝 Form doldurma sonucu | ${filledNames}`, 0, fillSs);
+            await reportResult(id, "info", `📝 CDP form doldurma sonucu | ${filledNames}`, 0, fillSs);
           }
         }
       } catch (fillErr) {
-        console.warn(`  [FILL] Hata: ${fillErr.message}`);
+        console.warn(`  [FILL-CDP] Hata: ${fillErr.message}`);
       }
 
       console.log(`\n  [Adım ${step}/${MAX_STEPS}]`);
