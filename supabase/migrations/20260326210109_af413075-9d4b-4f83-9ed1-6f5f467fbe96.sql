@@ -1,0 +1,1 @@
+UPDATE vfs_countries SET is_active = true WHERE code = 'pol';
