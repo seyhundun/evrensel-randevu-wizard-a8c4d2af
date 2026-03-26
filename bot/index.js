@@ -949,12 +949,21 @@ async function handleOtpVerification(page, account) {
         };
         const setValue = (el, value) => {
           if (!el) return;
+          try {
+            el.removeAttribute("readonly");
+            el.readOnly = false;
+            el.removeAttribute("disabled");
+            el.disabled = false;
+          } catch {}
           const proto = Object.getPrototypeOf(el);
           const descriptor = Object.getOwnPropertyDescriptor(proto, 'value') || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
           if (descriptor?.set) descriptor.set.call(el, value);
           else el.value = value;
+          el.dispatchEvent(new Event("focus", { bubbles: true }));
           el.dispatchEvent(new Event("input", { bubbles: true }));
           el.dispatchEvent(new Event("change", { bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: value.slice(-1) || "0" }));
+          el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: value.slice(-1) || "0" }));
           el.dispatchEvent(new Event("blur", { bubbles: true }));
         };
         const inputs = [...document.querySelectorAll('input, textarea')].filter((inp) => {
@@ -984,24 +993,28 @@ async function handleOtpVerification(page, account) {
           setValue(singleInput, code);
           return true;
         }
+        const fallbackInputs = [...document.querySelectorAll('input, textarea')].filter((inp) => {
+          const type = (inp.getAttribute("type") || "text").toLowerCase();
+          if (["hidden", "email"].includes(type)) return false;
+          const rect = inp.getBoundingClientRect();
+          const style = window.getComputedStyle(inp);
+          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        });
+        if (fallbackInputs.length === 1) {
+          setValue(fallbackInputs[0], code);
+          return true;
+        }
         return false;
       }, otp);
       if (filled) {
         console.log("  [OTP] ✅ Kod girildi, gönderiliyor...");
         await delay(500, 1000);
-        const submitted = await page.evaluate(() => {
-          const btns = [...document.querySelectorAll("button")];
-          const submitBtn = btns.find(b => {
-            const txt = b.textContent.toLowerCase();
-            return txt.includes("verify") || txt.includes("doğrula") || txt.includes("onayla") ||
-                   txt.includes("submit") || txt.includes("gönder") || txt.includes("confirm");
-          }) || document.querySelector('button[type="submit"]');
-          if (submitBtn) { submitBtn.click(); return true; }
-          return false;
-        });
-        if (submitted) {
+        const verifyClick = await clickOtpVerification(page);
+        if (verifyClick.clicked) {
           await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => {});
           await delay(2000, 3000);
+        } else {
+          await page.keyboard.press("Enter").catch(() => {});
         }
         return { ok: true, reason: "otp_solved" };
       }
@@ -2442,14 +2455,23 @@ async function checkAppointments(config, account) {
                 };
                 var setValue = function(el, value) {
                   if (!el) return;
+                  try {
+                    el.removeAttribute("readonly");
+                    el.readOnly = false;
+                    el.removeAttribute("disabled");
+                    el.disabled = false;
+                  } catch {}
                   var proto = Object.getPrototypeOf(el);
                   var descriptor = Object.getOwnPropertyDescriptor(proto, "value")
                     || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
                     || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
                   if (descriptor && descriptor.set) descriptor.set.call(el, value);
                   else el.value = value;
+                  el.dispatchEvent(new Event("focus", { bubbles: true }));
                   el.dispatchEvent(new Event("input", { bubbles: true }));
                   el.dispatchEvent(new Event("change", { bubbles: true }));
+                  el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: value.slice(-1) || "0" }));
+                  el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: value.slice(-1) || "0" }));
                   el.dispatchEvent(new Event("blur", { bubbles: true }));
                 };
                 var otpHints = ["otp", "code", "doğrulama", "verification", "tek kullanımlık"];
@@ -2465,6 +2487,13 @@ async function checkAppointments(config, account) {
                   return otpHints.some(function(k) { return haystack.includes(k); }) || inp.inputMode === "numeric" || inp.maxLength === 6;
                 });
                 var singleInput = candidates[0];
+                if (!singleInput) {
+                  var fallbackInputs = inputs.filter(function(inp) {
+                    var type = (inp.getAttribute("type") || "text").toLowerCase();
+                    return type !== "hidden" && type !== "email";
+                  });
+                  if (fallbackInputs.length === 1) singleInput = fallbackInputs[0];
+                }
                 if (!singleInput) return false;
                 singleInput.focus();
                 setValue(singleInput, code);
@@ -2500,14 +2529,22 @@ async function checkAppointments(config, account) {
             };
             var setValue = function(el, value) {
               if (!el) return;
+              try {
+                el.removeAttribute("readonly");
+                el.readOnly = false;
+                el.removeAttribute("disabled");
+                el.disabled = false;
+              } catch {}
               var proto = Object.getPrototypeOf(el);
               var descriptor = Object.getOwnPropertyDescriptor(proto, "value")
                 || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
                 || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
               if (descriptor && descriptor.set) descriptor.set.call(el, value);
               else el.value = value;
+              el.dispatchEvent(new Event("focus", { bubbles: true }));
               el.dispatchEvent(new Event("input", { bubbles: true }));
               el.dispatchEvent(new Event("change", { bubbles: true }));
+              el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: value.slice(-1) || "0" }));
               el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: value.slice(-1) || "0" }));
               el.dispatchEvent(new Event("blur", { bubbles: true }));
             };
@@ -2546,6 +2583,14 @@ async function checkAppointments(config, account) {
             var singleInput = candidates.find(function(inp) {
               return inp.maxLength <= 0 || inp.maxLength >= code.length || inp.autocomplete === "one-time-code";
             });
+
+            if (!singleInput) {
+              var fallbackInputs = inputs.filter(function(inp) {
+                var type = (inp.getAttribute("type") || "text").toLowerCase();
+                return type !== "hidden" && type !== "email";
+              });
+              if (fallbackInputs.length === 1) singleInput = fallbackInputs[0];
+            }
 
             if (!singleInput) return false;
             singleInput.focus();
