@@ -861,171 +861,7 @@ async function waitForRegistrationFormAfterQueue(page, registerUrl) {
 }
 
 // ==================== OTP HANDLING ====================
-
-// IMAP ile otomatik OTP okuma (iDATA ile aynı mantık)
-async function tryImapOtp(accountId) {
-  const fetch = (await import("node-fetch")).default;
-
-  // Helper to save IMAP attempt result to DB
-  async function saveImapResult(status, message) {
-    try {
-      await fetch(
-        `${SUPABASE_REST_URL}/vfs_accounts?id=eq.${accountId}`,
-        {
-          method: "PATCH",
-          headers: { ...restHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
-          body: JSON.stringify({
-            imap_last_status: status,
-            imap_last_message: (message || "").slice(0, 500),
-            imap_last_checked_at: new Date().toISOString(),
-          }),
-        }
-      );
-    } catch (e) {
-      console.error("  [IMAP] saveImapResult hatası:", e.message);
-    }
-  }
-
-  try {
-    const { ImapFlow } = require("imapflow");
-
-    const res = await fetch(
-      `${SUPABASE_REST_URL}/vfs_accounts?id=eq.${accountId}&select=email,imap_host,imap_password,otp_requested_at`,
-      { headers: restHeaders }
-    );
-    const accounts = await res.json();
-    if (!accounts?.length || !accounts[0].imap_password) return null;
-
-    const account = accounts[0];
-    const host = account.imap_host || "imap.gmail.com";
-    const otpRequestedAt = account.otp_requested_at ? new Date(account.otp_requested_at) : null;
-    const otpRequestedTs = otpRequestedAt && !Number.isNaN(otpRequestedAt.getTime()) ? otpRequestedAt.getTime() : null;
-    const allowedFrom = (process.env.VFS_OTP_FROM || "donotreply@vfshelpline.com,donotreply@vfsglobal.com,no-reply@vfsglobal.com")
-      .split(",")
-      .map((x) => x.trim().toLowerCase())
-      .filter(Boolean);
-
-    console.log(`  [IMAP] ${account.email} → ${host} bağlanıyor...`);
-    if (allowedFrom.length) {
-      console.log(`  [IMAP] Gönderen filtresi: ${allowedFrom.join(", ")}`);
-    }
-    if (otpRequestedTs) {
-      console.log(`  [IMAP] OTP istek zamanı: ${new Date(otpRequestedTs).toISOString()}`);
-    }
-
-    const decodeQuotedPrintable = (text = "") =>
-      text.replace(/=\r?\n/g, "").replace(/=([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-    const htmlToText = (text = "") =>
-      text.replace(/<br\s*\/?\s*>/gi, "\n").replace(/<\/(p|div|tr|td|h1|h2|h3|h4|h5|h6)>/gi, "\n")
-        .replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&")
-        .replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
-
-    const client = new ImapFlow({
-      host, port: 993, secure: true,
-      auth: { user: account.email, pass: account.imap_password },
-      logger: false, greetingTimeout: 10000, socketTimeout: 15000,
-    });
-
-    await client.connect();
-    const lock = await client.getMailboxLock("INBOX");
-
-    try {
-      const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-      const sinceTs = otpRequestedTs ? Math.max(oneDayAgo, otpRequestedTs - 10 * 60 * 1000) : oneDayAgo;
-      const messages = await client.search({ since: new Date(sinceTs) }, { uid: true });
-      if (!messages.length) {
-        console.log("  [IMAP] Uygun zaman aralığında mail yok");
-        await saveImapResult("no_mail", "Uygun zaman aralığında mail bulunamadı");
-        await lock.release();
-        await client.logout();
-        return null;
-      }
-
-      const lastUids = messages.slice(-30).reverse();
-      let lastSkippedSender = "";
-      let lastSubject = "";
-
-      for (const uid of lastUids) {
-        const msg = await client.fetchOne(uid, { source: true, envelope: true, internalDate: true }, { uid: true });
-        const msgTs = msg?.internalDate ? new Date(msg.internalDate).getTime() : null;
-        if (otpRequestedTs && msgTs && msgTs < otpRequestedTs - 15000) continue;
-
-        const subject = msg?.envelope?.subject || "";
-        const rawText = (msg?.source ? msg.source.toString("utf8") : "").replace(/\r/g, "");
-
-        const fromText = (msg?.envelope?.from || []).map((x) => (x?.address || "").toLowerCase()).join(", ");
-        const headerFrom = (rawText.match(/^from:\s*(.+)$/im)?.[1] || "").toLowerCase();
-        const headerSender = (rawText.match(/^sender:\s*(.+)$/im)?.[1] || "").toLowerCase();
-        const headerReplyTo = (rawText.match(/^reply-to:\s*(.+)$/im)?.[1] || "").toLowerCase();
-        const headerReturnPath = (rawText.match(/^return-path:\s*(.+)$/im)?.[1] || "").toLowerCase();
-        const senderHaystack = [fromText, headerFrom, headerSender, headerReplyTo, headerReturnPath]
-          .filter(Boolean)
-          .join(" | ");
-
-        lastSubject = subject;
-
-        if (allowedFrom.length && senderHaystack) {
-          const senderMatched = allowedFrom.some((sender) => senderHaystack.includes(sender));
-          if (!senderMatched) {
-            lastSkippedSender = senderHaystack;
-            console.log(`  [IMAP] UID ${uid} atlandı (from: ${senderHaystack || "?"})`);
-            continue;
-          }
-        }
-
-        const mainBlock = rawText.split(/\n(?:On .+ wrote:|-----Original Message-----)/i)[0].slice(0, 12000);
-        const normalizedText = `${subject}\n${htmlToText(decodeQuotedPrintable(mainBlock))}`;
-
-        const patterns = [
-          /(?:doğrulama kodu|verification code|one.?time password|otp)[^\d]{0,60}(\d{4,8})/i,
-          /(?:tek seferlik|tek kullanımlık)[^\d]{0,60}(\d{4,8})/i,
-          /\b(\d{6})\b/,
-        ];
-
-        let otp = null;
-        for (const pattern of patterns) {
-          const match = normalizedText.match(pattern);
-          if (match?.[1] && match[1] !== "0000" && match[1] !== "000000") {
-            otp = match[1];
-            break;
-          }
-        }
-
-        if (!otp) {
-          const lineCodes = [...normalizedText.matchAll(/^\s*(\d{4,8})\s*$/gm)]
-            .map((m) => m[1])
-            .filter((x) => x !== "0000" && x !== "000000");
-          if (lineCodes.length > 0) otp = lineCodes[lineCodes.length - 1];
-        }
-
-        if (otp) {
-          console.log(`  [IMAP] ✅ VFS OTP bulundu: ${otp} | from: ${senderHaystack || fromText || "?"} | subject: ${subject}`);
-          await saveImapResult("success", `OTP: ${otp} | From: ${fromText || senderHaystack} | Subject: ${subject}`);
-          await lock.release();
-          await client.logout();
-          return otp;
-        }
-      }
-
-      const noMatchMsg = lastSkippedSender
-        ? `VFS maili bulunamadı. Son gönderici: ${lastSkippedSender} | Konu: ${lastSubject}`
-        : `${messages.length} mail tarandı, VFS OTP bulunamadı`;
-      console.log(`  [IMAP] ${noMatchMsg}`);
-      await saveImapResult("not_found", noMatchMsg);
-      await lock.release();
-      await client.logout();
-      return null;
-    } catch (e) {
-      try { await lock.release(); } catch {}
-      try { await client.logout(); } catch {}
-      throw e;
-    }
-  } catch (err) {
-    console.error(`  [IMAP] VFS IMAP hatası: ${err.message}`);
-    await saveImapResult("error", `IMAP hatası: ${err.message}`);
-    return null;
-  }
-}
+// VFS OTP: Sadece manuel dashboard OTP (IMAP kaldırıldı)
 
 async function readManualOtp(accountId) {
   try {
@@ -1089,15 +925,10 @@ async function handleOtpVerification(page, account) {
 
   const startTime = Date.now();
   while (Date.now() - startTime < CONFIG.OTP_WAIT_MS) {
-    // IMAP ve manuel OTP'yi paralel dene (iDATA gibi race)
+    // Sadece manuel OTP (dashboard'dan)
     let otp = null;
-    // otp_mode kontrolü: auto = IMAP + manuel, manual = sadece manuel
-    const accMode = account.otp_mode || "auto";
-    const [imapOtp, manualOtp] = await Promise.all([
-      accMode === "auto" ? tryImapOtp(account.id).catch(() => null) : Promise.resolve(null),
-      readManualOtp(account.id),
-    ]);
-    otp = imapOtp || manualOtp;
+    const manualOtp = await readManualOtp(account.id);
+    otp = manualOtp;
     if (otp) {
       const filled = await page.evaluate((code) => {
         const getFieldText = (el) => {
@@ -2467,10 +2298,10 @@ async function checkAppointments(config, account) {
       }
 
       if (status === "otp_required") {
-        console.log("  📩 OTP gerekiyor — IMAP ve manuel kontrol ile bekleniyor");
+        console.log("  📩 OTP gerekiyor — manuel OTP bekleniyor");
         const ss = await takeScreenshotBase64(page);
-        await logStep(id, "login_otp", `⏸ OTP ekranı — otomatik IMAP / manuel OTP bekleniyor | ${account.email}`);
-        await reportResult(id, "otp_waiting", `OTP ekranı geldi, IMAP ve manuel OTP kontrol ediliyor | ${account.email}`, 0, ss);
+        await logStep(id, "login_otp", `⏸ OTP ekranı — manuel OTP bekleniyor | ${account.email}`);
+        await reportResult(id, "otp_waiting", `OTP ekranı geldi, manuel OTP bekleniyor | ${account.email}`, 0, ss);
 
         await setOtpRequested(account.id);
 
@@ -2528,18 +2359,13 @@ async function checkAppointments(config, account) {
           }
 
           try {
-            const accOtpMode = account.otp_mode || "auto";
-            const [imapOtp, dbOtp] = await Promise.all([
-              accOtpMode === "auto" ? tryImapOtp(account.id).catch(() => null) : Promise.resolve(null),
-              readManualOtp(account.id),
-            ]);
-            otpValue = imapOtp || dbOtp;
+            otpValue = await readManualOtp(account.id);
             if (otpValue) {
-              console.log("  ✅ OTP alındı: " + otpValue + (imapOtp ? " (IMAP)" : " (Manuel)"));
+              console.log("  ✅ OTP alındı: " + otpValue + " (Manuel)");
               break;
             }
           } catch (e) {
-            console.log("  [OTP] IMAP / manuel kontrol hatası:", e.message);
+            console.log("  [OTP] Manuel kontrol hatası:", e.message);
           }
 
           var elapsed = Math.round((Date.now() - otpWaitStart) / 1000);
