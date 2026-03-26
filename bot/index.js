@@ -2362,11 +2362,9 @@ async function checkAppointments(config, account) {
         while (Date.now() - otpWaitStart < OTP_WAIT_TIMEOUT) {
           await delay(5000, 6000); // Her 5 saniyede bir kontrol et
           
-          // DB'den manuel_otp alanını kontrol et
           try {
-            var otpData = await apiPost({ action: "get_account_otp", account_id: account.id }, "get_account_otp");
-            if (otpData.ok && otpData.otp) {
-              manualOtp = otpData.otp;
+            manualOtp = await readManualOtp(account.id);
+            if (manualOtp) {
               console.log("  ✅ Manuel OTP alındı: " + manualOtp);
               break;
             }
@@ -2389,58 +2387,76 @@ async function checkAppointments(config, account) {
         
         // OTP'yi sayfaya yaz
         try {
-          var otpInputs = await page.$$("input[type='text'], input[type='number'], input[type='password'], input[type='tel']");
-          var otpFilled = false;
-          for (var oi = 0; oi < otpInputs.length; oi++) {
-            var attrs = await page.evaluate(function(el) {
-              var p = el.closest("mat-form-field, .form-group, .otp-container, label, div");
-              var pText = p ? p.innerText.toLowerCase() : "";
-              return {
-                placeholder: (el.placeholder || "").toLowerCase(),
-                name: (el.name || "").toLowerCase(),
-                id: (el.id || "").toLowerCase(),
-                parentText: pText
-              };
-            }, otpInputs[oi]);
-            
-            var isOtpField = ["otp", "code", "doğrulama", "verification", "tek kullanımlık", "one-time", "seferlik"].some(function(k) {
-              return attrs.placeholder.includes(k) || attrs.name.includes(k) || attrs.id.includes(k) || attrs.parentText.includes(k);
+          var otpFilled = await page.evaluate(function(code) {
+            var inputs = Array.from(document.querySelectorAll("input, textarea"));
+            var isVisible = function(el) {
+              if (!el) return false;
+              var rect = el.getBoundingClientRect();
+              var style = window.getComputedStyle(el);
+              return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+            };
+            var setValue = function(el, value) {
+              if (!el) return;
+              var proto = Object.getPrototypeOf(el);
+              var descriptor = Object.getOwnPropertyDescriptor(proto, "value")
+                || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
+                || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+              if (descriptor && descriptor.set) descriptor.set.call(el, value);
+              else el.value = value;
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: value.slice(-1) || "0" }));
+              el.dispatchEvent(new Event("blur", { bubbles: true }));
+            };
+
+            var otpHints = ["otp", "code", "doğrulama", "verification", "tek kullanımlık", "one-time", "seferlik"];
+            var candidates = inputs.filter(function(inp) {
+              if (!isVisible(inp)) return false;
+              var type = (inp.getAttribute("type") || "text").toLowerCase();
+              if (!["text", "number", "password", "tel"].includes(type)) return false;
+              var parentText = (inp.closest("mat-form-field, .form-group, .otp-container, label, div")?.textContent || "").toLowerCase();
+              var haystack = [inp.name || "", inp.id || "", inp.placeholder || "", inp.autocomplete || "", inp.inputMode || "", parentText]
+                .join(" ")
+                .toLowerCase();
+              return otpHints.some(function(k) { return haystack.includes(k); }) || inp.maxLength === 1 || inp.maxLength === 6 || inp.maxLength === code.length;
             });
-            
-            if (isOtpField || otpInputs.length <= 3) {
-              await otpInputs[oi].click();
-              await delay(200, 300);
-              await page.evaluate(function(el, val) {
-                var desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value") || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
-                if (desc && desc.set) desc.set.call(el, val);
-                el.value = val;
-                el.dispatchEvent(new Event("input", { bubbles: true }));
-                el.dispatchEvent(new Event("change", { bubbles: true }));
-                el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
-              }, otpInputs[oi], manualOtp);
-              otpFilled = true;
-              console.log("  ✅ OTP alana yazıldı");
-              break;
+
+            var segmented = candidates.filter(function(inp) { return inp.maxLength === 1; });
+            if (segmented.length >= 4) {
+              for (var i = 0; i < Math.min(segmented.length, code.length); i++) {
+                segmented[i].focus();
+                setValue(segmented[i], code[i]);
+              }
+              return true;
             }
-          }
+
+            var singleInput = candidates.find(function(inp) {
+              return inp.maxLength <= 0 || inp.maxLength >= code.length || inp.autocomplete === "one-time-code";
+            }) || inputs.find(function(inp) {
+              if (!isVisible(inp)) return false;
+              var type = (inp.getAttribute("type") || "text").toLowerCase();
+              return ["text", "number", "password", "tel"].includes(type);
+            });
+
+            if (!singleInput) return false;
+            singleInput.focus();
+            setValue(singleInput, code);
+            return true;
+          }, manualOtp);
           
           if (otpFilled) {
             await delay(500, 1000);
-            // Submit/Doğrula butonuna tıkla
-            var buttons = await page.$$("button, input[type='submit']");
-            for (var bi = 0; bi < buttons.length; bi++) {
-              var btnText = await page.evaluate(function(el) { return (el.innerText || el.value || "").toLowerCase(); }, buttons[bi]);
-              if (["doğrula", "verify", "onayla", "confirm", "gönder", "submit", "devam", "continue"].some(function(k) { return btnText.includes(k); })) {
-                await buttons[bi].click();
-                console.log("  ✅ Doğrula butonuna tıklandı");
-                break;
-              }
+            var verifyClick = await clickOtpVerification(page);
+            if (verifyClick.clicked) {
+              console.log("  ✅ Doğrula butonuna tıklandı (" + verifyClick.reason + ")");
+            } else {
+              await page.keyboard.press("Enter").catch(function() {});
+              console.log("  ⚠ OTP doğrulama Enter fallback ile denendi (" + verifyClick.reason + ")");
             }
+          } else {
+            console.log("  ❌ OTP alanı bulunamadı veya kod yazılamadı");
           }
-          
-          // Manuel OTP'yi DB'den temizle
-          await apiPost({ action: "clear_account_otp", account_id: account.id }, "clear_account_otp");
-          
+
         } catch (otpErr) {
           console.error("  [OTP] Yazma hatası:", otpErr.message);
         }
