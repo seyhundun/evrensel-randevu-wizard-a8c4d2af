@@ -173,13 +173,13 @@ ${JSON.stringify(elements, null, 2)}`;
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-flash-lite",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.1,
-        max_tokens: 2048,
+        temperature: 0.05,
+        max_tokens: 1024,
       }),
     });
 
