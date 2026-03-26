@@ -524,6 +524,9 @@ export type Database = {
           fail_count: number
           id: string
           imap_host: string | null
+          imap_last_checked_at: string | null
+          imap_last_message: string | null
+          imap_last_status: string | null
           imap_password: string | null
           last_used_at: string | null
           manual_otp: string | null
@@ -547,6 +550,9 @@ export type Database = {
           fail_count?: number
           id?: string
           imap_host?: string | null
+          imap_last_checked_at?: string | null
+          imap_last_message?: string | null
+          imap_last_status?: string | null
           imap_password?: string | null
           last_used_at?: string | null
           manual_otp?: string | null
@@ -570,6 +576,9 @@ export type Database = {
           fail_count?: number
           id?: string
           imap_host?: string | null
+          imap_last_checked_at?: string | null
+          imap_last_message?: string | null
+          imap_last_status?: string | null
           imap_password?: string | null
           last_used_at?: string | null
           manual_otp?: string | null
