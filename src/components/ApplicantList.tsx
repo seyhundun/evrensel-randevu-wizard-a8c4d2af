@@ -71,10 +71,11 @@ export default function ApplicantList({
         <Button
           onClick={handleAutoFill}
           variant="outline"
+          disabled={filling}
           className="gap-2 shadow-card hover:shadow-card-hover transition-shadow"
         >
-          <ClipboardCheck className="w-4 h-4" />
-          Tümünü Doldur
+          {filling ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
+          {filling ? "Dolduruluyor..." : "Tümünü Doldur"}
         </Button>
       </div>
 
