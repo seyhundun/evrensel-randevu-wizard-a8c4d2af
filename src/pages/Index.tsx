@@ -252,7 +252,6 @@ const Index = () => {
               <ScrollArea className="h-full">
                 <div className="p-3 md:p-6 space-y-4 md:space-y-5">
                   <AccountHealthPanel configId={t.configId} />
-                  {/* VNC + Manuel Takeover */}
                   <VncViewer title="🌍 VFS Bot Ekranı" pathPrefix="/vfs" />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                     <ModuleStatus
@@ -271,6 +270,7 @@ const Index = () => {
                       canStart={!!t.country && !!t.city}
                     />
                   </div>
+                  <TrackingLogs configId={t.configId} />
                   <StatusPanel
                     status={t.status}
                     country={t.country}
@@ -281,7 +281,6 @@ const Index = () => {
                     configId={t.configId}
                   />
                   <ServerCommandPanel />
-                  <TrackingLogs configId={t.configId} />
                 </div>
               </ScrollArea>
             </main>
