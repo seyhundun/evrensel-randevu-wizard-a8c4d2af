@@ -30,36 +30,59 @@ export default function ApplicantCard({
 
   const handleFillSingle = async () => {
     if (!configId) {
-      toast.error("Önce takip başlatın");
+      toast.error("Önce takip başlatın veya kaydedin");
+      console.error("[Doldur] configId yok!");
       return;
     }
+    console.log("[Doldur] configId:", configId, "index:", index);
     setFilling(true);
     try {
       const { data, error } = await supabase
         .from("applicants")
         .select("*")
         .eq("config_id", configId)
-        .eq("sort_order", index)
-        .limit(1);
+        .order("sort_order", { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error("[Doldur] DB hatası:", error);
+        throw error;
+      }
+      
+      console.log("[Doldur] DB sonuç:", data?.length, "kayıt, index:", index);
+      
       if (!data || data.length === 0) {
+        toast.error("Veritabanında başvuru sahibi bulunamadı");
+        setFilling(false);
+        return;
+      }
+
+      const db = data[index];
+      if (!db) {
         toast.error(`${index + 1}. kişi veritabanında bulunamadı`);
         setFilling(false);
         return;
       }
 
-      const db = data[0];
-      onUpdate(applicant.id, "firstName", db.first_name || "");
-      onUpdate(applicant.id, "lastName", db.last_name || "");
-      onUpdate(applicant.id, "gender", db.gender || "");
-      onUpdate(applicant.id, "birthDate", db.birth_date || "");
-      onUpdate(applicant.id, "nationality", db.nationality || "Turkey");
-      onUpdate(applicant.id, "passport", db.passport || "");
-      onUpdate(applicant.id, "passportExpiry", db.passport_expiry || "");
+      console.log("[Doldur] Dolduruluyor:", db.first_name, db.last_name);
+      
+      // Update all fields
+      const fields: [keyof Applicant, string][] = [
+        ["firstName", db.first_name || ""],
+        ["lastName", db.last_name || ""],
+        ["gender", db.gender || ""],
+        ["birthDate", db.birth_date || ""],
+        ["nationality", db.nationality || "Turkey"],
+        ["passport", db.passport || ""],
+        ["passportExpiry", db.passport_expiry || ""],
+      ];
+      
+      for (const [field, value] of fields) {
+        onUpdate(applicant.id, field, value);
+      }
 
       toast.success(`${db.first_name} ${db.last_name} bilgileri dolduruldu`);
     } catch (err: any) {
+      console.error("[Doldur] Hata:", err);
       toast.error("Hata: " + (err.message || "Bilinmeyen"));
     } finally {
       setFilling(false);
