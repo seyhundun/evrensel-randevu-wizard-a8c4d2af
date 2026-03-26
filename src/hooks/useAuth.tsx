@@ -1,16 +1,16 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session } from "@supabase/supabase-js";
 
-async function logAuthEvent(email: string, userId: string | undefined, eventType: string) {
-  try {
-    await supabase.from("auth_logs").insert({
+function logAuthEvent(email: string, userId: string | undefined, eventType: string) {
+  Promise.resolve(
+    supabase.from("auth_logs").insert({
       user_email: email,
       user_id: userId || null,
       event_type: eventType,
       user_agent: navigator.userAgent,
-    } as any);
-  } catch {}
+    } as any)
+  ).catch(() => {});
 }
 
 export function useAuth() {
@@ -19,13 +19,18 @@ export function useAuth() {
   const loggedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
+    });
 
-      if (event === "SIGNED_IN" && session?.user?.email && loggedRef.current !== session.user.id) {
-        loggedRef.current = session.user.id;
-        logAuthEvent(session.user.email, session.user.id, "sign_in");
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
+      setSession(sess);
+      setLoading(false);
+
+      if (event === "SIGNED_IN" && sess?.user?.email && loggedRef.current !== sess.user.id) {
+        loggedRef.current = sess.user.id;
+        logAuthEvent(sess.user.email, sess.user.id, "sign_in");
       }
       if (event === "SIGNED_OUT") {
         if (loggedRef.current) {
@@ -35,15 +40,10 @@ export function useAuth() {
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
     return () => subscription.unsubscribe();
   }, []);
 
-  const signOut = () => supabase.auth.signOut();
+  const signOut = useCallback(() => supabase.auth.signOut(), []);
 
   return { session, loading, signOut };
 }
