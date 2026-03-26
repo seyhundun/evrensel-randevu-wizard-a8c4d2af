@@ -1,9 +1,13 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, User } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Trash2, User, ClipboardCheck, Loader2 } from "lucide-react";
 import type { Applicant } from "@/lib/constants";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface ApplicantCardProps {
   applicant: Applicant;
@@ -11,6 +15,7 @@ interface ApplicantCardProps {
   total: number;
   onUpdate: (id: string, field: keyof Applicant, value: string) => void;
   onRemove?: () => void;
+  configId?: string | null;
 }
 
 export default function ApplicantCard({
@@ -19,7 +24,48 @@ export default function ApplicantCard({
   total,
   onUpdate,
   onRemove,
+  configId,
 }: ApplicantCardProps) {
+  const [filling, setFilling] = useState(false);
+
+  const handleFillSingle = async () => {
+    if (!configId) {
+      toast.error("Önce takip başlatın");
+      return;
+    }
+    setFilling(true);
+    try {
+      const { data, error } = await supabase
+        .from("applicants")
+        .select("*")
+        .eq("config_id", configId)
+        .eq("sort_order", index)
+        .limit(1);
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        toast.error(`${index + 1}. kişi veritabanında bulunamadı`);
+        setFilling(false);
+        return;
+      }
+
+      const db = data[0];
+      onUpdate(applicant.id, "firstName", db.first_name || "");
+      onUpdate(applicant.id, "lastName", db.last_name || "");
+      onUpdate(applicant.id, "gender", db.gender || "");
+      onUpdate(applicant.id, "birthDate", db.birth_date || "");
+      onUpdate(applicant.id, "nationality", db.nationality || "Turkey");
+      onUpdate(applicant.id, "passport", db.passport || "");
+      onUpdate(applicant.id, "passportExpiry", db.passport_expiry || "");
+
+      toast.success(`${db.first_name} ${db.last_name} bilgileri dolduruldu`);
+    } catch (err: any) {
+      toast.error("Hata: " + (err.message || "Bilinmeyen"));
+    } finally {
+      setFilling(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -33,14 +79,26 @@ export default function ApplicantCard({
           <User className="w-4 h-4 text-primary" />
           Başvuru Sahibi {index + 1}
         </h3>
-        {total > 1 && onRemove && (
-          <button
-            onClick={onRemove}
-            className="text-muted-foreground hover:text-destructive transition-colors p-1"
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleFillSingle}
+            variant="outline"
+            size="sm"
+            disabled={filling}
+            className="gap-1.5 h-7 text-xs"
           >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
+            {filling ? <Loader2 className="w-3 h-3 animate-spin" /> : <ClipboardCheck className="w-3 h-3" />}
+            {filling ? "..." : "Doldur"}
+          </Button>
+          {total > 1 && onRemove && (
+            <button
+              onClick={onRemove}
+              className="text-muted-foreground hover:text-destructive transition-colors p-1"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <motion.div
