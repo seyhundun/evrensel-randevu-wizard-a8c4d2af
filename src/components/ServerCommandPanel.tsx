@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Terminal, Send, Loader2, Trash2, RotateCcw } from "lucide-react";
+import { Terminal, Send, Loader2, Trash2, GitBranch } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -28,6 +28,8 @@ const QUICK_COMMANDS = [
   { label: "RAM", cmd: "free -h" },
   { label: "Uptime", cmd: "uptime" },
 ];
+
+const REPO_PULL_CMD = "cd ~/vfs-bot && git fetch origin && git reset --hard origin/main && cd bot && npm install && pm2 restart all";
 
 export default function ServerCommandPanel() {
   const [command, setCommand] = useState("");
@@ -104,8 +106,18 @@ export default function ServerCommandPanel() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {/* Quick commands */}
+        {/* Güncelle + Quick commands */}
         <div className="flex flex-wrap gap-1">
+          <Button
+            variant="default"
+            size="sm"
+            className="h-7 text-[11px] px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5"
+            onClick={() => sendCommand(REPO_PULL_CMD)}
+            disabled={sending}
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            Güncelle
+          </Button>
           {QUICK_COMMANDS.map((q) => (
             <Button
               key={q.cmd}
