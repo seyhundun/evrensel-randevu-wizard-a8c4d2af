@@ -29,7 +29,7 @@ const QUICK_COMMANDS = [
   { label: "Uptime", cmd: "uptime" },
 ];
 
-const REPO_PULL_CMD = "cd ~/vfs-bot && git fetch origin && git reset --hard origin/main && cd bot && npm install && pm2 restart all";
+const REPO_PULL_CMD = "cd ~/vfs-bot && git remote set-url origin https://github.com/seyhundun/evrensel-randevu-wizard-a8c4d2af.git && git fetch origin && git reset --hard origin/main && cd bot && npm install && pm2 restart all";
 
 export default function ServerCommandPanel() {
   const [command, setCommand] = useState("");
