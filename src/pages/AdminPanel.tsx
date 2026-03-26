@@ -24,6 +24,7 @@ interface UserWithRole {
   id: string;
   email: string;
   created_at: string;
+  last_sign_in_at: string | null;
   role: string | null;
 }
 
@@ -58,31 +59,17 @@ const AdminPanel = () => {
     if (data) setAuthLogs(data);
   };
 
-  // Fetch users with roles
+  // Fetch users via edge function (lists all auth users with roles)
   const fetchUsers = async () => {
-    // Get users from auth_logs (unique emails) + roles
-    const { data: roles } = await supabase.from("user_roles").select("*");
-    const { data: logs } = await supabase
-      .from("auth_logs")
-      .select("user_email, user_id, created_at")
-      .order("created_at", { ascending: false });
-
-    // Build unique user list from logs
-    const userMap = new Map<string, UserWithRole>();
-    if (logs) {
-      for (const log of logs) {
-        if (!userMap.has(log.user_email)) {
-          const role = roles?.find(r => r.user_id === log.user_id);
-          userMap.set(log.user_email, {
-            id: log.user_id || "",
-            email: log.user_email,
-            created_at: log.created_at,
-            role: role ? String(role.role) : "user",
-          });
-        }
+    try {
+      const { data, error } = await supabase.functions.invoke("list-users");
+      if (error) throw error;
+      if (data?.users) {
+        setUsers(data.users);
       }
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
     }
-    setUsers(Array.from(userMap.values()));
   };
 
   useEffect(() => {
@@ -328,7 +315,7 @@ const AdminPanel = () => {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-xs font-mono">
-                          {new Date(user.created_at).toLocaleString("tr-TR")}
+                          {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString("tr-TR") : "Henüz giriş yok"}
                         </TableCell>
                         <TableCell className="text-right">
                           {user.email !== session.user.email && user.id && (
