@@ -61,10 +61,13 @@ export function useTracking() {
               id: a.id,
               firstName: a.first_name,
               lastName: a.last_name,
+              gender: (a as any).gender || "",
               passport: a.passport,
               birthDate: a.birth_date,
               nationality: (a as any).nationality || "Turkey",
               passportExpiry: (a as any).passport_expiry || "",
+              phoneNumber: (a as any).phone_number || "",
+              applicantEmail: (a as any).applicant_email || "",
             }))
           );
         }
@@ -154,6 +157,9 @@ export function useTracking() {
       email: "",
       nationality: a.nationality || "Turkey",
       passport_expiry: a.passportExpiry || "",
+      gender: a.gender || "",
+      phone_number: a.phoneNumber || "",
+      applicant_email: a.applicantEmail || "",
       sort_order: i,
     } as any));
     await supabase.from("applicants").insert(applicantRows);
