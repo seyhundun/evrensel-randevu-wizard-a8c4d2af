@@ -895,18 +895,22 @@ async function handleOtpVerification(page, account) {
     const hasEmailInput = !!document.querySelector('input[type="email"], input[name="email"]');
     const hasPasswordInput = !!document.querySelector('input[type="password"]');
     if (hasEmailInput && hasPasswordInput) return false;
-    const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"], input:not([type]), input[autocomplete="one-time-code"]');
+    const inputs = document.querySelectorAll('input, textarea');
     const hasOtpInput = [...inputs].some(inp => {
+      const type = (inp.getAttribute("type") || "text").toLowerCase();
       const name = (inp.name || "").toLowerCase();
       const placeholder = (inp.placeholder || "").toLowerCase();
       const id = (inp.id || "").toLowerCase();
+      const ariaLabel = (inp.getAttribute("aria-label") || "").toLowerCase();
       const autocomplete = (inp.getAttribute("autocomplete") || "").toLowerCase();
       const inputMode = (inp.getAttribute("inputmode") || "").toLowerCase();
       const maxLength = Number(inp.getAttribute("maxlength") || inp.maxLength || 0);
       const label = (inp.closest('mat-form-field, .mat-mdc-form-field, .form-group, .ng-star-inserted, div')?.textContent || "").toLowerCase();
+      if (type === "hidden" || type === "email") return false;
       return name.includes("otp") || name.includes("code") || name.includes("verification") ||
              placeholder.includes("kod") || placeholder.includes("code") || placeholder.includes("doğrulama") ||
              id.includes("otp") || id.includes("code") ||
+             ariaLabel.includes("otp") || ariaLabel.includes("code") || ariaLabel.includes("doğrulama") ||
              label.includes("otp") || label.includes("tek seferlik") || label.includes("doğrulama") ||
              autocomplete === "one-time-code" || inputMode === "numeric" || [1, 4, 5, 6, 8].includes(maxLength);
     });
@@ -955,9 +959,12 @@ async function handleOtpVerification(page, account) {
         };
         const inputs = [...document.querySelectorAll('input, textarea')].filter((inp) => {
           const type = (inp.getAttribute("type") || "text").toLowerCase();
-          if (["password", "email", "hidden"].includes(type)) return false;
           const text = getFieldText(inp);
           const maxLength = Number(inp.getAttribute("maxlength") || inp.maxLength || 0);
+          if (type === "hidden" || type === "email") return false;
+          if (type === "password" && !(text.includes("otp") || text.includes("code") || text.includes("doğrulama") || text.includes("verification") || inp.getAttribute("autocomplete") === "one-time-code")) {
+            return false;
+          }
           return text.includes("otp") || text.includes("code") || text.includes("doğrulama") || text.includes("verification") ||
             inp.getAttribute("autocomplete") === "one-time-code" || inp.getAttribute("inputmode") === "numeric" ||
             [1, 4, 5, 6, 8].includes(maxLength);
@@ -2449,9 +2456,12 @@ async function checkAppointments(config, account) {
                 var candidates = inputs.filter(function(inp) {
                   if (!isVisible(inp)) return false;
                   var type = (inp.getAttribute("type") || "text").toLowerCase();
-                  if (["password", "email", "hidden"].includes(type)) return false;
                   var parentText = (inp.closest("mat-form-field, .form-group, .otp-container, label, div")?.textContent || "").toLowerCase();
                   var haystack = [inp.name || "", inp.id || "", inp.placeholder || "", parentText].join(" ").toLowerCase();
+                  if (type === "hidden" || type === "email") return false;
+                  if (type === "password" && !(haystack.includes("otp") || haystack.includes("code") || haystack.includes("doğrulama") || haystack.includes("verification") || inp.autocomplete === "one-time-code")) {
+                    return false;
+                  }
                   return otpHints.some(function(k) { return haystack.includes(k); }) || inp.inputMode === "numeric" || inp.maxLength === 6;
                 });
                 var singleInput = candidates[0];
@@ -2506,12 +2516,13 @@ async function checkAppointments(config, account) {
             var candidates = inputs.filter(function(inp) {
               if (!isVisible(inp)) return false;
               var type = (inp.getAttribute("type") || "text").toLowerCase();
-              if (!["text", "number", "tel"].includes(type) && type !== "") return false;
-              if (["password", "email", "hidden"].includes(type)) return false;
+              if (!["text", "number", "tel", "password"].includes(type) && type !== "") return false;
+              if (["email", "hidden"].includes(type)) return false;
               var parentText = (inp.closest("mat-form-field, .form-group, .otp-container, label, div")?.textContent || "").toLowerCase();
               var haystack = [inp.name || "", inp.id || "", inp.placeholder || "", inp.autocomplete || "", inp.inputMode || "", parentText]
                 .join(" ")
                 .toLowerCase();
+              if (type === "password" && !(haystack.includes("otp") || haystack.includes("code") || haystack.includes("doğrulama") || haystack.includes("verification") || inp.autocomplete === "one-time-code")) return false;
               return otpHints.some(function(k) { return haystack.includes(k); })
                 || inp.autocomplete === "one-time-code"
                 || inp.inputMode === "numeric"
@@ -2552,9 +2563,9 @@ async function checkAppointments(config, account) {
               console.log("  ⚠ OTP doğrulama Enter fallback ile denendi (" + verifyClick.reason + ")");
             }
           } else {
-            console.log("  ❌ OTP alanı bulunamadı — sayfa açık kalacak, tekrar denenecek");
-            await logStep(id, "warning", `OTP kodu alındı ama alana yazılamadı — tekrar denenecek | ${account.email}`);
-            recentActions.push("OTP alanı bulunamadı, tekrar denenecek");
+            console.log("  ❌ OTP alanı bulunamadı veya alan framework tarafından kilitli — sayfa açık kalacak, tekrar denenecek");
+            await logStep(id, "warning", `OTP kodu alındı ama OTP alanı eşleşmedi/kilitli — tekrar denenecek | ${account.email}`);
+            recentActions.push("OTP alanı eşleşmedi veya kilitli, tekrar denenecek");
             await delay(3000, 5000);
             continue;
           }
@@ -3494,9 +3505,20 @@ async function waitForOtpScreenAfterSubmit(page, timeoutMs = 45000) {
       const title = (document.title || "").toLowerCase();
 
       const hasOtpText = /otp|verification code|doğrulama kodu|one time|sms code|email code|kodu girin|code sent/.test(text);
-      const hasOtpInput = !!document.querySelector(
-        'input[autocomplete="one-time-code"], input[name*="otp" i], input[id*="otp" i], input[maxlength="1"], input[maxlength="6"]'
-      );
+      const hasOtpInput = !![...document.querySelectorAll('input, textarea')].find((inp) => {
+        const type = (inp.getAttribute('type') || 'text').toLowerCase();
+        const haystack = [
+          inp.getAttribute('autocomplete') || '',
+          inp.getAttribute('name') || '',
+          inp.getAttribute('id') || '',
+          inp.getAttribute('placeholder') || '',
+          inp.getAttribute('aria-label') || '',
+          inp.closest('label, mat-form-field, .mat-mdc-form-field, .form-group, .otp-container, div')?.textContent || '',
+        ].join(' ').toLowerCase();
+        if (type === 'hidden' || type === 'email') return false;
+        return haystack.includes('otp') || haystack.includes('verification') || haystack.includes('doğrulama') || haystack.includes('code') ||
+          inp.getAttribute('autocomplete') === 'one-time-code' || ['1', '4', '5', '6', '8'].includes(inp.getAttribute('maxlength') || '');
+      });
 
       const hasRegisterForm =
         !!document.querySelector('input[type="email"], input[name*="email" i]') &&
