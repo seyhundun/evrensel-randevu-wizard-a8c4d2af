@@ -66,7 +66,27 @@ export default function ApplicantList({
       // Single atomic state update
       onBatchUpdate(newApplicants);
 
-      toast.success(`${data.length} başvuru sahibinin bilgileri dolduruldu!`);
+      // Send fill request to bot via bot_settings
+      const fillPayload = JSON.stringify({
+        action: "fill_all",
+        timestamp: Date.now(),
+        applicants: data.map((db, i) => ({
+          index: i,
+          firstName: db.first_name || "",
+          lastName: db.last_name || "",
+          gender: db.gender || "",
+          birthDate: db.birth_date || "",
+          nationality: db.nationality || "Turkey",
+          passport: db.passport || "",
+          passportExpiry: db.passport_expiry || "",
+        })),
+      });
+
+      await supabase
+        .from("bot_settings")
+        .upsert({ key: "fill_applicants_request", value: fillPayload, label: "Form Doldurma İsteği" }, { onConflict: "key" });
+
+      toast.success(`${data.length} kişi bilgisi bota gönderildi — VFS formu dolduruluyor!`);
     } catch (err: any) {
       toast.error("Bilgiler yüklenemedi: " + (err.message || "Bilinmeyen hata"));
     } finally {

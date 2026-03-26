@@ -65,7 +65,7 @@ export default function ApplicantCard({
 
       console.log("[Doldur] Dolduruluyor:", db.first_name, db.last_name);
       
-      // Update all fields
+      // Update all fields in dashboard
       const fields: [keyof Applicant, string][] = [
         ["firstName", db.first_name || ""],
         ["lastName", db.last_name || ""],
@@ -80,7 +80,27 @@ export default function ApplicantCard({
         onUpdate(applicant.id, field, value);
       }
 
-      toast.success(`${db.first_name} ${db.last_name} bilgileri dolduruldu`);
+      // Send fill request to bot via bot_settings
+      const fillPayload = JSON.stringify({
+        action: "fill_single",
+        timestamp: Date.now(),
+        index,
+        applicant: {
+          firstName: db.first_name || "",
+          lastName: db.last_name || "",
+          gender: db.gender || "",
+          birthDate: db.birth_date || "",
+          nationality: db.nationality || "Turkey",
+          passport: db.passport || "",
+          passportExpiry: db.passport_expiry || "",
+        },
+      });
+
+      await supabase
+        .from("bot_settings")
+        .upsert({ key: "fill_applicants_request", value: fillPayload, label: "Form Doldurma İsteği" }, { onConflict: "key" });
+
+      toast.success(`${db.first_name} ${db.last_name} bota gönderildi — VFS formu dolduruluyor!`);
     } catch (err: any) {
       console.error("[Doldur] Hata:", err);
       toast.error("Hata: " + (err.message || "Bilinmeyen"));
