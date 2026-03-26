@@ -864,9 +864,30 @@ async function waitForRegistrationFormAfterQueue(page, registerUrl) {
 
 // IMAP ile otomatik OTP okuma (iDATA ile aynı mantık)
 async function tryImapOtp(accountId) {
+  const fetch = (await import("node-fetch")).default;
+
+  // Helper to save IMAP attempt result to DB
+  async function saveImapResult(status, message) {
+    try {
+      await fetch(
+        `${SUPABASE_REST_URL}/vfs_accounts?id=eq.${accountId}`,
+        {
+          method: "PATCH",
+          headers: { ...restHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify({
+            imap_last_status: status,
+            imap_last_message: (message || "").slice(0, 500),
+            imap_last_checked_at: new Date().toISOString(),
+          }),
+        }
+      );
+    } catch (e) {
+      console.error("  [IMAP] saveImapResult hatası:", e.message);
+    }
+  }
+
   try {
     const { ImapFlow } = require("imapflow");
-    const fetch = (await import("node-fetch")).default;
 
     const res = await fetch(
       `${SUPABASE_REST_URL}/vfs_accounts?id=eq.${accountId}&select=email,imap_host,imap_password,otp_requested_at`,
@@ -914,16 +935,23 @@ async function tryImapOtp(accountId) {
       const messages = await client.search({ since: new Date(sinceTs) }, { uid: true });
       if (!messages.length) {
         console.log("  [IMAP] Uygun zaman aralığında mail yok");
+        await saveImapResult("no_mail", "Uygun zaman aralığında mail bulunamadı");
         await lock.release();
         await client.logout();
         return null;
       }
 
       const lastUids = messages.slice(-30).reverse();
+      let lastSkippedSender = "";
+      let lastSubject = "";
+
       for (const uid of lastUids) {
         const msg = await client.fetchOne(uid, { source: true, envelope: true, internalDate: true }, { uid: true });
         const msgTs = msg?.internalDate ? new Date(msg.internalDate).getTime() : null;
         if (otpRequestedTs && msgTs && msgTs < otpRequestedTs - 15000) continue;
+
+        const subject = msg?.envelope?.subject || "";
+        const rawText = (msg?.source ? msg.source.toString("utf8") : "").replace(/\r/g, "");
 
         const fromText = (msg?.envelope?.from || []).map((x) => (x?.address || "").toLowerCase()).join(", ");
         const headerFrom = (rawText.match(/^from:\s*(.+)$/im)?.[1] || "").toLowerCase();
@@ -934,16 +962,17 @@ async function tryImapOtp(accountId) {
           .filter(Boolean)
           .join(" | ");
 
+        lastSubject = subject;
+
         if (allowedFrom.length && senderHaystack) {
           const senderMatched = allowedFrom.some((sender) => senderHaystack.includes(sender));
           if (!senderMatched) {
+            lastSkippedSender = senderHaystack;
             console.log(`  [IMAP] UID ${uid} atlandı (from: ${senderHaystack || "?"})`);
             continue;
           }
         }
 
-        const subject = msg?.envelope?.subject || "";
-        const rawText = (msg?.source ? msg.source.toString("utf8") : "").replace(/\r/g, "");
         const mainBlock = rawText.split(/\n(?:On .+ wrote:|-----Original Message-----)/i)[0].slice(0, 12000);
         const normalizedText = `${subject}\n${htmlToText(decodeQuotedPrintable(mainBlock))}`;
 
@@ -971,13 +1000,18 @@ async function tryImapOtp(accountId) {
 
         if (otp) {
           console.log(`  [IMAP] ✅ VFS OTP bulundu: ${otp} | from: ${senderHaystack || fromText || "?"} | subject: ${subject}`);
+          await saveImapResult("success", `OTP: ${otp} | From: ${fromText || senderHaystack} | Subject: ${subject}`);
           await lock.release();
           await client.logout();
           return otp;
         }
       }
 
-      console.log("  [IMAP] Uygun VFS OTP maili bulunamadı");
+      const noMatchMsg = lastSkippedSender
+        ? `VFS maili bulunamadı. Son gönderici: ${lastSkippedSender} | Konu: ${lastSubject}`
+        : `${messages.length} mail tarandı, VFS OTP bulunamadı`;
+      console.log(`  [IMAP] ${noMatchMsg}`);
+      await saveImapResult("not_found", noMatchMsg);
       await lock.release();
       await client.logout();
       return null;
@@ -988,6 +1022,7 @@ async function tryImapOtp(accountId) {
     }
   } catch (err) {
     console.error(`  [IMAP] VFS IMAP hatası: ${err.message}`);
+    await saveImapResult("error", `IMAP hatası: ${err.message}`);
     return null;
   }
 }
