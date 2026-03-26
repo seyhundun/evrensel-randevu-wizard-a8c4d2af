@@ -25,7 +25,7 @@ serve(async (req) => {
 
 ## GÖREV AKIŞI (SIRAYLA İLERLE)
 1. **GİRİŞ**: E-posta ve şifre ile oturum aç
-2. **OTP**: OTP ekranı gelirse → SADECE status: "otp_required" döndür ve `actions: []` ver. OTP alanına ASLA yazma, hiçbir butona ASLA tıklama, submit etme. OTP kodu ayrı bot akışı tarafından yönetilir.
+2. **OTP**: OTP ekranı gelirse → SADECE status: "otp_required" döndür ve actions: [] ver. OTP alanına ASLA yazma, hiçbir butona ASLA tıklama, submit etme. OTP kodu ayrı bot akışı tarafından yönetilir.
 3. **DASHBOARD SAYFASI (OTP SONRASI)**: 
    - "Aktif Başvuru(lar)" sayfası gelirse → "Yeni Rezervasyon Başlat" butonunu tıkla
    - "Başvuru(lar) Bulunamadı" yazısı görünebilir, bu normal → "Yeni Rezervasyon Başlat" tıkla
