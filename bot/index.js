@@ -4999,20 +4999,48 @@ async function main() {
           consecutiveErrors = 0;
         } else if (result.hadError) {
           consecutiveErrors++;
-          // Sayfa hatası → hemen IP değiştir ve tekrar dene (bekleme yok)
+          
+          if (result.accountBanned) {
+            console.log(`\n⛔ Hesap banlı: ${account.email} → sıradaki hesaba geçiliyor`);
+            await new Promise((r) => setTimeout(r, 5000));
+            continue;
+          } else if (result.otpRequired) {
+            console.log(`\n📩 OTP gerekiyor: ${account.email}`);
+            continue;
+          }
+          
+          // Sayfa hatası (500) → kademeli soğuma ile IP değiştir
+          if (result.pageError) {
+            // Kademeli soğuma: 1→60s, 2→90s, 3→120s, 4+→180s
+            let pageErrorCooldown;
+            if (consecutiveErrors >= 4) {
+              pageErrorCooldown = 180000; // 3 dakika
+            } else if (consecutiveErrors >= 3) {
+              pageErrorCooldown = 120000; // 2 dakika
+            } else if (consecutiveErrors >= 2) {
+              pageErrorCooldown = 90000; // 1.5 dakika
+            } else {
+              pageErrorCooldown = 60000; // 1 dakika
+            }
+            
+            if (PROXY_MODE === "residential") {
+              residentialSessionId++;
+              EVOMI_PROXY_REGION = getNextProxyRegion();
+            }
+            
+            console.log(`\n🔄 Sayfa hatası (500) → ${Math.round(pageErrorCooldown / 1000)}s soğuma sonrası yeni IP ile deneniyor (errors: ${consecutiveErrors})`);
+            await logStep(config.id, "ip_change", `500 hatası → ${Math.round(pageErrorCooldown / 1000)}s soğuma | errors: ${consecutiveErrors} | ${account.email}`);
+            await new Promise((r) => setTimeout(r, pageErrorCooldown));
+            continue;
+          }
+          
+          // Diğer hatalar → 15s bekleme
           if (PROXY_MODE === "residential") {
             residentialSessionId++;
             EVOMI_PROXY_REGION = getNextProxyRegion();
-            console.log(`\n🔄 Sayfa hatası → yeni IP ile hemen tekrar deneniyor (session=${residentialSessionId})`);
-            await logStep(config.id, "ip_change", `Sayfa hatası → yeni IP ile yeniden deneniyor | ${account.email}`);
           }
-          if (result.accountBanned) {
-            console.log(`\n⛔ Hesap banlı: ${account.email} → sıradaki hesaba geçiliyor`);
-          } else if (result.otpRequired) {
-            console.log(`\n📩 OTP gerekiyor: ${account.email}`);
-          }
-          await new Promise((r) => setTimeout(r, 5000)); // 5s kısa bekleme
-          continue; // Normal interval'i atla, hemen tekrar dene
+          await new Promise((r) => setTimeout(r, 15000));
+          continue;
         } else {
           consecutiveErrors = 0;
         }
