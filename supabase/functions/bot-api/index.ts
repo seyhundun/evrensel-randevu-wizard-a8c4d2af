@@ -127,6 +127,30 @@ Deno.serve(async (req) => {
           );
         }
 
+        if (body.action === "set_account_otp") {
+          const { account_id, code } = body;
+          if (!account_id || !code) {
+            return new Response(
+              JSON.stringify({ ok: false, error: "account_id and code required" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          const normalizedCode = String(code).replace(/\s+/g, "").trim();
+
+          const { error } = await supabase
+            .from("vfs_accounts")
+            .update({ manual_otp: normalizedCode })
+            .eq("id", account_id);
+
+          if (error) throw error;
+
+          return new Response(
+            JSON.stringify({ ok: true, manual_otp: normalizedCode }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
         if (body.action === "clear_account_otp") {
           const { account_id } = body;
           await supabase

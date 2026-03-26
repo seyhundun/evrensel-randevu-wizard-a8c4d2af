@@ -213,17 +213,17 @@ export default function VfsAccounts() {
   };
 
   const submitManualOtp = async (id: string) => {
-    const code = smsOtpInputs[id]?.trim();
+    const code = smsOtpInputs[id]?.replace(/\s+/g, "").trim();
     if (!code) { toast.error("OTP kodu girin"); return; }
-    const { error } = await supabase
-      .from("vfs_accounts")
-      .update({ manual_otp: code } as any)
-      .eq("id", id);
+    const { error } = await supabase.functions.invoke("bot-api", {
+      body: { action: "set_account_otp", account_id: id, code },
+    });
     if (error) {
       toast.error("OTP gönderilemedi: " + error.message);
     } else {
       toast.success("OTP kodu gönderildi, bot kullanacak");
       setSmsOtpInputs((prev) => ({ ...prev, [id]: "" }));
+      loadAccounts();
     }
   };
 
