@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
       const now = new Date().toISOString();
       const { data: accounts } = await supabase
         .from("vfs_accounts")
-        .select("id, email, password, phone, status, banned_until, fail_count, last_used_at, imap_host, imap_password, booking_enabled")
+        .select("id, email, password, phone, status, banned_until, fail_count, last_used_at, imap_host, imap_password, booking_enabled, otp_mode")
         .eq("booking_enabled", true)
         .or(`status.eq.active,and(status.eq.cooldown,banned_until.lt.${now})`)
         .order("last_used_at", { ascending: true, nullsFirst: true });

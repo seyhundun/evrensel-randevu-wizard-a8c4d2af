@@ -1091,8 +1091,10 @@ async function handleOtpVerification(page, account) {
   while (Date.now() - startTime < CONFIG.OTP_WAIT_MS) {
     // IMAP ve manuel OTP'yi paralel dene (iDATA gibi race)
     let otp = null;
+    // otp_mode kontrolü: auto = IMAP + manuel, manual = sadece manuel
+    const accMode = account.otp_mode || "auto";
     const [imapOtp, manualOtp] = await Promise.all([
-      tryImapOtp(account.id).catch(() => null),
+      accMode === "auto" ? tryImapOtp(account.id).catch(() => null) : Promise.resolve(null),
       readManualOtp(account.id),
     ]);
     otp = imapOtp || manualOtp;
@@ -2526,8 +2528,9 @@ async function checkAppointments(config, account) {
           }
 
           try {
+            const accOtpMode = account.otp_mode || "auto";
             const [imapOtp, dbOtp] = await Promise.all([
-              tryImapOtp(account.id).catch(() => null),
+              accOtpMode === "auto" ? tryImapOtp(account.id).catch(() => null) : Promise.resolve(null),
               readManualOtp(account.id),
             ]);
             otpValue = imapOtp || dbOtp;

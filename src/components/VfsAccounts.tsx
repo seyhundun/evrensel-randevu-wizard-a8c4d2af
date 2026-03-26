@@ -75,6 +75,7 @@ interface VfsAccount {
   imap_last_status: string | null;
   imap_last_message: string | null;
   imap_last_checked_at: string | null;
+  otp_mode: string;
 }
 
 export default function VfsAccounts() {
@@ -656,8 +657,29 @@ export default function VfsAccounts() {
                 </div>
               )}
 
-              {/* IMAP OTP Ayarları */}
-              <div className="border-t pt-2 mt-1">
+              {/* OTP Modu + IMAP Ayarları */}
+              <div className="border-t pt-2 mt-1 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground">OTP Modu:</span>
+                  {(["auto", "manual"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={async () => {
+                        await supabase.from("vfs_accounts").update({ otp_mode: mode } as any).eq("id", acc.id);
+                        toast.success(mode === "auto" ? "Otomatik IMAP modu seçildi" : "Manuel OTP modu seçildi");
+                      }}
+                      className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                        acc.otp_mode === mode
+                          ? mode === "auto"
+                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 font-medium"
+                            : "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400 font-medium"
+                          : "border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {mode === "auto" ? "📧 Otomatik (IMAP)" : "✋ Manuel"}
+                    </button>
+                  ))}
+                </div>
                 {editingImap[acc.id] ? (
                   <div className="flex flex-wrap items-end gap-2">
                     <div>

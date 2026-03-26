@@ -531,6 +531,7 @@ export type Database = {
           last_used_at: string | null
           manual_otp: string | null
           notes: string | null
+          otp_mode: string
           otp_requested_at: string | null
           password: string
           phone: string | null
@@ -557,6 +558,7 @@ export type Database = {
           last_used_at?: string | null
           manual_otp?: string | null
           notes?: string | null
+          otp_mode?: string
           otp_requested_at?: string | null
           password: string
           phone?: string | null
@@ -583,6 +585,7 @@ export type Database = {
           last_used_at?: string | null
           manual_otp?: string | null
           notes?: string | null
+          otp_mode?: string
           otp_requested_at?: string | null
           password?: string
           phone?: string | null

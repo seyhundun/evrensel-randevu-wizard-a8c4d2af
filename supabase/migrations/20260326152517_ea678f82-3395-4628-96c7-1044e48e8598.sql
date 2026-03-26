@@ -1,0 +1,1 @@
+ALTER TABLE public.vfs_accounts ADD COLUMN IF NOT EXISTS otp_mode text NOT NULL DEFAULT 'auto';
