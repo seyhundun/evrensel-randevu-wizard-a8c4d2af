@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 interface ApplicantListProps {
   applicants: Applicant[];
   onUpdate: (id: string, field: keyof Applicant, value: string) => void;
+  onBatchUpdate: (applicants: Applicant[]) => void;
   personCount: number;
   setPersonCount: (n: number) => void;
   configId?: string | null;
@@ -18,6 +19,7 @@ interface ApplicantListProps {
 export default function ApplicantList({
   applicants,
   onUpdate,
+  onBatchUpdate,
   personCount,
   setPersonCount,
   configId,
@@ -40,23 +42,31 @@ export default function ApplicantList({
       if (error) throw error;
       if (!data || data.length === 0) {
         toast.error("Veritabanında başvuru sahibi bulunamadı");
+        setFilling(false);
         return;
       }
 
-      // Fill each applicant's fields from DB
-      for (let i = 0; i < Math.min(data.length, applicants.length); i++) {
-        const db = data[i];
-        const local = applicants[i];
-        if (db.first_name) onUpdate(local.id, "firstName", db.first_name);
-        if (db.last_name) onUpdate(local.id, "lastName", db.last_name);
-        if (db.gender) onUpdate(local.id, "gender", db.gender);
-        if (db.birth_date) onUpdate(local.id, "birthDate", db.birth_date);
-        if (db.nationality) onUpdate(local.id, "nationality", db.nationality);
-        if (db.passport) onUpdate(local.id, "passport", db.passport);
-        if (db.passport_expiry) onUpdate(local.id, "passportExpiry", db.passport_expiry);
+      // Update person count if needed
+      if (data.length !== personCount) {
+        setPersonCount(data.length);
       }
 
-      toast.success(`${Math.min(data.length, applicants.length)} başvuru sahibinin bilgileri dolduruldu!`);
+      // Build complete applicant array from DB data in one shot
+      const newApplicants: Applicant[] = data.map((db, i) => ({
+        id: applicants[i]?.id || String(i + 1),
+        firstName: db.first_name || "",
+        lastName: db.last_name || "",
+        gender: db.gender || "",
+        birthDate: db.birth_date || "",
+        nationality: db.nationality || "Turkey",
+        passport: db.passport || "",
+        passportExpiry: db.passport_expiry || "",
+      }));
+
+      // Single atomic state update
+      onBatchUpdate(newApplicants);
+
+      toast.success(`${data.length} başvuru sahibinin bilgileri dolduruldu!`);
     } catch (err: any) {
       toast.error("Bilgiler yüklenemedi: " + (err.message || "Bilinmeyen hata"));
     } finally {

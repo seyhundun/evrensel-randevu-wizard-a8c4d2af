@@ -113,6 +113,7 @@ function VfsRightSidebarContent({ t }: { t: ReturnType<typeof useTracking> }) {
       <ApplicantList
         applicants={t.applicants}
         onUpdate={t.updateApplicant}
+        onBatchUpdate={t.batchUpdateApplicants}
         personCount={t.personCount}
         setPersonCount={t.setPersonCount}
         configId={t.configId}
