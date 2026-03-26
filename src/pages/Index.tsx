@@ -223,15 +223,21 @@ const Index = () => {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
         <div className="border-b border-border bg-card px-3 md:px-4 shrink-0">
           <TabsList className="h-10 bg-transparent p-0 gap-2 md:gap-4">
-            <TabsTrigger value="vfs" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
-              🌍 VFS
-            </TabsTrigger>
-            <TabsTrigger value="idata" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
-              🇮🇹 iDATA
-            </TabsTrigger>
-            <TabsTrigger value="quiz" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
-              🧩 Quiz Bot
-            </TabsTrigger>
+            {allowedTabs.includes("vfs") && (
+              <TabsTrigger value="vfs" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
+                🌍 VFS
+              </TabsTrigger>
+            )}
+            {allowedTabs.includes("idata") && (
+              <TabsTrigger value="idata" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
+                🇮🇹 iDATA
+              </TabsTrigger>
+            )}
+            {allowedTabs.includes("quiz") && (
+              <TabsTrigger value="quiz" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-1 pb-2 text-xs md:text-sm">
+                🧩 Quiz Bot
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
