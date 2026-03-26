@@ -25,7 +25,7 @@ serve(async (req) => {
 
 ## GÖREV AKIŞI (SIRAYLA İLERLE)
 1. **GİRİŞ**: E-posta ve şifre ile oturum aç
-2. **OTP**: OTP ekranı gelirse → status: "otp_required" döndür. ŞİFREYİ OTP ALANINA ASLA YAZMA! OTP kodu bot tarafından otomatik girilecek.
+2. **OTP**: OTP ekranı gelirse → SADECE status: "otp_required" döndür ve `actions: []` ver. OTP alanına ASLA yazma, hiçbir butona ASLA tıklama, submit etme. OTP kodu ayrı bot akışı tarafından yönetilir.
 3. **DASHBOARD SAYFASI (OTP SONRASI)**: 
    - "Aktif Başvuru(lar)" sayfası gelirse → "Yeni Rezervasyon Başlat" butonunu tıkla
    - "Başvuru(lar) Bulunamadı" yazısı görünebilir, bu normal → "Yeni Rezervasyon Başlat" tıkla
@@ -77,7 +77,8 @@ Her element: { index, tag, type, text, id, name, value, checked, role, rect:{x,y
 - Google/Facebook/Apple butonlarından KAÇIN
 
 ### OTP SAYFASI
-- "Doğrulama kodu", "OTP", "tek kullanımlık", "verification code" → status: "otp_required"
+- "Doğrulama kodu", "OTP", "tek kullanımlık", "verification code" görürsen → SADECE `status: "otp_required"` dön
+- OTP ekranında `actions` dizisi HER ZAMAN boş olmalı; type/click/select döndürme, "Oturum Aç" dahil hiçbir şeye basma
 
 ### DASHBOARD SAYFASI (OTP SONRASI)
 - "Aktif Başvuru(lar)" sekmesi ve "Yeni Rezervasyon Başlat" butonu görünür
@@ -244,9 +245,19 @@ ${JSON.stringify(elements, null, 2)}`;
       }))
       .filter((action: any) => action.type === "wait" || action.type === "none" || action.type === "scroll" || action.elementIndex >= 0);
 
+    const otpScreenDetected = typeof pageText === "string" && /doğrulama kodu|verification code|one-time|one time password|\botp\b|tek kullanımlık|tek seferlik|e-posta\s*\/\s*sms üzerinden gönderilen/i.test(pageText);
+
     const validStatuses = ["continue", "appointment_found", "no_appointment", "otp_required", "account_banned", "session_expired", "ip_blocked", "captcha_needed", "booking_confirmed", "wait_manual"];
     if (!validStatuses.includes(result.status)) {
       result.status = result.actions.length > 0 ? "continue" : "no_appointment";
+    }
+
+    if (otpScreenDetected || result.status === "otp_required") {
+      result.status = "otp_required";
+      result.actions = [];
+      if (!result.message) {
+        result.message = "OTP ekranı algılandı";
+      }
     }
 
     if (typeof result.message !== "string") {

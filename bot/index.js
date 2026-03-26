@@ -1040,7 +1040,7 @@ async function handleOtpVerification(page, account) {
 
   console.log("  [OTP] ⚠ Doğrulama kodu isteniyor!");
   const ss = await takeScreenshotBase64(page);
-  await setOtpRequested(account.id);
+  // otp_requested_at üst akışta tek noktadan set edilir
 
   const startTime = Date.now();
   while (Date.now() - startTime < CONFIG.OTP_WAIT_MS) {
