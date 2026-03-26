@@ -1,15 +1,18 @@
+import { useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ClipboardCheck } from "lucide-react";
+import { ClipboardCheck, Loader2 } from "lucide-react";
 import ApplicantCard from "./ApplicantCard";
 import type { Applicant } from "@/lib/constants";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ApplicantListProps {
   applicants: Applicant[];
   onUpdate: (id: string, field: keyof Applicant, value: string) => void;
   personCount: number;
   setPersonCount: (n: number) => void;
+  configId?: string | null;
 }
 
 export default function ApplicantList({
@@ -17,11 +20,48 @@ export default function ApplicantList({
   onUpdate,
   personCount,
   setPersonCount,
+  configId,
 }: ApplicantListProps) {
-  const handleAutoFill = () => {
-    toast.success("Tüm form alanları dolduruldu!", {
-      description: "VFS formundaki alanlar otomatik olarak doldurulacak.",
-    });
+  const [filling, setFilling] = useState(false);
+
+  const handleAutoFill = async () => {
+    if (!configId) {
+      toast.error("Önce takip başlatın veya config seçin");
+      return;
+    }
+    setFilling(true);
+    try {
+      const { data, error } = await supabase
+        .from("applicants")
+        .select("*")
+        .eq("config_id", configId)
+        .order("sort_order", { ascending: true });
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        toast.error("Veritabanında başvuru sahibi bulunamadı");
+        return;
+      }
+
+      // Fill each applicant's fields from DB
+      for (let i = 0; i < Math.min(data.length, applicants.length); i++) {
+        const db = data[i];
+        const local = applicants[i];
+        if (db.first_name) onUpdate(local.id, "firstName", db.first_name);
+        if (db.last_name) onUpdate(local.id, "lastName", db.last_name);
+        if (db.gender) onUpdate(local.id, "gender", db.gender);
+        if (db.birth_date) onUpdate(local.id, "birthDate", db.birth_date);
+        if (db.nationality) onUpdate(local.id, "nationality", db.nationality);
+        if (db.passport) onUpdate(local.id, "passport", db.passport);
+        if (db.passport_expiry) onUpdate(local.id, "passportExpiry", db.passport_expiry);
+      }
+
+      toast.success(`${Math.min(data.length, applicants.length)} başvuru sahibinin bilgileri dolduruldu!`);
+    } catch (err: any) {
+      toast.error("Bilgiler yüklenemedi: " + (err.message || "Bilinmeyen hata"));
+    } finally {
+      setFilling(false);
+    }
   };
 
   return (
