@@ -2510,6 +2510,27 @@ async function checkAppointments(config, account) {
         
         while (Date.now() - manualWaitStart < MANUAL_WAIT_TIMEOUT) {
           await delay(10000, 12000);
+          
+          // Sayfa hatası kontrolü (500, page-not-found, vb.)
+          try {
+            var pageErrorCheck = await page.evaluate(() => {
+              var text = (document.body?.innerText || "").toLowerCase();
+              var url = window.location.href.toLowerCase();
+              return text.includes("beklenmeyen hata") || 
+                     (text.includes("(500)") && text.includes("hata")) ||
+                     url.includes("page-not-found") ||
+                     text.includes("sorry, something went wrong") ||
+                     text.includes("bir şeyler ters gitti");
+            });
+            if (pageErrorCheck) {
+              console.log("  💥 Manuel bekleme sırasında sayfa hatası algılandı — yeni IP ile tekrar başlanacak");
+              var errSs = await takeScreenshotBase64(page);
+              await logStep(id, "error", `💥 Sayfa hatası (manuel bekleme) — yeniden başlanıyor | ${account.email}`);
+              await reportResult(id, "error", `Sayfa hatası (500) — yeni IP ile tekrar deneniyor | ${account.email}`, 0, errSs);
+              return { found: false, accountBanned: false, ipBlocked: false, hadError: true, pageError: true };
+            }
+          } catch {}
+          
           var elapsed2 = Math.round((Date.now() - manualWaitStart) / 1000);
           if (elapsed2 % 60 === 0) {
             var wss = await takeScreenshotBase64(page);
