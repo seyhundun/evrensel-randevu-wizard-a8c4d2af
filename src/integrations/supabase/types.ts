@@ -16,45 +16,54 @@ export type Database = {
     Tables: {
       applicants: {
         Row: {
+          applicant_email: string
           birth_date: string
           config_id: string
           created_at: string
           email: string
           first_name: string
+          gender: string
           id: string
           last_name: string
           nationality: string
           passport: string
           passport_expiry: string
           phone: string
+          phone_number: string
           sort_order: number
         }
         Insert: {
+          applicant_email?: string
           birth_date?: string
           config_id: string
           created_at?: string
           email?: string
           first_name?: string
+          gender?: string
           id?: string
           last_name?: string
           nationality?: string
           passport?: string
           passport_expiry?: string
           phone?: string
+          phone_number?: string
           sort_order?: number
         }
         Update: {
+          applicant_email?: string
           birth_date?: string
           config_id?: string
           created_at?: string
           email?: string
           first_name?: string
+          gender?: string
           id?: string
           last_name?: string
           nationality?: string
           passport?: string
           passport_expiry?: string
           phone?: string
+          phone_number?: string
           sort_order?: number
         }
         Relationships: [

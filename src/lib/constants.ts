@@ -51,18 +51,24 @@ export interface Applicant {
   id: string;
   firstName: string;
   lastName: string;
-  passport: string;
+  gender: string;
   birthDate: string;
   nationality: string;
+  passport: string;
   passportExpiry: string;
+  phoneNumber: string;
+  applicantEmail: string;
 }
 
 export const createEmptyApplicant = (id: string): Applicant => ({
   id,
   firstName: "",
   lastName: "",
-  passport: "",
+  gender: "",
   birthDate: "",
   nationality: "Turkey",
+  passport: "",
   passportExpiry: "",
+  phoneNumber: "",
+  applicantEmail: "",
 });

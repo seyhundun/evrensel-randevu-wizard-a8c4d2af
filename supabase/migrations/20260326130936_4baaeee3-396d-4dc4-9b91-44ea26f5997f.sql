@@ -1,0 +1,4 @@
+ALTER TABLE public.applicants 
+ADD COLUMN IF NOT EXISTS gender text NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS phone_number text NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS applicant_email text NOT NULL DEFAULT '';
