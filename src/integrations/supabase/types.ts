@@ -23,7 +23,9 @@ export type Database = {
           first_name: string
           id: string
           last_name: string
+          nationality: string
           passport: string
+          passport_expiry: string
           phone: string
           sort_order: number
         }
@@ -35,7 +37,9 @@ export type Database = {
           first_name?: string
           id?: string
           last_name?: string
+          nationality?: string
           passport?: string
+          passport_expiry?: string
           phone?: string
           sort_order?: number
         }
@@ -47,7 +51,9 @@ export type Database = {
           first_name?: string
           id?: string
           last_name?: string
+          nationality?: string
           passport?: string
+          passport_expiry?: string
           phone?: string
           sort_order?: number
         }
