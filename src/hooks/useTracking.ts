@@ -112,6 +112,13 @@ export function useTracking() {
     []
   );
 
+  const batchUpdateApplicants = useCallback(
+    (updates: Applicant[]) => {
+      setApplicants(updates);
+    },
+    []
+  );
+
   const saveConfig = async () => {
     // Upsert tracking config
     const configData = {
