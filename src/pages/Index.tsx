@@ -251,6 +251,7 @@ const Index = () => {
             <main className="flex-1 min-w-0">
               <ScrollArea className="h-full">
                 <div className="p-3 md:p-6 space-y-4 md:space-y-5">
+                  <AccountHealthPanel configId={t.configId} />
                   {/* VNC + Manuel Takeover */}
                   <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3 md:gap-4">
                     <VncViewer title="🌍 VFS Bot Ekranı" pathPrefix="/vfs" />
@@ -275,7 +276,6 @@ const Index = () => {
                       canStart={!!t.country && !!t.city}
                     />
                   </div>
-                  <AccountHealthPanel configId={t.configId} />
                   <StatusPanel
                     status={t.status}
                     country={t.country}
