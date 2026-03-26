@@ -25,7 +25,7 @@ serve(async (req) => {
 
 ## GÖREV AKIŞI (SIRAYLA İLERLE)
 1. **GİRİŞ**: E-posta ve şifre ile oturum aç
-2. **OTP**: OTP ekranı gelirse → status: "otp_required" döndür (kullanıcı manuel girecek)
+2. **OTP**: OTP ekranı gelirse → status: "otp_required" döndür. ŞİFREYİ OTP ALANINA ASLA YAZMA! OTP kodu bot tarafından otomatik girilecek.
 3. **DASHBOARD SAYFASI (OTP SONRASI)**: 
    - "Aktif Başvuru(lar)" sayfası gelirse → "Yeni Rezervasyon Başlat" butonunu tıkla
    - "Başvuru(lar) Bulunamadı" yazısı görünebilir, bu normal → "Yeni Rezervasyon Başlat" tıkla
