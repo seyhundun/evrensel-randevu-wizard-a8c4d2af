@@ -18,31 +18,31 @@ export function getVfsRegisterUrl(countryCode: string): string {
 }
 
 export const CITIES = [
-  { value: "ankara", label: "Ankara" },
-  { value: "istanbul-beyoglu", label: "İstanbul (Beyoğlu)" },
-  { value: "istanbul-altunizade", label: "İstanbul (Altunizade)" },
-  { value: "izmir", label: "İzmir" },
-  { value: "antalya", label: "Antalya" },
-  { value: "bursa", label: "Bursa" },
-  { value: "gaziantep", label: "Gaziantep" },
+  { value: "France Visa Application Center - Gaziantep", label: "Gaziantep" },
+  { value: "France Visa Application Centre - Ankara", label: "Ankara" },
+  { value: "France Visa Application Centre - Istanbul Beyoglu", label: "İstanbul Beyoğlu" },
+  { value: "France visa application center -Izmir", label: "İzmir" },
 ] as const;
 
 export const VISA_CATEGORIES = [
-  "Turist Vizesi",
-  "İş Vizesi",
-  "Öğrenci Vizesi",
-  "Aile Birleşimi",
-  "Transit Vize",
-  "Kısa Süreli (Schengen)",
+  "Kısa Süreli Vizeler",
+  "Uzun Süreli Vizeler",
 ] as const;
 
 export const VISA_SUBCATEGORIES: Record<string, string[]> = {
-  "Turist Vizesi": ["Tourism", "Short Stay Tourism", "Visit Family/Friends"],
-  "İş Vizesi": ["Business", "Short Stay Business", "Conference/Seminar"],
-  "Öğrenci Vizesi": ["Student", "Long Stay Student", "Research/Study"],
-  "Aile Birleşimi": ["Family Reunification", "Spouse Visa", "Dependent Child"],
-  "Transit Vize": ["Airport Transit", "Transit"],
-  "Kısa Süreli (Schengen)": ["Short Stay", "Schengen Visa", "Multiple Entry"],
+  "Kısa Süreli Vizeler": [
+    "Turistik / Çoklu Giriş",
+    "Turistik / Tek Giriş",
+    "İş / Çoklu Giriş",
+    "İş / Tek Giriş",
+    "Aile Ziyareti",
+    "Transit",
+  ],
+  "Uzun Süreli Vizeler": [
+    "Öğrenci",
+    "Aile Birleşimi",
+    "Çalışma Vizesi",
+  ],
 };
 
 export type TrackingStatus = "idle" | "searching" | "found" | "error";
