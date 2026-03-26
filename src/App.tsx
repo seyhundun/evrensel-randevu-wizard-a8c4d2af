@@ -9,6 +9,7 @@ import IdataPage from "./pages/IdataPage.tsx";
 import LoginPage from "./pages/LoginPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import GuidePage from "./pages/GuidePage.tsx";
+import AdminPanel from "./pages/AdminPanel.tsx";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +42,7 @@ const App = () => (
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
           <Route path="/idata" element={<ProtectedRoute><IdataPage /></ProtectedRoute>} />
           <Route path="/guide" element={<ProtectedRoute><GuidePage /></ProtectedRoute>} />
+          <Route path="/yonetim-x7k" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
