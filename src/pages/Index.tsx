@@ -256,7 +256,6 @@ const Index = () => {
                     <VncViewer title="🌍 VFS Bot Ekranı" pathPrefix="/vfs" />
                     <div className="space-y-3">
                       <VfsManualTakeover />
-                      <VncViewer title="🇮🇹 iDATA Bot Ekranı" pathPrefix="/idata" />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
@@ -329,6 +328,7 @@ const Index = () => {
             <main className="flex-1 min-w-0">
               <ScrollArea className="h-full">
                 <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+                  <VncViewer title="🇮🇹 iDATA Bot Ekranı" pathPrefix="/idata" />
                   <IdataAccounts />
                   <IdataTrackingLogs />
                 </div>
