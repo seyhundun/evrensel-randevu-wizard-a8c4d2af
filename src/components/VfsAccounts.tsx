@@ -698,6 +698,32 @@ export default function VfsAccounts() {
                     {acc.imap_password ? "📧 IMAP ayarlandı — düzenle" : "📧 IMAP OTP ekle (otomatik kod okuma)"}
                   </button>
                 )}
+
+                {/* IMAP Son Deneme Sonucu */}
+                {acc.imap_last_checked_at && (
+                  <div className={`mt-1.5 rounded px-2 py-1.5 text-[11px] flex items-start gap-1.5 ${
+                    acc.imap_last_status === "success"
+                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                      : acc.imap_last_status === "error"
+                      ? "bg-destructive/10 text-destructive"
+                      : "bg-muted text-muted-foreground"
+                  }`}>
+                    <span className="shrink-0 mt-0.5">
+                      {acc.imap_last_status === "success" ? "✅" : acc.imap_last_status === "error" ? "❌" : "📭"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium">
+                        {acc.imap_last_status === "success" ? "OTP Bulundu" : acc.imap_last_status === "error" ? "IMAP Hatası" : "OTP Bulunamadı"}
+                      </span>
+                      {acc.imap_last_message && (
+                        <p className="truncate opacity-80 mt-0.5">{acc.imap_last_message}</p>
+                      )}
+                      <span className="opacity-60">
+                        {new Date(acc.imap_last_checked_at).toLocaleString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {acc.fail_count > 0 && (
