@@ -677,7 +677,10 @@ async function waitForLoginFormAfterQueue(page, loginUrl) {
       pageState.title.includes("bir şeyler ters gitti") ||
       pageState.title.includes("üzgünüm") ||
       pageState.body.includes("bir şeyler ters gitti") ||
-      pageState.body.includes("sorry, something went wrong");
+      pageState.body.includes("sorry, something went wrong") ||
+      pageState.body.includes("beklenmeyen hata") ||
+      pageState.body.includes("Beklenmeyen hata") ||
+      (pageState.body.includes("(500)") && pageState.body.includes("hata"));
 
     const sessionExpiredLike =
       pageState.body.includes("oturum süresi doldu") ||
@@ -2247,9 +2250,24 @@ async function checkAppointments(config, account) {
       // 429002 yetkisiz etkinlik kontrolü — sayfa içeriğinden doğrudan tespit
       if (status === "continue" || !status) {
         var currentText = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+        var currentUrl = await page.url().catch ? page.url() : "";
         if (currentText.includes("429002") || currentText.toLowerCase().includes("yetkisiz etkinlik") || currentText.toLowerCase().includes("unauthorized activity")) {
           console.log("  ⛔ 429002 yetkisiz etkinlik hatası algılandı!");
           status = "account_banned";
+        }
+        // Beklenmeyen hata (500) veya page-not-found → tarayıcı kapat, yeni IP ile tekrar başla
+        if (
+          currentText.toLowerCase().includes("beklenmeyen hata") ||
+          (currentText.includes("(500)") && currentText.toLowerCase().includes("hata")) ||
+          currentUrl.includes("page-not-found") ||
+          currentText.toLowerCase().includes("sorry, something went wrong") ||
+          currentText.toLowerCase().includes("unexpected error")
+        ) {
+          console.log("  💥 Sayfa hatası (500/page-not-found) algılandı! Tarayıcı kapatılıp yeni IP ile tekrar başlanacak.");
+          const ss = await takeScreenshotBase64(page);
+          await logStep(id, "error", `💥 Sayfa hatası algılandı — yeni IP ile yeniden başlanıyor | ${account.email}`);
+          await reportResult(id, "error", `Sayfa hatası (500) — yeni IP ile tekrar deneniyor | ${account.email}`, 0, ss);
+          return { found: false, accountBanned: false, ipBlocked: false, hadError: true, pageError: true };
         }
       }
 
