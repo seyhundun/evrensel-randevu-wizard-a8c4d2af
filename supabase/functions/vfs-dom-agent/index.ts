@@ -101,19 +101,25 @@ Her element: { index, tag, type, text, id, name, value, checked, role, rect:{x,y
 - "Uygun randevu bulunmamaktadır", "No appointment", "Slot not available" → status: "no_appointment"
 - Tarih görünüyorsa → status: "appointment_found", availableDates dizisi döndür
 
-### BAŞVURU FORMU DOLDURMA (ÇOK ÖNEMLİ!)
-- Ad, soyad alanlarını bul → başvuru sahibi bilgilerinden yaz
-- Pasaport numarası alanını bul → yaz
-- Uyruk/Nationality dropdown'u varsa → başvuru sahibinin uyruk bilgisini seç (varsayılan "Turkey")
-- Doğum tarihi alanını bul → DD/MM/YYYY formatında yaz
-- Pasaport son kullanma tarihi alanını bul → DD/MM/YYYY formatında yaz
-- Cinsiyet dropdown'u varsa → uygun değeri seç
-- TÜM alanlar doldurulduğunda "Continue/Devam/Save" tıkla
+### DETAYLARINIZ FORMU DOLDURMA (ADIM 2 - ÇOK ÖNEMLİ!)
+Sayfa başlığı: "Detaylarınız" — "Başvuru Sahibi 1" formu görünür
+Alanları şu sırayla doldur:
+1. **İsim** → başvuru sahibinin adını BÜYÜK HARFLE yaz
+2. **Soyisim** → başvuru sahibinin soyadını BÜYÜK HARFLE yaz
+3. **Cinsiyet** → dropdown'dan "Erkek" veya "Kadın" seç
+4. **Doğum Tarihi** → GG/AA/YYYY formatında yaz (takvim ikonu varsa tıklama, direkt yaz)
+5. **Uyruk** → dropdown'dan seç (varsayılan "Turkey")
+6. **Pasaport Numarası** → pasaport nosunu yaz
+7. **Pasaport Son Kullanma Tarihi** → GG/AA/YYYY formatında yaz
+8. **İletişim Numarası** → ilk kutu "90" (zaten dolu), ikinci kutuya telefon numarasını yaz
+9. **E Posta** → e-posta adresini yaz
+- TÜM alanlar doldurulduğunda **"Kaydet"** butonunu tıkla (turuncu buton)
+- "İptal Et" butonuna ASLA tıklama
 
 ### ÇOKLU BAŞVURU SAHİBİ
-- 1. kişinin formu bittikten sonra "Add Applicant" / "Başvuru Sahibi Ekle" butonunu tıkla
-- 2. kişinin bilgilerini doldur
-- Her kişi için ayrı ayrı doldur, ${applicants.length} kişi var
+- 1. kişinin formu kaydedildikten sonra "Başvuru Sahibi Ekle" / "Add Applicant" butonunu tıkla
+- 2. kişinin bilgilerini aynı şekilde doldur
+- Her kişi için ayrı ayrı doldur, toplam ${applicants.length} kişi var
 
 ### HESAP SORUNLARI
 - "Hesabınız engellenmiş", "account blocked/banned/suspended" → status: "account_banned"
