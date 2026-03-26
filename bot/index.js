@@ -2352,7 +2352,7 @@ async function checkAppointments(config, account) {
         await reportResult(id, "otp_waiting", `OTP ekranı geldi, manuel giriş bekleniyor | ${account.email}`, 0, ss);
         
         // DB'de otp_requested_at güncelle
-        await updateAccountOtpRequested(account.id);
+        await setOtpRequested(account.id);
         
         // Manuel OTP girilene kadar bekle (max 5 dakika)
         var otpWaitStart = Date.now();
