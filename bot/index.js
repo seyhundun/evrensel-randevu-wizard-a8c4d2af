@@ -2726,19 +2726,33 @@ async function checkAppointments(config, account) {
               console.log("  ⚠ OTP doğrulama Enter fallback ile denendi (" + verifyClick.reason + ")");
             }
           } else {
-            console.log("  ❌ OTP alanı bulunamadı veya kod yazılamadı");
-            await logStep(id, "warning", `OTP kodu alındı ama alana yazılamadı | ${account.email}`);
-            return { found: false, accountBanned: false, hadError: false, otpRequired: true, otpFillFailed: true };
+            console.log("  ❌ OTP alanı bulunamadı — sayfa açık kalacak, tekrar denenecek");
+            await logStep(id, "warning", `OTP kodu alındı ama alana yazılamadı — tekrar denenecek | ${account.email}`);
+            recentActions.push("OTP alanı bulunamadı, tekrar denenecek");
+            await delay(3000, 5000);
+            continue;
           }
         } catch (otpErr) {
           console.error("  [OTP] Yazma hatası:", otpErr.message);
-          await logStep(id, "warning", `OTP yazma hatası — sayfa kapatılmadı | ${account.email}`);
-          return { found: false, accountBanned: false, hadError: false, otpRequired: true, otpFillFailed: true };
+          await logStep(id, "warning", `OTP yazma hatası — sayfa açık, tekrar denenecek | ${account.email}`);
+          recentActions.push("OTP yazma hatası: " + otpErr.message);
+          await delay(3000, 5000);
+          continue;
         }
 
         await logStep(id, "login_otp", `OTP girildi ve doğrulandı | ${account.email}`);
         recentActions.push("OTP girildi ve doğrulandı");
-        await delay(2000, 3000);
+        // OTP sonrası sayfa yönlendirmesi için daha uzun bekle
+        console.log("  ⏳ OTP sonrası sayfa yüklenmesi bekleniyor (5-8s)...");
+        await delay(5000, 8000);
+        // Sayfa hala açık mı kontrol et
+        try {
+          await page.evaluate(() => document.readyState);
+          console.log("  ✅ Sayfa hala açık, devam ediliyor");
+        } catch (navErr) {
+          console.log("  ⚠ OTP sonrası sayfa navigasyonu — 5s daha bekleniyor");
+          await delay(5000, 7000);
+        }
         continue;
       }
 
