@@ -250,9 +250,13 @@ const Index = () => {
             <main className="flex-1 min-w-0">
               <ScrollArea className="h-full">
                 <div className="p-3 md:p-6 space-y-4 md:space-y-5">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                  {/* VNC + Manuel Takeover */}
+                  <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3 md:gap-4">
                     <VncViewer title="🌍 VFS Bot Ekranı" pathPrefix="/vfs" />
-                    <VncViewer title="🇮🇹 iDATA Bot Ekranı" pathPrefix="/idata" />
+                    <div className="space-y-3">
+                      <VfsManualTakeover />
+                      <VncViewer title="🇮🇹 iDATA Bot Ekranı" pathPrefix="/idata" />
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                     <ModuleStatus
