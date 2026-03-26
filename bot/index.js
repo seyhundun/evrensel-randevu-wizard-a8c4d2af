@@ -2244,6 +2244,15 @@ async function checkAppointments(config, account) {
       var status = agentResult.status;
       var message = agentResult.message || "";
 
+      // 429002 yetkisiz etkinlik kontrolü — sayfa içeriğinden doğrudan tespit
+      if (status === "continue" || !status) {
+        var currentText = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+        if (currentText.includes("429002") || currentText.toLowerCase().includes("yetkisiz etkinlik") || currentText.toLowerCase().includes("unauthorized activity")) {
+          console.log("  ⛔ 429002 yetkisiz etkinlik hatası algılandı!");
+          status = "account_banned";
+        }
+      }
+
       if (status === "appointment_found") {
         const applicantName = (config.applicants && config.applicants.length > 0)
           ? `${config.applicants[0].first_name || ""} ${config.applicants[0].last_name || ""}`.trim() || account.email

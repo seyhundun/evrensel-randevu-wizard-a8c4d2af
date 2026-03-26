@@ -63,6 +63,7 @@ Her element: { index, tag, type, text, id, name, value, checked, role, rect:{x,y
 
 ### HESAP SORUNLARI
 - "Hesabınız engellenmiş", "account blocked/banned/suspended" → status: "account_banned"
+- "429002", "yetkisiz etkinlik", "unauthorized activity", "erişim reddedildi" → status: "account_banned"
 - "Oturum süresi doldu", "session expired" → status: "session_expired"
 
 ### CLOUDFLARE / CAPTCHA
