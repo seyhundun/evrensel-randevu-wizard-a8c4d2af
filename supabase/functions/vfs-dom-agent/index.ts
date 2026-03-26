@@ -26,15 +26,21 @@ serve(async (req) => {
 ## GÖREV AKIŞI (SIRAYLA İLERLE)
 1. **GİRİŞ**: E-posta ve şifre ile oturum aç
 2. **OTP**: OTP ekranı gelirse → status: "otp_required" döndür (kullanıcı manuel girecek)
-3. **RANDEVU SEÇİMİ**: "New Booking" / "Yeni Randevu" tıkla, sonra sırayla:
-   - Şehir seç (örn: ${city || "Gaziantep"})
-   - Kategori seç (örn: ${visaCategory || "Short Stay"})
-   - Alt kategori seç (örn: ${visaSubcategory || "Tourism / Multiple Entry"})
-   - Devam/Continue tıkla
-4. **RANDEVU KONTROLÜ**: Müsait tarih varsa → status: "appointment_found"
-5. **BAŞVURU FORMU**: Pasaport, uyruk, ad-soyad, doğum tarihi vb. alanları doldur
-6. **ÇOKLU BAŞVURU**: 1. kişi bittikten sonra "Add Applicant" tıkla ve 2. kişiyi doldur
-7. **ONAY**: Form tamamlandıktan sonra status: "wait_manual" döndür — kullanıcı manuel ilerleyecek
+3. **DASHBOARD SAYFASI (OTP SONRASI)**: 
+   - "Aktif Başvuru(lar)" sayfası gelirse → "Yeni Rezervasyon Başlat" butonunu tıkla
+   - "Başvuru(lar) Bulunamadı" yazısı görünebilir, bu normal → "Yeni Rezervasyon Başlat" tıkla
+4. **BAŞVURU DETAYLARI SAYFASI (ADIM 1)**: Sırayla dropdown'ları doldur:
+   - "Uygulama merkezinizi Seçiniz" → şehir seç (örn: ${city || "Gaziantep"})
+   - "Başvuru Kategorinizi Seçiniz" → kategori seç (örn: ${visaCategory || "Kısa Süreli Vizeler"})
+   - "Alt Kategoriniz Seçiniz" → alt kategori seç (örn: ${visaSubcategory || "Turistik / Çoklu Giriş"})
+   - Her dropdown seçiminden sonra bir sonrakinin yüklenmesini bekle
+   - Tüm seçimler yapıldıktan sonra "Kaydet/Devam/Continue" tıkla
+5. **DETAYLARINIZ (ADIM 2)**: Başvuru sahiplerinin bilgilerini doldur
+6. **RANDEVU OLUŞTURMA (ADIM 3)**: Müsait tarih varsa → status: "appointment_found"
+   - Tarih yoksa → status: "no_appointment"
+7. **SERVİSLER (ADIM 4)**: Ek hizmet seçimi → gerekirse "wait_manual"
+8. **GÖZDEN GEÇİRME VE ÖDEME (ADIM 5)**: status: "wait_manual" döndür — kullanıcı manuel ilerleyecek
+9. **ÇOKLU BAŞVURU**: 1. kişi bittikten sonra "Add Applicant" / "Başvuru Sahibi Ekle" tıkla ve 2. kişiyi doldur
 
 ## HESAP BİLGİLERİ
 - E-posta: ${account.email || ""}
@@ -65,19 +71,28 @@ Her element: { index, tag, type, text, id, name, value, checked, role, rect:{x,y
 ### GİRİŞ SAYFASI (login)
 - E-posta alanını bul → email yaz
 - Şifre alanını bul → şifre yaz
-- Login butonunu tıkla
+- Login / "Oturum Aç" butonunu tıkla
 - Cookie banner varsa → "Accept/Kabul" tıkla
 - Google/Facebook/Apple butonlarından KAÇIN
 
 ### OTP SAYFASI
 - "Doğrulama kodu", "OTP", "tek kullanımlık", "verification code" → status: "otp_required"
 
-### RANDEVU SEÇİM SAYFASI
-- Dropdown/select alanlarından şehir, kategori, alt kategori seçilecek
-- Eğer "Appointment Type" veya "Visa Type" dropdown'u varsa → uygun değeri seç
-- "Short Stay" veya kısa süreli seçeneği bul
-- "Tourism" veya turizm seçeneği bul  
-- Devam/Continue/Submit tıkla
+### DASHBOARD SAYFASI (OTP SONRASI)
+- "Aktif Başvuru(lar)" sekmesi ve "Yeni Rezervasyon Başlat" butonu görünür
+- "Başvuru(lar) Bulunamadı." yazısı olabilir — bu normal
+- "Yeni Rezervasyon Başlat" butonunu tıkla (turuncu/kahverengi buton, sağ üstte)
+
+### BAŞVURU DETAYLARI SAYFASI (ADIM 1 - Dropdown Seçimleri)
+- Sayfa başlığı: "Başvuru Detayları"
+- Üst kısımda adımlar görünür: 1.Başvuru Detayları → 2.Detaylarınız → 3.Randevu Oluşturma → 4.Servisler → 5.Gözden Geçirme ve Ödeme
+- **"Uygulama merkezinizi Seçiniz"** dropdown'unu tıkla → şehir seç (örn: "${city}")
+- Seçim sonrası bir sonraki dropdown yüklenecek, bekle
+- **"Başvuru Kategorinizi Seçiniz"** dropdown'unu tıkla → kategori seç (örn: "${visaCategory || "Kısa Süreli Vizeler"}")
+- Seçim sonrası bir sonraki dropdown yüklenecek, bekle
+- **"Alt Kategoriniz Seçiniz"** dropdown'unu tıkla → alt kategori seç (örn: "${visaSubcategory || "Turistik / Çoklu Giriş"}")
+- Tüm 3 dropdown doldurulduktan sonra → "Kaydet" veya "Devam" butonunu tıkla
+- ÖNEMLİ: Dropdown seçimlerinde tam metin eşleşmesi ara, kısmi eşleşme de olabilir
 
 ### RANDEVU SAYFASI
 - "Uygun randevu bulunmamaktadır", "No appointment", "Slot not available" → status: "no_appointment"
