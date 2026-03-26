@@ -4606,12 +4606,20 @@ async function main() {
           consecutiveErrors = 0;
         } else if (result.hadError) {
           consecutiveErrors++;
-          await logStep(config.id, "ip_change", `Hata alındı, sıradaki IP otomatik denenecek`);
+          // Sayfa hatası → hemen IP değiştir ve tekrar dene (bekleme yok)
+          if (PROXY_MODE === "residential") {
+            residentialSessionId++;
+            EVOMI_PROXY_REGION = getNextProxyRegion();
+            console.log(`\n🔄 Sayfa hatası → yeni IP ile hemen tekrar deneniyor (session=${residentialSessionId})`);
+            await logStep(config.id, "ip_change", `Sayfa hatası → yeni IP ile yeniden deneniyor | ${account.email}`);
+          }
           if (result.accountBanned) {
-            console.log(`\n⛔ Hesap banlı: ${account.email}`);
+            console.log(`\n⛔ Hesap banlı: ${account.email} → sıradaki hesaba geçiliyor`);
           } else if (result.otpRequired) {
             console.log(`\n📩 OTP gerekiyor: ${account.email}`);
           }
+          await new Promise((r) => setTimeout(r, 5000)); // 5s kısa bekleme
+          continue; // Normal interval'i atla, hemen tekrar dene
         } else {
           consecutiveErrors = 0;
         }
