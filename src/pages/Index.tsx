@@ -25,7 +25,7 @@ import QuizBotPanel from "@/components/QuizBotPanel";
 import QuizSidebarContent from "@/components/QuizSidebarContent";
 import VncViewer from "@/components/VncViewer";
 import { useTracking } from "@/hooks/useTracking";
-import VfsDomAgentSettings from "@/components/VfsDomAgentSettings";
+
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 function LiveClock() {
