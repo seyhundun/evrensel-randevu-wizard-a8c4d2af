@@ -2381,9 +2381,14 @@ async function checkAppointments(config, account) {
           await delay(5000, 6000); // Her 5 saniyede bir kontrol et
           
           try {
-            manualOtp = await readManualOtp(account.id);
+            // IMAP ve manuel OTP'yi paralel dene
+            const [imapOtp, dbOtp] = await Promise.all([
+              tryImapOtp(account.id).catch(() => null),
+              readManualOtp(account.id),
+            ]);
+            manualOtp = imapOtp || dbOtp;
             if (manualOtp) {
-              console.log("  ✅ Manuel OTP alındı: " + manualOtp);
+              console.log("  ✅ OTP alındı: " + manualOtp + (imapOtp ? " (IMAP)" : " (Manuel)"));
               break;
             }
           } catch (e) {
