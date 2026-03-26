@@ -2738,7 +2738,17 @@ async function checkAppointments(config, account) {
 
         await logStep(id, "login_otp", `OTP girildi ve doğrulandı | ${account.email}`);
         recentActions.push("OTP girildi ve doğrulandı");
-        await delay(2000, 3000);
+        // OTP sonrası sayfa yönlendirmesi için daha uzun bekle
+        console.log("  ⏳ OTP sonrası sayfa yüklenmesi bekleniyor (5-8s)...");
+        await delay(5000, 8000);
+        // Sayfa hala açık mı kontrol et
+        try {
+          await page.evaluate(() => document.readyState);
+          console.log("  ✅ Sayfa hala açık, devam ediliyor");
+        } catch (navErr) {
+          console.log("  ⚠ OTP sonrası sayfa navigasyonu — 5s daha bekleniyor");
+          await delay(5000, 7000);
+        }
         continue;
       }
 
