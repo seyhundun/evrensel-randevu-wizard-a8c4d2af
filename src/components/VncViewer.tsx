@@ -172,8 +172,7 @@ const VncViewer = ({ title, defaultHost = "vnc.fipacomputer.online", pathPrefix 
               src={vncUrl}
               className="w-full border-0"
               style={{ height: isFullscreen ? "100vh" : "clamp(280px, 50vw, 600px)" }}
-              allow="clipboard-read; clipboard-write"
-              sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+              allow="clipboard-read; clipboard-write; keyboard-map"
               onError={() => setIsConnected(false)}
             />
             <div className="absolute bottom-2 right-2 flex gap-1">
