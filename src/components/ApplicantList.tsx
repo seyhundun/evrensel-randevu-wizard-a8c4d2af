@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 interface ApplicantListProps {
   applicants: Applicant[];
   onUpdate: (id: string, field: keyof Applicant, value: string) => void;
+  onBatchUpdate: (applicants: Applicant[]) => void;
   personCount: number;
   setPersonCount: (n: number) => void;
   configId?: string | null;
