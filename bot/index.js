@@ -1799,7 +1799,7 @@ async function rotateProxyAndGoto(page, url, options = {}) {
     await page.authenticate({ username: EVOMI_PROXY_USER, password: pass });
     console.log(`  [PROXY-ROTATE] 🔄 Yeni IP: session=${newSessionId}, şehir=${city || 'rastgele'}`);
   }
-  const gotoOptions = { waitUntil: "domcontentloaded", timeout: 90000, ...options };
+  const gotoOptions = { waitUntil: "domcontentloaded", timeout: 45000, ...options };
   return await page.goto(url, gotoOptions);
 }
 
@@ -1905,20 +1905,28 @@ async function askVFSDomAgent(page, config, account, step, recentActions) {
   var maxRetries = 3;
   for (var attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      var res = await fetch2(CONFIG.API_URL.replace("/bot-api", "/vfs-dom-agent"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + CONFIG.API_KEY,
-        },
-        body: JSON.stringify({
-          elements: elements,
-          pageText: pageText,
-          pageUrl: currentUrl,
-          step: step,
-          context: context,
-        }),
-      });
+      var abortCtrl = new AbortController();
+      var fetchTimeout = setTimeout(function() { abortCtrl.abort(); }, 25000); // 25s timeout
+      var res;
+      try {
+        res = await fetch2(CONFIG.API_URL.replace("/bot-api", "/vfs-dom-agent"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + CONFIG.API_KEY,
+          },
+          body: JSON.stringify({
+            elements: elements,
+            pageText: pageText,
+            pageUrl: currentUrl,
+            step: step,
+            context: context,
+          }),
+          signal: abortCtrl.signal,
+        });
+      } finally {
+        clearTimeout(fetchTimeout);
+      }
 
       if (res.status === 429) {
         var waitSec = (attempt + 1) * 10;
@@ -2155,7 +2163,8 @@ async function checkAppointments(config, account) {
     await logStep(id, "search_start", "🤖 VFS DOM Agent tam otonom mod başladı");
 
     const MAX_STEPS = 80;
-    const STEP_TIMEOUT_MS = 30000; // 30s per step max
+    const STEP_TIMEOUT_MS = 45000; // 45s per step max
+    var stepTimeoutCount = 0; // Ardışık timeout sayacı
     var recentActions = [];
     var appointmentResult = null;
 
@@ -2384,14 +2393,41 @@ async function checkAppointments(config, account) {
       console.log(`\n  [Adım ${step}/${MAX_STEPS}]`);
       await logStep(id, "info", `Adım ${step}: Sayfa analiz ediliyor...`);
 
-      // DOM Agent'a sor
-      var agentResult = await askVFSDomAgent(page, config, account, step, recentActions);
+      // DOM Agent'a sor — adım bazlı timeout koruması
+      var agentResult;
+      try {
+        agentResult = await Promise.race([
+          askVFSDomAgent(page, config, account, step, recentActions),
+          new Promise(function(_, reject) { setTimeout(function() { reject(new Error("step_timeout")); }, STEP_TIMEOUT_MS); }),
+        ]);
+      } catch (stepErr) {
+        if (stepErr.message === "step_timeout") {
+          stepTimeoutCount++;
+          console.log(`  [DOM] ⏰ Adım ${step} zaman aşımı (${STEP_TIMEOUT_MS / 1000}s) — ardışık: ${stepTimeoutCount}`);
+          await logStep(id, "warning", `Adım ${step} zaman aşımı (${STEP_TIMEOUT_MS / 1000}s) | ardışık: ${stepTimeoutCount} | ${account.email}`);
+          if (stepTimeoutCount >= 3) {
+            console.log("  [DOM] 3 ardışık timeout — tarayıcı kapatılıp yeniden başlanacak");
+            await logStep(id, "error", `3 ardışık timeout — yeniden başlanıyor | ${account.email}`);
+            return { found: false, accountBanned: false, hadError: true, pageError: true };
+          }
+          await delay(3000, 5000);
+          continue;
+        }
+        throw stepErr;
+      }
+
       if (!agentResult) {
         console.log("  [DOM] Agent cevap vermedi, scroll deneniyor...");
+        stepTimeoutCount++;
         await humanScroll(page);
         await delay(2000, 4000);
+        if (stepTimeoutCount >= 3) {
+          console.log("  [DOM] 3 ardışık boş cevap — tarayıcı kapatılıp yeniden başlanacak");
+          return { found: false, accountBanned: false, hadError: true, pageError: true };
+        }
         continue;
       }
+      stepTimeoutCount = 0; // Başarılı adımda sıfırla
 
       // Status'a göre karar ver
       var status = agentResult.status;
