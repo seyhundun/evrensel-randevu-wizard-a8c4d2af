@@ -717,7 +717,7 @@ async function waitForLoginFormAfterQueue(page, loginUrl) {
       }
 
       if (loginUrl) {
-        await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
+        await rotateProxyAndGoto(page, loginUrl).catch(() => {});
         await delay(2500, 4500);
         await solveTurnstile(page);
         continue;
@@ -809,7 +809,7 @@ async function waitForRegistrationFormAfterQueue(page, registerUrl) {
       }
 
       if (registerUrl) {
-        await page.goto(registerUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
+        await rotateProxyAndGoto(page, registerUrl);
         await delay(2500, 4500);
         await solveTurnstile(page);
         continue;
@@ -2137,7 +2137,7 @@ async function checkAppointments(config, account) {
     console.log("  [1] Giriş sayfası açılıyor...");
     await logStep(id, "login_navigate", "VFS giriş sayfası açılıyor...");
     const vfsLoginUrl = getVfsLoginUrl(country);
-    await page.goto(vfsLoginUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await rotateProxyAndGoto(page, vfsLoginUrl);
     await humanIdle(3000, 5000);
 
     // Cloudflare challenge kontrolü
