@@ -40,7 +40,16 @@ VFS Global web sitesinde:
 - Şehir: ${city}
 - Vize kategorisi: ${visaCategory || "belirtilmemiş"}
 - Vize alt kategorisi: ${visaSubcategory || "belirtilmemiş"}
-${applicants.length > 0 ? "- Başvuru sahipleri: " + applicants.map((a: any) => `${a.first_name} ${a.last_name}`).join(", ") : ""}
+${applicants.length > 0 ? `
+## BAŞVURU SAHİPLERİ BİLGİLERİ (FORM DOLDURMA İÇİN)
+${applicants.map((a: any, i: number) => `### ${i + 1}. Başvuru Sahibi
+- Ad: ${a.first_name || ""}
+- Soyad: ${a.last_name || ""}
+- Pasaport No: ${a.passport || ""}
+- Doğum Tarihi: ${a.birth_date || ""}
+- Telefon: ${a.phone || ""}
+- E-posta: ${a.email || ""}`).join("\n")}
+` : ""}
 
 ## ELEMENTLER
 Her element: { index, tag, type, text, id, name, value, checked, role, rect:{x,y,w,h}, isInCookieBanner }
