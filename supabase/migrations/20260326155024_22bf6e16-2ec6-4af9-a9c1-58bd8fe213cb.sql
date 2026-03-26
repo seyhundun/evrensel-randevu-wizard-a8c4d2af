@@ -1,0 +1,1 @@
+ALTER TABLE public.user_roles ADD COLUMN allowed_tabs text[] NOT NULL DEFAULT '{vfs,idata,quiz}';

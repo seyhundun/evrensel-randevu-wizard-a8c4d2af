@@ -545,18 +545,21 @@ export type Database = {
       }
       user_roles: {
         Row: {
+          allowed_tabs: string[]
           created_at: string
           id: string
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Insert: {
+          allowed_tabs?: string[]
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Update: {
+          allowed_tabs?: string[]
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
