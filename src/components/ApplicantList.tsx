@@ -97,6 +97,7 @@ export default function ApplicantList({
             index={i}
             total={applicants.length}
             onUpdate={onUpdate}
+            configId={configId}
             onRemove={
               applicants.length > 1
                 ? () => setPersonCount(personCount - 1)
