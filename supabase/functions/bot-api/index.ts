@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
           const { account_id } = body;
           await supabase
             .from("vfs_accounts")
-            .update({ manual_otp: null, otp_requested_at: null })
+            .update({ manual_otp: null })
             .eq("id", account_id);
           return new Response(
             JSON.stringify({ ok: true }),
