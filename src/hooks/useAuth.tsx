@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useRef, useCallback, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session } from "@supabase/supabase-js";
 
@@ -13,7 +13,15 @@ function logAuthEvent(email: string, userId: string | undefined, eventType: stri
   ).catch(() => {});
 }
 
-export function useAuth() {
+interface AuthContextType {
+  session: Session | null;
+  loading: boolean;
+  signOut: () => Promise<any>;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const loggedRef = useRef<string | null>(null);
@@ -45,5 +53,15 @@ export function useAuth() {
 
   const signOut = useCallback(() => supabase.auth.signOut(), []);
 
-  return { session, loading, signOut };
+  return (
+    <AuthContext.Provider value={{ session, loading, signOut }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
 }
