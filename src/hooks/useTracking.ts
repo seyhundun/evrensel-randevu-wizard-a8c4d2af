@@ -119,6 +119,41 @@ export function useTracking() {
     []
   );
 
+  // Auto-save applicants to DB when they change (debounced)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applicantsRef = useRef(applicants);
+  applicantsRef.current = applicants;
+
+  useEffect(() => {
+    if (!configId) return;
+    // Skip initial load
+    if (saveTimerRef.current !== undefined) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(async () => {
+        const currentApplicants = applicantsRef.current;
+        try {
+          await supabase.from("applicants").delete().eq("config_id", configId);
+          const rows = currentApplicants.map((a, i) => ({
+            config_id: configId,
+            first_name: a.firstName,
+            last_name: a.lastName,
+            passport: a.passport,
+            birth_date: a.birthDate,
+            phone: "",
+            email: "",
+            nationality: a.nationality || "Turkey",
+            passport_expiry: a.passportExpiry || "",
+            gender: a.gender || "",
+            sort_order: i,
+          } as any));
+          await supabase.from("applicants").insert(rows);
+        } catch (err) {
+          console.error("Auto-save applicants failed:", err);
+        }
+      }, 1500);
+    }
+  }, [applicants, configId]);
+
   const saveConfig = async () => {
     // Upsert tracking config
     const configData = {
