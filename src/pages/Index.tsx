@@ -117,6 +117,7 @@ function VfsRightSidebarContent({ t }: { t: ReturnType<typeof useTracking> }) {
         personCount={t.personCount}
         setPersonCount={t.setPersonCount}
         configId={t.configId}
+        onSave={t.saveApplicants}
       />
       <VfsAccounts />
     </div>
