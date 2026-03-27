@@ -4036,7 +4036,7 @@ async function registerVfsAccount(account) {
   } catch {}
 
   // Ülke label eşlemesi
-  const countryLabels = { france: "Fransa", netherlands: "Hollanda", denmark: "Danimarka" };
+  const countryLabels = { france: "Fransa", netherlands: "Hollanda", denmark: "Danimarka", poland: "Polonya" };
   regCountryLabel = countryLabels[regCountry] || regCountry;
 
   await logStep(regLogConfigId, "reg_start", `Kayıt başlıyor | ${account.email} | Ülke: ${regCountryLabel}`);
