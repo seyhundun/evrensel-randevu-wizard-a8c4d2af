@@ -101,15 +101,30 @@ export default function ApplicantList({
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="section-title text-foreground">Başvuru Sahipleri</h2>
-        <Button
-          onClick={handleAutoFill}
-          variant="outline"
-          disabled={filling}
-          className="gap-2 shadow-card hover:shadow-card-hover transition-shadow"
-        >
-          {filling ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
-          {filling ? "Dolduruluyor..." : "Tümünü Doldur"}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={async () => {
+              if (!onSave) return;
+              setSaving(true);
+              try { await onSave(); } finally { setSaving(false); }
+            }}
+            variant="default"
+            disabled={saving}
+            className="gap-2 shadow-card hover:shadow-card-hover transition-shadow"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? "Kaydediliyor..." : "Kaydet"}
+          </Button>
+          <Button
+            onClick={handleAutoFill}
+            variant="outline"
+            disabled={filling}
+            className="gap-2 shadow-card hover:shadow-card-hover transition-shadow"
+          >
+            {filling ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
+            {filling ? "Dolduruluyor..." : "Tümünü Doldur"}
+          </Button>
+        </div>
       </div>
 
       <AnimatePresence mode="popLayout">
