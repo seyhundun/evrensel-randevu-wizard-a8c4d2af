@@ -1313,15 +1313,19 @@ function isQuizAccountInCooldown(accountId) {
 }
 
 function quizIsPageBlocked(pageContent) {
-  if (!pageContent || pageContent.trim().length < 100) return true;
+  if (!pageContent || pageContent.trim().length < 50) return false; // Çok kısa sayfa engel değil, yükleniyor olabilir
   var lower = pageContent.toLowerCase();
-  return lower.includes("access denied") ||
-    lower.includes("403 forbidden") ||
-    lower.includes("blocked") ||
-    lower.includes("unusual traffic") ||
-    lower.includes("suspicious activity") ||
-    lower.includes("too many requests") ||
-    lower.includes("rate limit");
+  // Gerçek engel: sadece spesifik tam engellenme kalıplarını kontrol et
+  // "blocked" tek başına çok agresif — anket sayfalarında "ad blocker" vb. geçebilir
+  var isBlocked = (lower.includes("access denied") && lower.length < 500) ||
+    (lower.includes("403 forbidden") && lower.length < 500) ||
+    (lower.includes("you have been blocked") && lower.length < 1000) ||
+    (lower.includes("your ip") && lower.includes("blocked")) ||
+    (lower.includes("unusual traffic") && lower.length < 800) ||
+    (lower.includes("suspicious activity") && lower.length < 800) ||
+    (lower.includes("too many requests") && lower.length < 500) ||
+    (lower.includes("rate limit") && lower.length < 500);
+  return isBlocked;
 }
 
 function getQuizCooldownWait() {
