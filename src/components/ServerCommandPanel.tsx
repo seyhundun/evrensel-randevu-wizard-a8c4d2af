@@ -23,6 +23,7 @@ const QUICK_COMMANDS = [
   { label: "PM2 Loglar", cmd: "pm2 logs --lines 30 --nostream" },
   { label: "VFS Restart", cmd: "pm2 restart vfs-bot" },
   { label: "iDATA Restart", cmd: "pm2 restart idata-bot" },
+  { label: "Quiz Restart", cmd: "pm2 restart quiz-bot" },
   { label: "Tümünü Restart", cmd: "pm2 restart all" },
   { label: "Disk", cmd: "df -h" },
   { label: "RAM", cmd: "free -h" },
