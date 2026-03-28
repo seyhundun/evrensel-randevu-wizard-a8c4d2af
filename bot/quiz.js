@@ -1967,8 +1967,8 @@ async function runGeminiEngine(url, account, settings) {
           throw timeoutErr;
         }
 
-        // === HER TIKLAMADAN SONRA: Sayfanın en altına in ve Continue/Next/Submit ara ===
-        if (action.action === 'click' || action.action === 'select_dropdown' || action.action === 'move_slider') {
+        // === HER AKSİYONDAN SONRA: Sayfanın en altına in ve Continue/Next/Submit ara ===
+        if (action.action === 'click' || action.action === 'select_dropdown' || action.action === 'move_slider' || action.action === 'type' || action.action === 'humanType') {
           await quizDelay(500, 1000);
           // Sayfanın en altına scroll
           await page.evaluate(function() { window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }); });
