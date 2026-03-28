@@ -3959,7 +3959,11 @@ async function pollForQuizTasks() {
         await supabaseInsertLog("Motor değişti: " + engineLabel, "info");
       }
 
+      // Önce quiz_pending olanları al, yoksa active olanları otomatik başlat
       var tasks = await supabaseGet("link_analyses", "status=eq.quiz_pending&order=created_at.asc&limit=1");
+      if (!tasks || tasks.length === 0) {
+        tasks = await supabaseGet("link_analyses", "status=eq.active&order=created_at.asc&limit=1");
+      }
       if (tasks && tasks.length > 0) {
         var task = tasks[0];
         console.log("\nYeni quiz görevi: " + task.url);
@@ -3970,7 +3974,7 @@ async function pollForQuizTasks() {
           await supabaseUpdate("link_analyses", task.id, { status: "quiz_done" });
         } catch (taskErr) {
           console.error("Görev hatası:", taskErr.message);
-          await supabaseUpdate("link_analyses", task.id, { status: "quiz_pending" });
+          await supabaseUpdate("link_analyses", task.id, { status: "active" });
           await supabaseInsertLog("Görev hatası, tekrar kuyruğa alındı: " + taskErr.message, "warning");
           await new Promise(function(r) { setTimeout(r, 10000); });
         }
