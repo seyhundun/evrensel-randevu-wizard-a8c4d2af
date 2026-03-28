@@ -1754,28 +1754,49 @@ async function runGeminiEngine(url, account, settings) {
           var body = document.body ? document.body.innerText : "";
           var lower = body.toLowerCase();
           var url = window.location.href.toLowerCase();
-          // Anket hata sayfaları
-          var errorPatterns = [
-            "oops!", "http failure", "unknown error", "we're sorry if this has caused",
-            "survey is no longer available", "survey has ended", "survey is closed",
-            "survey expired", "this survey is full", "quota full", "screened out",
-            "you have been screened out", "disqualified", "does not qualify",
-            "thank you for your interest", "unfortunately you do not qualify",
-            "we are unable to", "not eligible", "no longer accepting",
-            "survey unavailable", "page not found", "404", "500 internal",
-            "bad gateway", "service unavailable", "access denied",
-            "something went wrong", "an error occurred", "try again later",
-            "this page isn't working", "err_connection", "couldn't reach"
+          var bodyLen = body.trim().length;
+          
+          // Ana anket listesi sayfalarını ASLA hata sayfası olarak algılama
+          if (url.includes("/surveys") && bodyLen > 500) return { isError: false };
+          if (url.includes("ysense.com") && bodyLen > 1000) return { isError: false };
+          if (url.includes("swagbucks.com") && bodyLen > 1000) return { isError: false };
+          
+          // Kısa hata sayfaları (< 500 karakter) — bunlar gerçek hata sayfaları
+          var shortPageErrors = [
+            "page not found", "500 internal", "bad gateway", "service unavailable",
+            "this page isn't working", "err_connection", "couldn't reach",
+            "access denied", "http failure"
           ];
-          var urlErrorPatterns = ["/error", "/screened-out", "/disqualified", "/quota-full", "/terminated", "/thankyou", "/sorry"];
-          for (var i = 0; i < errorPatterns.length; i++) {
-            if (lower.includes(errorPatterns[i])) return { isError: true, reason: errorPatterns[i] };
+          
+          // Anket-spesifik hatalar — sadece kısa sayfalarda (< 2000 karakter) geçerli
+          var surveyErrors = [
+            "survey is no longer available", "survey has ended", "survey is closed",
+            "survey expired", "this survey is full", "quota full",
+            "you have been screened out", "disqualified", "does not qualify",
+            "unfortunately you do not qualify", "not eligible", "no longer accepting",
+            "survey unavailable", "we are unable to"
+          ];
+          
+          // URL tabanlı hatalar
+          var urlErrorPatterns = ["/screened-out", "/disqualified", "/quota-full", "/terminated"];
+          
+          // Kısa sayfa hataları (< 500 karakter)
+          for (var i = 0; i < shortPageErrors.length; i++) {
+            if (lower.includes(shortPageErrors[i]) && bodyLen < 500) return { isError: true, reason: shortPageErrors[i] };
           }
-          for (var j = 0; j < urlErrorPatterns.length; j++) {
-            if (url.includes(urlErrorPatterns[j])) return { isError: true, reason: "URL: " + urlErrorPatterns[j] };
+          
+          // Anket hataları (< 2000 karakter — gerçek anket sayfaları genellikle çok daha uzun)
+          for (var j = 0; j < surveyErrors.length; j++) {
+            if (lower.includes(surveyErrors[j]) && bodyLen < 2000) return { isError: true, reason: surveyErrors[j] };
           }
-          // Çok kısa içerik (boş sayfa)
-          if (body.trim().length < 30 && body.trim().length > 0) return { isError: true, reason: "Boş/kısa sayfa" };
+          
+          // URL tabanlı hatalar (her zaman geçerli)
+          for (var k = 0; k < urlErrorPatterns.length; k++) {
+            if (url.includes(urlErrorPatterns[k])) return { isError: true, reason: "URL: " + urlErrorPatterns[k] };
+          }
+          
+          // Çok kısa içerik (boş sayfa) — ama en az 5 karakter olmalı
+          if (bodyLen < 30 && bodyLen > 5) return { isError: true, reason: "Boş/kısa sayfa" };
           return { isError: false };
         }).catch(function() { return { isError: false }; });
 
