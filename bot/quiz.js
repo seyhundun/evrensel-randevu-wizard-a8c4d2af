@@ -1851,6 +1851,7 @@ async function runGeminiEngine(url, account, settings) {
       var actionSummary = [action.action || "?", action.selector || action.value || action.description || ""].join(": ");
       var actionText = String(actionSummary + " " + (action.description || "")).toLowerCase();
       var isPopupCloseAction = /(popup|geri bildirim|feedback|close|kapat|dismiss|skip|not now|×|✕|çarpı|anket deneyimi)/.test(actionText);
+      var isPureScrollAction = action.action === "scroll" && /(scroll|kaydır|kaydir|down|bottom)/.test(actionText);
 
       if (actionSummary === lastActionSummary) {
         sameActionStreak++;
@@ -1870,6 +1871,17 @@ async function runGeminiEngine(url, account, settings) {
       }
 
       if (sameActionStreak >= 6) {
+        if (isPureScrollAction) {
+          console.log("[ACTION-LOOP] Scroll döngüsü algılandı, restart yerine sayfa sonuna inilip yeniden değerlendirilecek");
+          await supabaseInsertLog("⚠️ Scroll döngüsü algılandı, sayfa sonuna inilerek yeniden deneniyor", "warning");
+          await page.evaluate(function() { window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }); }).catch(function() {});
+          await quizDelay(1200, 2200);
+          sameActionStreak = 0;
+          repeatedStuckRecoveries = 0;
+          recentActions.push("scroll: loop_break_bottom");
+          if (recentActions.length > 5) recentActions.shift();
+          continue;
+        }
         console.log("[ACTION-LOOP] Aynı aksiyon çok tekrar etti, oturum yeniden başlatılıyor:", actionSummary);
         await supabaseInsertLog("🔄 Aynı adım sürekli tekrar ediyor, tarayıcı tamamen kapatılıp yeni oturum başlatılıyor", "warning");
         throw new Error("Repeated action loop detected — restart session");
